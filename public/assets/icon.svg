@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0891b2;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#0e7490;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="100" fill="url(#gradient)"/>
+  <g transform="translate(256, 256)">
+    <!-- Heart/Medical Cross Symbol -->
+    <path d="M0 -120 L50 -70 L50 -30 L90 -30 L90 30 L50 30 L50 70 L-50 70 L-50 30 L-90 30 L-90 -30 L-50 -30 L-50 -70 Z" 
+          fill="white" opacity="0.9"/>
+    <!-- Circular Arrow (Transfer/Track) -->
+    <circle cx="0" cy="0" r="130" fill="none" stroke="white" stroke-width="20" 
+            stroke-dasharray="400 200" opacity="0.6"/>
+    <polygon points="100,-80 130,-50 100,-20" fill="white" opacity="0.6"/>
+  </g>
+</svg>

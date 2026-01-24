@@ -1,0 +1,71 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Build outputs
+dist/
+release/
+out/
+
+# Database files
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+
+# Encryption keys (NEVER commit these!)
+.transtrack-key
+*.key
+*.pem
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Log files
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Test coverage
+coverage/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+
+# User data (development)
+userData/
+
+# Electron builder cache
+.electron-builder/
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Debug files
+*.map
+
+# Backup files
+*.bak
+*.backup
