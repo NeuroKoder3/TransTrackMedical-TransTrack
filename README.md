@@ -9,6 +9,16 @@
 [![AATB Standards](https://img.shields.io/badge/AATB-Standards-green.svg)](docs/COMPLIANCE.md)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)]()
 
+> **⚠️ IMPORTANT LICENSE NOTICE**
+>
+> TransTrack is **source-available commercial software**.
+>
+> - Viewing and evaluating the source code is permitted for a limited time (14 days)
+> - Evaluation is limited to non-clinical, non-operational testing only
+> - **Use in clinical, operational, or production environments requires a [commercial license](PRICING.md)**
+>
+> See [LICENSE](LICENSE) and [LICENSE_NOTICE.md](LICENSE_NOTICE.md) for full terms.
+
 <p align="center">
   <img src="docs/images/dashboard-preview.svg" alt="TransTrack Dashboard" width="800">
 </p>
