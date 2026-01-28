@@ -162,6 +162,93 @@ Use the Match Simulator to test hypothetical scenarios without creating actual d
 
 ---
 
+## Readiness Barriers (Non-Clinical)
+
+### Overview
+
+The Readiness Barriers feature helps track **operational workflow items** that may affect a patient's readiness for transplant coordination. This feature is:
+
+- **Non-Clinical**: Does not contain medical diagnoses or clinical assessments
+- **Non-Allocative**: Does not affect organ allocation decisions
+- **Operational Only**: Supports care team coordination
+
+> **Important**: This feature does NOT replace UNOS/OPTN systems or perform any allocation decisions.
+
+### Accessing Readiness Barriers
+
+1. Navigate to a **Patient Details** page
+2. Scroll to the **Readiness Barriers** section
+3. View current barriers and their status
+
+### Adding a Barrier
+
+1. Click **Add Barrier** on the patient's detail page
+2. Select the barrier type:
+   - Pending testing
+   - Insurance clearance
+   - Transportation plan
+   - Caregiver support
+   - Housing/distance
+   - Psychosocial follow-up
+   - Financial clearance
+   - Other non-clinical
+
+3. Set the status (Open, In Progress, or Resolved)
+4. Select the operational risk level (Low, Moderate, High)
+5. Assign the responsible team (Social Work, Financial, Coordinator, Other)
+6. Optionally set a target resolution date
+7. Add brief notes (max 255 characters, non-clinical only)
+8. Click **Add Barrier**
+
+### Managing Barriers
+
+**Update Status**:
+- Click the edit icon to modify barrier details
+- Change status as work progresses
+
+**Mark Resolved**:
+- Click the checkmark icon to resolve a barrier
+- Resolved barriers are archived but remain in audit history
+
+**View Resolved**:
+- Click "Show Resolved" to view historical barriers
+
+### Risk Dashboard Integration
+
+The **Risk Dashboard** includes a Readiness Barriers tile showing:
+- Number of patients with open barriers
+- Percentage of active waitlist affected
+- Breakdown by barrier type and risk level
+
+Access the full barrier analysis in the **Readiness Barriers** tab.
+
+### Compliance Center
+
+Barrier audit trails are available in the **Compliance Center**:
+1. Navigate to Compliance Center
+2. Select the **Barrier Audit** tab
+3. Filter by date range
+4. View all barrier changes with user attribution
+
+### Best Practices
+
+1. **Keep notes brief and factual**: Avoid clinical language
+2. **Update status promptly**: Helps team coordination
+3. **Set realistic target dates**: Supports workflow planning
+4. **Resolve barriers when complete**: Keeps dashboard accurate
+5. **Use appropriate risk levels**: Helps prioritize workflow
+
+### Example Language
+
+| Do Use | Don't Use |
+|--------|-----------|
+| "Insurance pre-auth pending" | "Patient has anxiety about coverage" |
+| "Transportation arranged" | "Patient cannot drive due to condition" |
+| "Follow-up scheduled" | "Patient needs psychiatric evaluation" |
+| "Caregiver confirmed" | "Patient's family is unreliable" |
+
+---
+
 ## Settings
 
 ### User Management (Admin Only)

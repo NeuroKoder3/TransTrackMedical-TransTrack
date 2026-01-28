@@ -13,6 +13,7 @@
  */
 
 const { getDatabase } = require('../database/init.cjs');
+const readinessBarriers = require('./readinessBarriers.cjs');
 
 // Risk thresholds (configurable)
 const RISK_THRESHOLDS = {
@@ -155,6 +156,47 @@ function assessPatientOperationalRisk(patient) {
     }
   }
   
+  // 5. Readiness Barriers Risk (Non-Clinical)
+  // NOTE: These are operational workflow barriers only, NOT clinical assessments
+  try {
+    const barrierSummary = readinessBarriers.getPatientBarrierSummary(patient.id);
+    
+    if (barrierSummary.totalOpen > 0) {
+      let barrierRiskLevel = RISK_LEVEL.LOW;
+      let title = 'Readiness Barrier';
+      
+      // Determine risk level based on barrier count and severity
+      if (barrierSummary.byRiskLevel.high > 0) {
+        barrierRiskLevel = RISK_LEVEL.HIGH;
+        title = 'High-Risk Readiness Barriers';
+      } else if (barrierSummary.totalOpen >= 3 || barrierSummary.byRiskLevel.moderate > 0) {
+        barrierRiskLevel = RISK_LEVEL.MEDIUM;
+        title = 'Multiple Readiness Barriers';
+      }
+      
+      // Build description of barrier types
+      const barrierTypes = barrierSummary.barriers.map(b => 
+        readinessBarriers.BARRIER_TYPES[b.barrier_type]?.label || b.barrier_type
+      );
+      const uniqueTypes = [...new Set(barrierTypes)];
+      
+      risks.push({
+        type: 'readiness_barriers',
+        level: barrierRiskLevel,
+        title: title,
+        description: `${barrierSummary.totalOpen} open barrier(s): ${uniqueTypes.slice(0, 3).join(', ')}${uniqueTypes.length > 3 ? '...' : ''}`,
+        barrierCount: barrierSummary.totalOpen,
+        highRiskCount: barrierSummary.byRiskLevel.high,
+        moderateRiskCount: barrierSummary.byRiskLevel.moderate,
+        actionRequired: 'Review and resolve readiness barriers',
+        isNonClinical: true, // Flag to indicate this is operational, not clinical
+      });
+    }
+  } catch (e) {
+    // Silently continue if barriers table doesn't exist yet
+    console.log('Could not assess readiness barriers:', e.message);
+  }
+  
   // Calculate overall risk level
   let overallLevel = RISK_LEVEL.NONE;
   if (risks.some(r => r.level === RISK_LEVEL.CRITICAL)) {
@@ -289,9 +331,11 @@ async function generateOperationalRiskReport() {
       highRiskPatients: 0,
       mediumRiskPatients: 0,
       lowRiskPatients: 0,
+      patientsWithBarriers: 0,
     },
     patientRisks: [],
     segmentAnalysis: [],
+    barrierAnalysis: null,
     actionItems: [],
   };
   
@@ -299,6 +343,11 @@ async function generateOperationalRiskReport() {
   for (const patient of patients) {
     const assessment = assessPatientOperationalRisk(patient);
     report.patientRisks.push(assessment);
+    
+    // Check if patient has readiness barriers
+    if (assessment.risks.some(r => r.type === 'readiness_barriers')) {
+      report.summary.patientsWithBarriers++;
+    }
     
     // Update summary counts
     switch (assessment.overallRiskLevel) {
@@ -333,6 +382,24 @@ async function generateOperationalRiskReport() {
     report.segmentAnalysis.push(analysis);
   }
   
+  // Add barrier analysis (Non-Clinical)
+  try {
+    const barrierDashboard = readinessBarriers.getBarriersDashboard();
+    report.barrierAnalysis = {
+      disclaimer: 'Readiness barriers are NON-CLINICAL operational tracking items only. They do not affect allocation decisions or replace UNOS/OPTN systems.',
+      totalOpenBarriers: barrierDashboard.totalOpenBarriers,
+      patientsWithBarriers: barrierDashboard.patientsWithBarriers,
+      patientsWithBarriersPercentage: barrierDashboard.patientsWithBarriersPercentage,
+      overdueBarriers: barrierDashboard.overdueBarriers,
+      byType: barrierDashboard.byType,
+      byRiskLevel: barrierDashboard.byRiskLevel,
+      byOwningRole: barrierDashboard.byOwningRole,
+      topBarrierPatients: barrierDashboard.topBarrierPatients,
+    };
+  } catch (e) {
+    console.log('Could not generate barrier analysis:', e.message);
+  }
+  
   // Generate prioritized action items
   const criticalPatients = report.patientRisks
     .filter(r => r.overallRiskLevel === RISK_LEVEL.CRITICAL)
@@ -346,7 +413,24 @@ async function generateOperationalRiskReport() {
         patientId: patient.patientId,
         issue: risk.title,
         action: risk.actionRequired,
+        isNonClinical: risk.isNonClinical || false,
       });
+    }
+  }
+  
+  // Add high-risk barrier action items
+  if (report.barrierAnalysis && report.barrierAnalysis.topBarrierPatients) {
+    for (const patient of report.barrierAnalysis.topBarrierPatients.slice(0, 5)) {
+      if (patient.highRiskCount > 0) {
+        report.actionItems.push({
+          priority: 'HIGH',
+          patient: patient.patientName,
+          patientId: patient.patientId,
+          issue: `${patient.highRiskCount} high-risk readiness barrier(s)`,
+          action: 'Review and resolve readiness barriers',
+          isNonClinical: true,
+        });
+      }
     }
   }
   
@@ -381,12 +465,25 @@ async function getRiskDashboard() {
     staleDocumentation: 0,
     incompleteRecords: 0,
     highChurnPatients: 0,
+    patientsWithBarriers: 0,
+    totalOpenBarriers: 0,
   };
   
   const atRiskPatients = [];
   
+  // Get barrier dashboard for overall metrics
+  let barrierDashboard = null;
+  try {
+    barrierDashboard = readinessBarriers.getBarriersDashboard();
+    metrics.patientsWithBarriers = barrierDashboard.patientsWithBarriers;
+    metrics.totalOpenBarriers = barrierDashboard.totalOpenBarriers;
+  } catch (e) {
+    console.log('Could not get barrier dashboard:', e.message);
+  }
+  
   for (const patient of patients) {
     const risks = [];
+    let barrierCount = 0;
     
     // Check evaluation expiry
     if (patient.last_evaluation_date) {
@@ -414,6 +511,17 @@ async function getRiskDashboard() {
       risks.push('Incomplete data');
     }
     
+    // Check readiness barriers (non-clinical)
+    try {
+      const barrierSummary = readinessBarriers.getPatientBarrierSummary(patient.id);
+      if (barrierSummary.totalOpen > 0) {
+        barrierCount = barrierSummary.totalOpen;
+        risks.push(`${barrierCount} readiness barrier(s)`);
+      }
+    } catch (e) {
+      // Silently continue
+    }
+    
     if (risks.length > 0) {
       atRiskPatients.push({
         id: patient.id,
@@ -421,6 +529,7 @@ async function getRiskDashboard() {
         mrn: patient.patient_id,
         risks,
         riskCount: risks.length,
+        barrierCount,
       });
     }
   }
@@ -432,8 +541,15 @@ async function getRiskDashboard() {
     metrics,
     totalActive: patients.length,
     atRiskCount: atRiskPatients.length,
-    atRiskPercentage: ((atRiskPatients.length / patients.length) * 100).toFixed(1),
+    atRiskPercentage: patients.length > 0 ? ((atRiskPatients.length / patients.length) * 100).toFixed(1) : '0.0',
     topAtRiskPatients: atRiskPatients.slice(0, 10),
+    barrierSummary: barrierDashboard ? {
+      patientsWithBarriers: barrierDashboard.patientsWithBarriers,
+      patientsWithBarriersPercentage: barrierDashboard.patientsWithBarriersPercentage,
+      totalOpenBarriers: barrierDashboard.totalOpenBarriers,
+      byRiskLevel: barrierDashboard.byRiskLevel,
+      byType: barrierDashboard.byType,
+    } : null,
     generatedAt: now.toISOString(),
   };
 }

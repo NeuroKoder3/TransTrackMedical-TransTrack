@@ -24,13 +24,60 @@ const mockClient = {
       return { success: true };
     },
   },
+  barriers: {
+    getTypes: async () => ({
+      PENDING_TESTING: { value: 'PENDING_TESTING', label: 'Pending testing' },
+      INSURANCE_CLEARANCE: { value: 'INSURANCE_CLEARANCE', label: 'Insurance clearance' },
+      TRANSPORTATION_PLAN: { value: 'TRANSPORTATION_PLAN', label: 'Transportation plan' },
+      CAREGIVER_SUPPORT: { value: 'CAREGIVER_SUPPORT', label: 'Caregiver support' },
+      HOUSING_DISTANCE: { value: 'HOUSING_DISTANCE', label: 'Housing/distance' },
+      PSYCHOSOCIAL_FOLLOWUP: { value: 'PSYCHOSOCIAL_FOLLOWUP', label: 'Psychosocial follow-up' },
+      FINANCIAL_CLEARANCE: { value: 'FINANCIAL_CLEARANCE', label: 'Financial clearance' },
+      OTHER_NON_CLINICAL: { value: 'OTHER_NON_CLINICAL', label: 'Other (non-clinical)' },
+    }),
+    getStatuses: async () => ({
+      OPEN: { value: 'open', label: 'Open', color: 'red' },
+      IN_PROGRESS: { value: 'in_progress', label: 'In Progress', color: 'yellow' },
+      RESOLVED: { value: 'resolved', label: 'Resolved', color: 'green' },
+    }),
+    getRiskLevels: async () => ({
+      LOW: { value: 'low', label: 'Low', color: 'blue' },
+      MODERATE: { value: 'moderate', label: 'Moderate', color: 'yellow' },
+      HIGH: { value: 'high', label: 'High', color: 'red' },
+    }),
+    getOwningRoles: async () => ({
+      SOCIAL_WORK: { value: 'social_work', label: 'Social Work' },
+      FINANCIAL: { value: 'financial', label: 'Financial Services' },
+      COORDINATOR: { value: 'coordinator', label: 'Transplant Coordinator' },
+      OTHER: { value: 'other', label: 'Other' },
+    }),
+    create: async (data) => ({ id: Date.now().toString(), ...data }),
+    update: async (id, data) => ({ id, ...data }),
+    resolve: async (id) => ({ id, status: 'resolved' }),
+    delete: async (id) => ({ success: true }),
+    getByPatient: async () => [],
+    getPatientSummary: async () => ({ totalOpen: 0, byStatus: {}, byRiskLevel: {}, highestRiskLevel: 'none', barriers: [] }),
+    getAllOpen: async () => [],
+    getDashboard: async () => ({
+      totalActivePatients: 0,
+      patientsWithBarriers: 0,
+      patientsWithBarriersPercentage: '0.0',
+      totalOpenBarriers: 0,
+      byType: {},
+      byRiskLevel: {},
+      byStatus: {},
+      byOwningRole: {},
+      topBarrierPatients: [],
+    }),
+    getAuditHistory: async () => [],
+  },
 };
 
 // Create entity proxy for mock client
 const entityNames = [
   'Patient', 'DonorOrgan', 'Match', 'Notification', 'NotificationRule',
   'PriorityWeights', 'EHRIntegration', 'EHRImport', 'EHRSyncLog',
-  'EHRValidationRule', 'AuditLog', 'User'
+  'EHRValidationRule', 'AuditLog', 'User', 'ReadinessBarrier'
 ];
 
 for (const name of entityNames) {
@@ -107,6 +154,26 @@ const createElectronClient = () => {
       invoke: async (functionName, params) => {
         return await api.functions.invoke(functionName, params);
       },
+    },
+    // Readiness Barriers (Non-Clinical Operational Tracking)
+    // NOTE: This feature is strictly NON-CLINICAL, NON-ALLOCATIVE, and designed for
+    // operational workflow visibility only.
+    barriers: {
+      getTypes: async () => await api.barriers.getTypes(),
+      getStatuses: async () => await api.barriers.getStatuses(),
+      getRiskLevels: async () => await api.barriers.getRiskLevels(),
+      getOwningRoles: async () => await api.barriers.getOwningRoles(),
+      create: async (data) => await api.barriers.create(data),
+      update: async (id, data) => await api.barriers.update(id, data),
+      resolve: async (id) => await api.barriers.resolve(id),
+      delete: async (id) => await api.barriers.delete(id),
+      getByPatient: async (patientId, includeResolved = false) => 
+        await api.barriers.getByPatient(patientId, includeResolved),
+      getPatientSummary: async (patientId) => await api.barriers.getPatientSummary(patientId),
+      getAllOpen: async () => await api.barriers.getAllOpen(),
+      getDashboard: async () => await api.barriers.getDashboard(),
+      getAuditHistory: async (patientId, startDate, endDate) => 
+        await api.barriers.getAuditHistory(patientId, startDate, endDate),
     },
     // Alias for service role operations (same as regular in local mode)
     asServiceRole: {

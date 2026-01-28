@@ -152,6 +152,78 @@ TransTrack is designed and built to meet the requirements of major healthcare re
 
 ---
 
+## Readiness Barriers (Non-Clinical Feature)
+
+### Purpose and Scope
+
+TransTrack includes a **Readiness Barriers** feature designed for **operational workflow visibility only**. This feature is:
+
+- **NON-CLINICAL**: Does not contain diagnoses, medical opinions, or clinical assessments
+- **NON-ALLOCATIVE**: Does not affect organ allocation decisions
+- **Operational Only**: Supports care team coordination and workflow management
+
+**IMPORTANT**: This feature does NOT perform allocation decisions, listing authority functions, or replace UNOS/OPTN systems.
+
+### Barrier Types
+
+The following non-clinical barrier types are tracked:
+
+| Barrier Type | Description | Example Use |
+|--------------|-------------|-------------|
+| Pending Testing | Testing appointments need scheduling | "Lab work scheduled for next week" |
+| Insurance Clearance | Insurance authorization status | "Pre-auth in progress" |
+| Transportation Plan | Post-surgery transportation logistics | "Transportation arranged" |
+| Caregiver Support | Support partner availability | "Caregiver confirmed" |
+| Housing/Distance | Housing or distance-related logistics | "Temporary housing secured" |
+| Psychosocial Follow-up | Scheduling flag only (no clinical detail) | "Follow-up scheduled" |
+| Financial Clearance | Financial assistance or payment plans | "Payment plan established" |
+| Other Non-Clinical | Other administrative barriers | Custom operational notes |
+
+### Compliance Safeguards
+
+1. **Data Minimization**
+   - Notes field limited to 255 characters
+   - No free-text clinical narratives allowed
+   - Structured dropdown selections only
+   - No diagnoses or medical opinions stored
+
+2. **Audit Trail**
+   - All barrier changes logged with user attribution
+   - Create, update, resolve, and delete actions tracked
+   - Immutable audit history for regulatory review
+   - Timestamp and user identification on all actions
+
+3. **Role-Based Access**
+   - Owning role assignment for accountability
+   - Access justification may be required for sensitive operations
+   - Audit logs track all barrier access
+
+4. **Non-Clinical Designation**
+   - Clear UI labeling as "Non-Clinical"
+   - Disclaimer displayed on all barrier views
+   - Barrier data separated from clinical records
+   - No integration with allocation algorithms
+
+### Audit Log Structure for Barriers
+
+| Field | Description |
+|-------|-------------|
+| action | create, update, resolve, delete |
+| entity_type | ReadinessBarrier |
+| entity_id | Barrier UUID |
+| patient_name | Associated patient |
+| details | JSON with barrier_type, status, changes |
+| user_email | User who performed action |
+| created_date | Timestamp |
+
+### Regulatory Alignment
+
+- **HIPAA**: Audit trail meets minimum necessary standard
+- **FDA 21 CFR Part 11**: Immutable records with electronic signatures
+- **UNOS/OPTN**: Explicitly non-allocative (does not affect organ allocation)
+
+---
+
 ## Data Security Features
 
 ### Local Storage Security

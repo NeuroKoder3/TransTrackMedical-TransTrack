@@ -189,6 +189,26 @@ contextBridge.exposeInMainWorld('electronAPI', {
     assessPatient: (patientId) => ipcRenderer.invoke('risk:assessPatient', patientId),
   },
   
+  // Readiness Barriers (Non-Clinical Operational Tracking)
+  // NOTE: This feature is strictly NON-CLINICAL, NON-ALLOCATIVE, and designed for
+  // operational workflow visibility only. It does NOT perform allocation decisions,
+  // listing authority functions, or replace UNOS/OPTN systems.
+  barriers: {
+    getTypes: () => ipcRenderer.invoke('barrier:getTypes'),
+    getStatuses: () => ipcRenderer.invoke('barrier:getStatuses'),
+    getRiskLevels: () => ipcRenderer.invoke('barrier:getRiskLevels'),
+    getOwningRoles: () => ipcRenderer.invoke('barrier:getOwningRoles'),
+    create: (data) => ipcRenderer.invoke('barrier:create', data),
+    update: (id, data) => ipcRenderer.invoke('barrier:update', id, data),
+    resolve: (id) => ipcRenderer.invoke('barrier:resolve', id),
+    delete: (id) => ipcRenderer.invoke('barrier:delete', id),
+    getByPatient: (patientId, includeResolved) => ipcRenderer.invoke('barrier:getByPatient', patientId, includeResolved),
+    getPatientSummary: (patientId) => ipcRenderer.invoke('barrier:getPatientSummary', patientId),
+    getAllOpen: () => ipcRenderer.invoke('barrier:getAllOpen'),
+    getDashboard: () => ipcRenderer.invoke('barrier:getDashboard'),
+    getAuditHistory: (patientId, startDate, endDate) => ipcRenderer.invoke('barrier:getAuditHistory', patientId, startDate, endDate),
+  },
+  
   // Access Control with Justification
   accessControl: {
     validateRequest: (permission, justification) => ipcRenderer.invoke('access:validateRequest', permission, justification),

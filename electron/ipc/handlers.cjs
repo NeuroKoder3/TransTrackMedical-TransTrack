@@ -15,6 +15,7 @@ const accessControl = require('../services/accessControl.cjs');
 const disasterRecovery = require('../services/disasterRecovery.cjs');
 const complianceView = require('../services/complianceView.cjs');
 const offlineReconciliation = require('../services/offlineReconciliation.cjs');
+const readinessBarriers = require('../services/readinessBarriers.cjs');
 
 // Current session store
 let currentSession = null;
@@ -33,7 +34,8 @@ const entityTableMap = {
   EHRSyncLog: 'ehr_sync_logs',
   EHRValidationRule: 'ehr_validation_rules',
   AuditLog: 'audit_logs',
-  User: 'users'
+  User: 'users',
+  ReadinessBarrier: 'readiness_barriers'
 };
 
 // Fields that store JSON data
@@ -474,6 +476,192 @@ function setupIPCHandlers() {
     const patient = db.prepare('SELECT * FROM patients WHERE id = ?').get(patientId);
     if (!patient) throw new Error('Patient not found');
     return riskEngine.assessPatientOperationalRisk(patient);
+  });
+  
+  // ===== READINESS BARRIERS (Non-Clinical Operational Tracking) =====
+  // NOTE: This feature is strictly NON-CLINICAL, NON-ALLOCATIVE, and designed for
+  // operational workflow visibility only. It does NOT perform allocation decisions,
+  // listing authority functions, or replace UNOS/OPTN systems.
+  
+  ipcMain.handle('barrier:getTypes', async () => {
+    return readinessBarriers.BARRIER_TYPES;
+  });
+  
+  ipcMain.handle('barrier:getStatuses', async () => {
+    return readinessBarriers.BARRIER_STATUS;
+  });
+  
+  ipcMain.handle('barrier:getRiskLevels', async () => {
+    return readinessBarriers.BARRIER_RISK_LEVEL;
+  });
+  
+  ipcMain.handle('barrier:getOwningRoles', async () => {
+    return readinessBarriers.OWNING_ROLES;
+  });
+  
+  ipcMain.handle('barrier:create', async (event, data) => {
+    if (!currentUser) throw new Error('Not authenticated');
+    
+    // Validate required fields
+    if (!data.patient_id) throw new Error('Patient ID is required');
+    if (!data.barrier_type) throw new Error('Barrier type is required');
+    if (!data.owning_role) throw new Error('Owning role is required');
+    
+    // Validate notes length (max 255 chars, non-clinical only)
+    if (data.notes && data.notes.length > 255) {
+      throw new Error('Notes must be 255 characters or less');
+    }
+    
+    const barrier = readinessBarriers.createBarrier(data, currentUser.id);
+    
+    // Get patient name for audit
+    const patient = db.prepare('SELECT first_name, last_name FROM patients WHERE id = ?').get(data.patient_id);
+    const patientName = patient ? `${patient.first_name} ${patient.last_name}` : null;
+    
+    logAudit(
+      'create',
+      'ReadinessBarrier',
+      barrier.id,
+      patientName,
+      JSON.stringify({
+        patient_id: data.patient_id,
+        barrier_type: data.barrier_type,
+        status: barrier.status,
+        risk_level: barrier.risk_level,
+        owning_role: barrier.owning_role,
+      }),
+      currentUser.email,
+      currentUser.role
+    );
+    
+    return barrier;
+  });
+  
+  ipcMain.handle('barrier:update', async (event, id, data) => {
+    if (!currentUser) throw new Error('Not authenticated');
+    
+    const existing = readinessBarriers.getBarrierById(id);
+    if (!existing) throw new Error('Barrier not found');
+    
+    // Validate notes length
+    if (data.notes && data.notes.length > 255) {
+      throw new Error('Notes must be 255 characters or less');
+    }
+    
+    const barrier = readinessBarriers.updateBarrier(id, data, currentUser.id);
+    
+    // Get patient name for audit
+    const patient = db.prepare('SELECT first_name, last_name FROM patients WHERE id = ?').get(existing.patient_id);
+    const patientName = patient ? `${patient.first_name} ${patient.last_name}` : null;
+    
+    // Log what changed
+    const changes = {};
+    if (data.status && data.status !== existing.status) changes.status = { from: existing.status, to: data.status };
+    if (data.risk_level && data.risk_level !== existing.risk_level) changes.risk_level = { from: existing.risk_level, to: data.risk_level };
+    if (data.barrier_type && data.barrier_type !== existing.barrier_type) changes.barrier_type = { from: existing.barrier_type, to: data.barrier_type };
+    
+    logAudit(
+      'update',
+      'ReadinessBarrier',
+      id,
+      patientName,
+      JSON.stringify({
+        patient_id: existing.patient_id,
+        changes,
+      }),
+      currentUser.email,
+      currentUser.role
+    );
+    
+    return barrier;
+  });
+  
+  ipcMain.handle('barrier:resolve', async (event, id) => {
+    if (!currentUser) throw new Error('Not authenticated');
+    
+    const existing = readinessBarriers.getBarrierById(id);
+    if (!existing) throw new Error('Barrier not found');
+    
+    const barrier = readinessBarriers.updateBarrier(id, { status: 'resolved' }, currentUser.id);
+    
+    // Get patient name for audit
+    const patient = db.prepare('SELECT first_name, last_name FROM patients WHERE id = ?').get(existing.patient_id);
+    const patientName = patient ? `${patient.first_name} ${patient.last_name}` : null;
+    
+    logAudit(
+      'resolve',
+      'ReadinessBarrier',
+      id,
+      patientName,
+      JSON.stringify({
+        patient_id: existing.patient_id,
+        barrier_type: existing.barrier_type,
+        resolved_by: currentUser.email,
+      }),
+      currentUser.email,
+      currentUser.role
+    );
+    
+    return barrier;
+  });
+  
+  ipcMain.handle('barrier:delete', async (event, id) => {
+    if (!currentUser) throw new Error('Not authenticated');
+    
+    // Only admins can delete barriers (prefer resolving instead)
+    if (currentUser.role !== 'admin') {
+      throw new Error('Only administrators can delete barriers. Consider resolving the barrier instead.');
+    }
+    
+    const existing = readinessBarriers.getBarrierById(id);
+    if (!existing) throw new Error('Barrier not found');
+    
+    // Get patient name for audit
+    const patient = db.prepare('SELECT first_name, last_name FROM patients WHERE id = ?').get(existing.patient_id);
+    const patientName = patient ? `${patient.first_name} ${patient.last_name}` : null;
+    
+    readinessBarriers.deleteBarrier(id);
+    
+    logAudit(
+      'delete',
+      'ReadinessBarrier',
+      id,
+      patientName,
+      JSON.stringify({
+        patient_id: existing.patient_id,
+        barrier_type: existing.barrier_type,
+        deleted_by: currentUser.email,
+      }),
+      currentUser.email,
+      currentUser.role
+    );
+    
+    return { success: true };
+  });
+  
+  ipcMain.handle('barrier:getByPatient', async (event, patientId, includeResolved = false) => {
+    if (!currentUser) throw new Error('Not authenticated');
+    return readinessBarriers.getBarriersByPatientId(patientId, includeResolved);
+  });
+  
+  ipcMain.handle('barrier:getPatientSummary', async (event, patientId) => {
+    if (!currentUser) throw new Error('Not authenticated');
+    return readinessBarriers.getPatientBarrierSummary(patientId);
+  });
+  
+  ipcMain.handle('barrier:getAllOpen', async () => {
+    if (!currentUser) throw new Error('Not authenticated');
+    return readinessBarriers.getAllOpenBarriers();
+  });
+  
+  ipcMain.handle('barrier:getDashboard', async () => {
+    if (!currentUser) throw new Error('Not authenticated');
+    return readinessBarriers.getBarriersDashboard();
+  });
+  
+  ipcMain.handle('barrier:getAuditHistory', async (event, patientId, startDate, endDate) => {
+    if (!currentUser) throw new Error('Not authenticated');
+    return readinessBarriers.getBarrierAuditHistory(patientId, startDate, endDate);
   });
   
   // ===== ACCESS CONTROL WITH JUSTIFICATION =====

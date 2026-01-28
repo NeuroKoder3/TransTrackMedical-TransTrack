@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -7,8 +8,12 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
   AlertTriangle, AlertCircle, Clock, FileText, Users, 
-  RefreshCw, TrendingDown, Activity, Shield
+  RefreshCw, TrendingDown, Activity, Shield, ClipboardList,
+  Info, ExternalLink
 } from 'lucide-react';
+import { BarrierRiskBadge } from '@/components/barriers';
+import { createPageUrl } from '@/utils';
+import api from '@/api/localClient';
 
 export default function RiskDashboard() {
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -32,6 +37,13 @@ export default function RiskDashboard() {
       }
       return null;
     },
+  });
+
+  // Fetch barrier dashboard data
+  const { data: barrierDashboard } = useQuery({
+    queryKey: ['barrierDashboard'],
+    queryFn: () => api.barriers.getDashboard(),
+    refetchInterval: 60000,
   });
 
   const handleRefresh = async () => {
@@ -79,7 +91,7 @@ export default function RiskDashboard() {
         </div>
 
         {/* Risk Metrics */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <Card className="border-red-200 bg-red-50">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-red-700 flex items-center gap-2">
@@ -125,6 +137,27 @@ export default function RiskDashboard() {
             </CardContent>
           </Card>
 
+          {/* Readiness Barriers Tile (Non-Clinical) */}
+          <Card className="border-amber-200 bg-amber-50">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-amber-700 flex items-center gap-2">
+                <ClipboardList className="w-4 h-4" />
+                Readiness Barriers
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold text-amber-900">
+                {barrierDashboard?.patientsWithBarriers || 0}
+                <span className="text-lg font-normal text-amber-600 ml-2">
+                  ({barrierDashboard?.patientsWithBarriersPercentage || '0.0'}%)
+                </span>
+              </div>
+              <p className="text-xs text-amber-600 mt-1">
+                {barrierDashboard?.totalOpenBarriers || 0} open barriers
+              </p>
+            </CardContent>
+          </Card>
+
           <Card className="border-cyan-200 bg-cyan-50">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-cyan-700 flex items-center gap-2">
@@ -147,6 +180,7 @@ export default function RiskDashboard() {
         <Tabs defaultValue="patients" className="space-y-4">
           <TabsList>
             <TabsTrigger value="patients">At-Risk Patients</TabsTrigger>
+            <TabsTrigger value="barriers">Readiness Barriers</TabsTrigger>
             <TabsTrigger value="segments">Segment Analysis</TabsTrigger>
             <TabsTrigger value="actions">Action Items</TabsTrigger>
           </TabsList>
@@ -188,6 +222,127 @@ export default function RiskDashboard() {
                   <div className="text-center py-8 text-slate-500">
                     <Activity className="w-12 h-12 mx-auto mb-3 text-slate-300" />
                     <p>No at-risk patients identified</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Readiness Barriers Tab (Non-Clinical) */}
+          <TabsContent value="barriers">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <ClipboardList className="w-5 h-5" />
+                  Readiness Barriers Overview
+                </CardTitle>
+                <CardDescription>
+                  Non-clinical operational tracking for transplant readiness
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {/* Non-clinical disclaimer */}
+                <Alert className="mb-6 bg-blue-50 border-blue-200">
+                  <Info className="h-4 w-4 text-blue-600" />
+                  <AlertDescription className="text-blue-700 text-sm">
+                    <strong>Non-Clinical Notice:</strong> Readiness barriers are operational workflow items only. 
+                    They do not affect allocation decisions or replace UNOS/OPTN systems.
+                  </AlertDescription>
+                </Alert>
+
+                {/* Barrier Statistics */}
+                {barrierDashboard && (
+                  <div className="space-y-6">
+                    {/* Summary Stats */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div className="p-4 bg-slate-50 rounded-lg">
+                        <div className="text-sm text-slate-600">Open Barriers</div>
+                        <div className="text-2xl font-bold text-slate-900">{barrierDashboard.byStatus?.open || 0}</div>
+                      </div>
+                      <div className="p-4 bg-slate-50 rounded-lg">
+                        <div className="text-sm text-slate-600">In Progress</div>
+                        <div className="text-2xl font-bold text-slate-900">{barrierDashboard.byStatus?.in_progress || 0}</div>
+                      </div>
+                      <div className="p-4 bg-red-50 rounded-lg">
+                        <div className="text-sm text-red-600">High Risk</div>
+                        <div className="text-2xl font-bold text-red-900">{barrierDashboard.byRiskLevel?.high || 0}</div>
+                      </div>
+                      <div className="p-4 bg-amber-50 rounded-lg">
+                        <div className="text-sm text-amber-600">Overdue</div>
+                        <div className="text-2xl font-bold text-amber-900">{barrierDashboard.overdueBarriers || 0}</div>
+                      </div>
+                    </div>
+
+                    {/* Barriers by Type */}
+                    <div>
+                      <h4 className="font-medium text-slate-700 mb-3">Barriers by Type</h4>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        {Object.entries(barrierDashboard.byType || {}).map(([type, count]) => (
+                          count > 0 && (
+                            <div key={type} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+                              <span className="text-sm text-slate-600">{type.replace(/_/g, ' ')}</span>
+                              <Badge variant="outline">{count}</Badge>
+                            </div>
+                          )
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Top Barrier Patients */}
+                    <div>
+                      <h4 className="font-medium text-slate-700 mb-3">Patients with Most Barriers</h4>
+                      {barrierDashboard.topBarrierPatients?.length > 0 ? (
+                        <div className="space-y-2">
+                          {barrierDashboard.topBarrierPatients.map((patient) => (
+                            <div 
+                              key={patient.patientId}
+                              className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border"
+                            >
+                              <div>
+                                <Link 
+                                  to={`${createPageUrl('PatientDetails')}?id=${patient.patientId}`}
+                                  className="font-medium text-slate-900 hover:text-cyan-600 flex items-center gap-1"
+                                >
+                                  {patient.patientName}
+                                  <ExternalLink className="w-3 h-3" />
+                                </Link>
+                                <div className="text-sm text-slate-500">{patient.mrn}</div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {patient.highRiskCount > 0 && (
+                                  <BarrierRiskBadge riskLevel="high" size="sm" />
+                                )}
+                                <Badge className={patient.highRiskCount > 0 ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}>
+                                  {patient.barrierCount} barrier{patient.barrierCount !== 1 ? 's' : ''}
+                                </Badge>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-center py-8 text-slate-500">
+                          <Activity className="w-12 h-12 mx-auto mb-3 text-green-300" />
+                          <p>No patients with readiness barriers</p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* By Owning Role */}
+                    {barrierDashboard.byOwningRole && Object.keys(barrierDashboard.byOwningRole).length > 0 && (
+                      <div>
+                        <h4 className="font-medium text-slate-700 mb-3">Barriers by Responsible Team</h4>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                          {Object.entries(barrierDashboard.byOwningRole).map(([role, count]) => (
+                            count > 0 && (
+                              <div key={role} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+                                <span className="text-sm text-slate-600 capitalize">{role.replace(/_/g, ' ')}</span>
+                                <Badge variant="outline">{count}</Badge>
+                              </div>
+                            )
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </CardContent>
@@ -253,6 +408,11 @@ export default function RiskDashboard() {
                           <Badge className={item.priority === 'URGENT' ? 'bg-red-600' : 'bg-orange-600'}>
                             {item.priority}
                           </Badge>
+                          {item.isNonClinical && (
+                            <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
+                              Non-Clinical
+                            </Badge>
+                          )}
                           <span className="font-medium text-slate-900">
                             {item.patient || item.segment}
                           </span>

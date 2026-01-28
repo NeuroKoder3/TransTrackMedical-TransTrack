@@ -6,14 +6,17 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import { 
   Shield, FileCheck, Database, Users, Clock, Download,
-  CheckCircle, XCircle, AlertTriangle, Search, RefreshCw
+  CheckCircle, XCircle, AlertTriangle, Search, RefreshCw,
+  ClipboardList, Info
 } from 'lucide-react';
 import { format } from 'date-fns';
+import api from '@/api/localClient';
 
 export default function ComplianceCenter() {
   const [auditFilters, setAuditFilters] = useState({
@@ -21,6 +24,11 @@ export default function ComplianceCenter() {
     endDate: '',
     entityType: '',
     limit: 100,
+  });
+
+  const [barrierAuditFilters, setBarrierAuditFilters] = useState({
+    startDate: '',
+    endDate: '',
   });
 
   const { data: summary, isLoading: loadingSummary } = useQuery({
@@ -61,6 +69,22 @@ export default function ComplianceCenter() {
       }
       return null;
     },
+  });
+
+  // Barrier audit history
+  const { data: barrierAuditHistory = [], refetch: refetchBarrierAudit } = useQuery({
+    queryKey: ['barrierAuditHistory', barrierAuditFilters],
+    queryFn: () => api.barriers.getAuditHistory(
+      null, 
+      barrierAuditFilters.startDate || null, 
+      barrierAuditFilters.endDate || null
+    ),
+  });
+
+  // Barrier dashboard for summary
+  const { data: barrierDashboard } = useQuery({
+    queryKey: ['barrierDashboard'],
+    queryFn: () => api.barriers.getDashboard(),
   });
 
   const getStatusIcon = (status) => {
@@ -177,6 +201,7 @@ export default function ComplianceCenter() {
           <TabsList>
             <TabsTrigger value="validation">Validation Report</TabsTrigger>
             <TabsTrigger value="audit">Audit Trail</TabsTrigger>
+            <TabsTrigger value="barriers">Barrier Audit</TabsTrigger>
             <TabsTrigger value="completeness">Data Completeness</TabsTrigger>
           </TabsList>
 
@@ -291,6 +316,151 @@ export default function ComplianceCenter() {
                 </div>
                 <p className="text-sm text-slate-500 mt-2">
                   Showing {Math.min(50, auditTrail?.logs?.length || 0)} of {auditTrail?.count || 0} entries
+                </p>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Barrier Audit Trail Tab */}
+          <TabsContent value="barriers">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <ClipboardList className="w-5 h-5" />
+                  Readiness Barrier Audit Trail
+                </CardTitle>
+                <CardDescription>
+                  Complete audit history for non-clinical readiness barriers
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {/* Non-clinical disclaimer */}
+                <Alert className="mb-4 bg-blue-50 border-blue-200">
+                  <Info className="h-4 w-4 text-blue-600" />
+                  <AlertDescription className="text-blue-700 text-sm">
+                    <strong>Non-Clinical Notice:</strong> Readiness barriers are operational tracking items only. 
+                    They do not affect allocation decisions or replace UNOS/OPTN systems.
+                  </AlertDescription>
+                </Alert>
+
+                {/* Summary Stats */}
+                {barrierDashboard && (
+                  <div className="mb-6 p-4 bg-slate-50 rounded-lg">
+                    <div className="grid grid-cols-4 gap-4 text-center">
+                      <div>
+                        <div className="text-2xl font-bold text-slate-900">
+                          {barrierDashboard.patientsWithBarriers || 0}
+                        </div>
+                        <div className="text-sm text-slate-500">Patients with Barriers</div>
+                      </div>
+                      <div>
+                        <div className="text-2xl font-bold text-amber-600">
+                          {barrierDashboard.totalOpenBarriers || 0}
+                        </div>
+                        <div className="text-sm text-slate-500">Total Open</div>
+                      </div>
+                      <div>
+                        <div className="text-2xl font-bold text-red-600">
+                          {barrierDashboard.byRiskLevel?.high || 0}
+                        </div>
+                        <div className="text-sm text-slate-500">High Risk</div>
+                      </div>
+                      <div>
+                        <div className="text-2xl font-bold text-orange-600">
+                          {barrierDashboard.overdueBarriers || 0}
+                        </div>
+                        <div className="text-sm text-slate-500">Overdue</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Filters */}
+                <div className="flex gap-4 mb-4">
+                  <div className="flex-1">
+                    <Label>Start Date</Label>
+                    <Input 
+                      type="date" 
+                      value={barrierAuditFilters.startDate}
+                      onChange={(e) => setBarrierAuditFilters({...barrierAuditFilters, startDate: e.target.value})}
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <Label>End Date</Label>
+                    <Input 
+                      type="date" 
+                      value={barrierAuditFilters.endDate}
+                      onChange={(e) => setBarrierAuditFilters({...barrierAuditFilters, endDate: e.target.value})}
+                    />
+                  </div>
+                  <div className="flex items-end">
+                    <Button onClick={() => refetchBarrierAudit()}>
+                      <Search className="w-4 h-4 mr-2" />
+                      Search
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Audit Table */}
+                <div className="border rounded-lg overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Timestamp</TableHead>
+                        <TableHead>Action</TableHead>
+                        <TableHead>Patient</TableHead>
+                        <TableHead>User</TableHead>
+                        <TableHead>Details</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {barrierAuditHistory.length > 0 ? (
+                        barrierAuditHistory.slice(0, 100).map((log) => (
+                          <TableRow key={log.id}>
+                            <TableCell className="text-sm">
+                              {log.created_date ? format(new Date(log.created_date), 'MMM d, yyyy HH:mm') : 'N/A'}
+                            </TableCell>
+                            <TableCell>
+                              <Badge 
+                                variant="outline"
+                                className={
+                                  log.action === 'create' ? 'bg-green-50 text-green-700 border-green-200' :
+                                  log.action === 'resolve' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                                  log.action === 'delete' ? 'bg-red-50 text-red-700 border-red-200' :
+                                  'bg-amber-50 text-amber-700 border-amber-200'
+                                }
+                              >
+                                {log.action}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="font-medium">{log.patient_name || '—'}</TableCell>
+                            <TableCell>{log.user_email}</TableCell>
+                            <TableCell className="text-sm text-slate-500 max-w-xs">
+                              {(() => {
+                                try {
+                                  const details = JSON.parse(log.details);
+                                  if (details.barrier_type) return `Type: ${details.barrier_type.replace(/_/g, ' ')}`;
+                                  if (details.changes) return `Changed: ${Object.keys(details.changes).join(', ')}`;
+                                  return log.details;
+                                } catch {
+                                  return log.details;
+                                }
+                              })()}
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      ) : (
+                        <TableRow>
+                          <TableCell colSpan={5} className="text-center py-8 text-slate-500">
+                            No barrier audit entries found
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+                <p className="text-sm text-slate-500 mt-2">
+                  Showing {Math.min(100, barrierAuditHistory.length)} entries
                 </p>
               </CardContent>
             </Card>

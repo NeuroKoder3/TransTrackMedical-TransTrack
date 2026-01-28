@@ -378,6 +378,55 @@ function createSchema() {
     CREATE INDEX IF NOT EXISTS idx_access_logs_entity ON access_justification_logs(entity_type, entity_id);
   `);
   
+  // Readiness Barriers table (Non-Clinical Operational Tracking)
+  // Purpose: Track non-clinical, non-allocative barriers to transplant readiness
+  // for operational workflow visibility only. Does NOT perform allocation decisions,
+  // listing authority functions, or replace UNOS/OPTN systems.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS readiness_barriers (
+      id TEXT PRIMARY KEY,
+      patient_id TEXT NOT NULL,
+      barrier_type TEXT NOT NULL CHECK(barrier_type IN (
+        'PENDING_TESTING',
+        'INSURANCE_CLEARANCE',
+        'TRANSPORTATION_PLAN',
+        'CAREGIVER_SUPPORT',
+        'HOUSING_DISTANCE',
+        'PSYCHOSOCIAL_FOLLOWUP',
+        'FINANCIAL_CLEARANCE',
+        'OTHER_NON_CLINICAL'
+      )),
+      status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open', 'in_progress', 'resolved')),
+      risk_level TEXT NOT NULL DEFAULT 'low' CHECK(risk_level IN ('low', 'moderate', 'high')),
+      owning_role TEXT NOT NULL CHECK(owning_role IN (
+        'social_work',
+        'financial',
+        'coordinator',
+        'other'
+      )),
+      identified_date TEXT NOT NULL DEFAULT (datetime('now')),
+      target_resolution_date TEXT,
+      resolved_date TEXT,
+      notes TEXT CHECK(length(notes) <= 255),
+      created_by TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      updated_by TEXT,
+      FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE,
+      FOREIGN KEY (created_by) REFERENCES users(id)
+    )
+  `);
+  
+  // Create indexes for readiness_barriers
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_barriers_patient_id ON readiness_barriers(patient_id);
+    CREATE INDEX IF NOT EXISTS idx_barriers_status ON readiness_barriers(status);
+    CREATE INDEX IF NOT EXISTS idx_barriers_risk_level ON readiness_barriers(risk_level);
+    CREATE INDEX IF NOT EXISTS idx_barriers_type ON readiness_barriers(barrier_type);
+    CREATE INDEX IF NOT EXISTS idx_barriers_owning_role ON readiness_barriers(owning_role);
+    CREATE INDEX IF NOT EXISTS idx_barriers_created_at ON readiness_barriers(created_at DESC);
+  `);
+  
   console.log('Database schema created');
 }
 
