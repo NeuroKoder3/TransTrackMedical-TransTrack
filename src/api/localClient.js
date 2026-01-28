@@ -1,14 +1,12 @@
 /**
  * TransTrack - Local API Client
  * 
- * Provides the same interface as the old api client but uses
- * Electron IPC for local database operations.
- * 
- * This ensures all existing code works without modification.
+ * Provides the API interface using Electron IPC for local database operations.
  */
 
 // Check if running in Electron
 const isElectron = typeof window !== 'undefined' && window.electronAPI;
+console.log('LocalClient: isElectron =', isElectron, 'electronAPI =', !!window?.electronAPI);
 
 // Create a mock client for development in browser
 const mockClient = {

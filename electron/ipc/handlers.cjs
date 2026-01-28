@@ -75,7 +75,7 @@ function setupIPCHandlers() {
       `).run(sessionId, user.id, expiresAt);
       
       // Update last login
-      db.prepare('UPDATE users SET last_login = datetime("now") WHERE id = ?').run(user.id);
+      db.prepare("UPDATE users SET last_login = datetime('now') WHERE id = ?").run(user.id);
       
       // Store current session
       currentSession = sessionId;
@@ -150,7 +150,7 @@ function setupIPCHandlers() {
     }
     
     const hashedPassword = await bcrypt.hash(newPassword, 12);
-    db.prepare('UPDATE users SET password_hash = ?, updated_date = datetime("now") WHERE id = ?')
+    db.prepare("UPDATE users SET password_hash = ?, updated_date = datetime('now') WHERE id = ?")
       .run(hashedPassword, currentUser.id);
     
     logAudit('update', 'User', currentUser.id, null, 'Password changed', currentUser.email, currentUser.role);
@@ -210,7 +210,7 @@ function setupIPCHandlers() {
     }
     
     if (updates.length > 0) {
-      updates.push('updated_date = datetime("now")');
+      updates.push("updated_date = datetime('now')");
       values.push(id);
       
       db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...values);

@@ -20,13 +20,18 @@ export default function Login() {
     setIsLoading(true);
 
     try {
-      await login(email, password);
-      // Redirect handled by AuthContext
+      console.log('Attempting login with:', email);
+      const result = await login(email, password);
+      console.log('Login successful:', result);
+      // Redirect to dashboard
       window.location.hash = '#/';
-      window.location.reload();
+      // Small delay before reload to ensure state is saved
+      setTimeout(() => {
+        window.location.reload();
+      }, 100);
     } catch (err) {
+      console.error('Login error:', err);
       setError(err.message || 'Invalid credentials. Please try again.');
-    } finally {
       setIsLoading(false);
     }
   };
