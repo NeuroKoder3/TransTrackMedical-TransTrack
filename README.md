@@ -1,6 +1,6 @@
 # TransTrack
 
-## Transplant Waitlist Management System
+## Transplant Operations & Workflow Management
 
 [![License](https://img.shields.io/badge/license-Commercial-blue.svg)](LICENSE)
 [![Price](https://img.shields.io/badge/price-from%20%242%2C499-green.svg)](PRICING.md)
@@ -23,7 +23,49 @@
   <img src="docs/images/dashboard-preview.svg" alt="TransTrack Dashboard" width="800">
 </p>
 
-**TransTrack** is a comprehensive, **fully offline**, **HIPAA-compliant** desktop application for managing organ transplant waitlists. Built with modern technologies and designed for transplant centers, hospitals, and tissue banks that require regulatory compliance without cloud dependencies.
+**TransTrack** is a comprehensive, **fully offline**, **HIPAA-compliant** desktop application for transplant operations teams. Built with modern technologies and designed for transplant centers, OPOs, and tissue banks that require regulatory compliance without cloud dependencies.
+
+---
+
+## Why TransTrack Exists
+
+TransTrack was built to address a gap in transplant operations: **operational visibility and readiness risk** that sits outside of national allocation systems.
+
+It focuses on surfacing non-clinical and administrative risks such as expiring evaluations, documentation gaps, and status churn that can quietly place candidates at risk of inactivation.
+
+> **Important Clarification**: TransTrack provides operational prioritization indicators for internal workflow management. It does **not** perform allocation decisions, listing authority functions, or replace UNOS, OPTN, or any national systems.
+
+---
+
+## Who This Is For
+
+TransTrack is intended for:
+
+- **Transplant operations and coordination teams** - Workflow visibility and readiness tracking
+- **OPO operations and quality teams** - Documentation and compliance management
+- **Clinical informatics and healthcare IT groups** - Secure, offline-first data management
+- **Compliance and audit stakeholders** - Immutable audit trails and validation artifacts
+
+**TransTrack is NOT intended for:**
+
+- ❌ Allocation decisions
+- ❌ Listing authority
+- ❌ Replacement of UNOS, OPTN, or national systems
+
+---
+
+## Core Value: Operational Risk Intelligence
+
+The heart of TransTrack is proactive risk detection that helps teams stay ahead of operational issues:
+
+- **Expiring Evaluations** - Surface candidates with evaluations approaching expiration
+- **Documentation Gaps** - Identify missing or stale documentation before it causes problems
+- **Status Churn Detection** - Track candidates with frequent status changes that may indicate workflow issues
+- **Readiness Tracking** - Operational indicators for internal workflow visibility
+
+<p align="center">
+  <img src="docs/images/risk-dashboard.svg" alt="Risk Intelligence Dashboard" width="700">
+</p>
 
 ---
 
@@ -31,7 +73,7 @@
 
 ### Patient Waitlist Management
 - Complete patient demographics and medical history
-- Automated priority scoring based on UNOS-aligned algorithms
+- Operational prioritization indicators aligned with publicly documented concepts, intended solely for internal workflow visibility and readiness tracking (does not perform allocation or listing decisions)
 - Real-time waitlist status tracking
 - Comprehensive patient search and filtering
 
@@ -42,13 +84,13 @@
 - Virtual crossmatch simulation
 - Predicted graft survival calculations
 
-### Priority Calculation Engine
-- **MELD Score** integration for liver transplants
-- **LAS Score** integration for lung transplants
-- **PRA/CPRA** tracking for kidney transplants
-- Configurable weighting algorithms
-- Time-on-waitlist considerations
-- Medical urgency factoring
+### Operational Readiness Indicators
+- Reference display of publicly documented scoring concepts (MELD, LAS, PRA/CPRA) for informational purposes
+- Configurable workflow visibility settings
+- Time-on-waitlist tracking for operational awareness
+- Internal urgency indicators for workflow prioritization
+
+> **Note**: These indicators are for internal operational visibility only and do not perform or replace official allocation calculations.
 
 ### EHR Integration
 - **FHIR R4** data import/export
@@ -69,8 +111,7 @@
 - Complete data sovereignty
 - Secure backup/restore capabilities
 
-### Enterprise Features (NEW)
-- **Operational Risk Intelligence** - Proactive risk detection for documentation delays, expiring evaluations, and status churn
+### Enterprise Features
 - **Role-Based Access with Audit Justification** - Users must document reasons for accessing sensitive data
 - **Disaster Recovery & Business Continuity** - Automated backups, verification, and one-click restore
 - **Read-Only Compliance View** - Dedicated view for regulators and auditors
@@ -94,11 +135,6 @@
 ### Donor-Recipient Matching
 <p align="center">
   <img src="docs/images/donor-matching.svg" alt="Donor Matching" width="700">
-</p>
-
-### Operational Risk Intelligence
-<p align="center">
-  <img src="docs/images/risk-dashboard.svg" alt="Risk Intelligence Dashboard" width="700">
 </p>
 
 ### Compliance Center
@@ -130,6 +166,12 @@
 
 ## Installation
 
+> **⚠️ IMPORTANT**
+>
+> Pre-built installers and production builds are provided for **licensed or authorized evaluation use only**.
+>
+> **Do not use TransTrack with live patient data** without a valid commercial license and appropriate institutional approvals.
+
 ### Pre-built Installers
 
 Download the latest release for your platform:
@@ -160,16 +202,17 @@ npm run build:electron
 
 ---
 
-## Quick Start
+## Quick Start (Evaluation Only)
+
+> **Note**: These steps are for authorized evaluation environments only. Do not use with live patient data without a commercial license.
 
 1. **Launch TransTrack** from your applications menu
-2. **Login** with default credentials:
+2. **Login** with evaluation credentials:
    - Email: `admin@transtrack.local`
    - Password: `admin123`
 3. **Change your password** immediately (Settings → Security)
-4. **Add patients** to your waitlist
-5. **Register donors** when organs become available
-6. **Run matching** to find compatible recipients
+4. **Explore features** using sample/test data only
+5. **Contact sales** for production licensing: Trans_Track@outlook.com
 
 ---
 
@@ -228,34 +271,34 @@ TransTrack is designed for healthcare environments requiring strict regulatory c
 
 ## Use Cases
 
-### Transplant Centers
-- Manage multi-organ waitlists
-- Coordinate donor matching
-- Generate UNOS-compatible reports
+### Transplant Operations Teams
+- Operational workflow visibility and readiness tracking
+- Documentation gap identification
+- Internal coordination and status monitoring
 
-### Hospitals
-- Track transplant candidates
-- Interface with existing EHR systems
-- Maintain regulatory compliance
-
-### Tissue Banks
+### OPO Operations & Quality Teams
 - Donor registration and tracking
-- Quality documentation
-- Chain of custody management
+- Quality documentation management
+- Compliance and audit trail maintenance
 
-### Research Institutions
-- De-identified data analysis
-- Outcome tracking
-- Algorithm development
+### Clinical Informatics & Healthcare IT
+- Secure, offline-first data management
+- EHR integration via FHIR
+- Regulatory compliance infrastructure
+
+### Compliance & Audit Stakeholders
+- Immutable audit trails (FDA 21 CFR Part 11)
+- Read-only compliance views for regulators
+- Validation artifact generation
 
 ---
 
 ## Roadmap
 
 ### Version 1.1
-- [ ] Multi-organ transplant support
+- [ ] Multi-organ workflow support
 - [ ] Advanced reporting dashboard
-- [ ] Custom priority algorithm builder
+- [ ] Enhanced risk indicator configuration
 - [ ] Batch patient import
 
 ### Version 1.2
@@ -291,9 +334,11 @@ npm run lint
 
 ---
 
-## Pricing & Licensing
+## Licensing & Pricing
 
-TransTrack is commercial software requiring a paid license for use.
+TransTrack is commercial software requiring a paid license for production use.
+
+*Pricing reflects the regulatory, validation, and support requirements of clinical and operational healthcare environments.*
 
 | License | Price | Installations | Support |
 |---------|-------|---------------|---------|
@@ -308,17 +353,11 @@ TransTrack is commercial software requiring a paid license for use.
 - Academic institutions: 40% off
 - Multi-year commitments: Volume pricing
 
-📧 **Trans_Track@outlook.com**
-
-### Request a Demo
-
-Interested in seeing TransTrack in action? Schedule a personalized demo:
-
-📧 **Trans_Track@outlook.com**
-
 ### 14-Day Evaluation
 
-Qualified healthcare organizations can request a free 14-day evaluation license.
+Qualified healthcare organizations can request a free 14-day evaluation license for non-clinical, non-operational testing only.
+
+📧 **Trans_Track@outlook.com**
 
 ---
 
@@ -342,12 +381,12 @@ Custom integrations, training, and dedicated support:
 
 ## Keywords
 
-`transplant` `organ-transplant` `waitlist-management` `HIPAA` `FDA` `AATB` `UNOS` `medical-software` `healthcare` `EHR` `FHIR` `donor-matching` `organ-matching` `clinical-software` `hospital-software` `tissue-banking` `transplant-center` `organ-procurement` `patient-management` `healthcare-IT` `electron` `offline-first` `encrypted-database` `compliance` `regulatory` `medical-records`
+`transplant` `transplant-operations` `waitlist-management` `OPO` `HIPAA` `FDA-21-CFR-Part-11` `AATB` `clinical-informatics` `healthcare-IT` `FHIR` `audit-trail` `operational-risk` `offline-first` `encrypted-database` `compliance` `regulatory` `tissue-banking`
 
 ---
 
 <p align="center">
-  <strong>TransTrack</strong> - Secure, Compliant, Offline Transplant Management
+  <strong>TransTrack</strong> - Secure, Compliant, Offline Transplant Operations
   <br>
-  <em>Saving lives through better technology</em>
+  <em>Operational visibility for transplant teams</em>
 </p>
