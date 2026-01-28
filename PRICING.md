@@ -83,11 +83,26 @@ All licenses include:
 
 ## How to Purchase
 
-### Option 1: Online Purchase
-Visit our secure payment portal:
-**[Purchase TransTrack License](https://buy.stripe.com/transtrack)** *(Coming Soon)*
+### Option 1: PayPal Payment
+
+Pay securely via PayPal:
+
+1. **Select your tier** and click the appropriate PayPal link:
+   - [Starter - $2,499](https://www.paypal.me/lilnicole0383/2499USD)
+   - [Professional - $7,499](https://www.paypal.me/lilnicole0383/7499USD)
+   - [Enterprise - $24,999](https://www.paypal.me/lilnicole0383/24999USD)
+
+2. **Include your Organization ID** in the payment note (found in Settings → License)
+
+3. **Email confirmation** to Trans_Track@outlook.com with:
+   - Payment receipt
+   - Organization name
+   - Organization ID
+
+4. **Receive your license key** within 24-48 business hours
 
 ### Option 2: Purchase Order / Invoice
+
 For organizations requiring invoicing or purchase orders:
 
 📧 **Trans_Track@outlook.com**
@@ -99,9 +114,30 @@ Include:
 - Billing contact information
 
 ### Option 3: Request a Demo
+
 Schedule a personalized demo before purchasing:
 
 📧 **Trans_Track@outlook.com**
+
+---
+
+## Distribution Versions
+
+### Evaluation Version
+`TransTrack-Evaluation-[version]`
+- 14-day trial period
+- Non-clinical testing only
+- Max 50 patients, 5 donors
+- Watermarked UI
+- Cannot activate license keys
+
+### Enterprise Version
+`TransTrack-Enterprise-[version]`
+- Production use with valid license
+- Full features based on tier
+- License activation required
+
+📥 **[Download from GitHub Releases](../../releases)**
 
 ---
 

@@ -329,6 +329,40 @@ TransTrack is designed for healthcare environments requiring strict regulatory c
 
 ---
 
+## Distribution Versions
+
+TransTrack is distributed in two versions:
+
+### Evaluation Version
+
+Download: `TransTrack-Evaluation-[version]`
+
+**Purpose:** Product evaluation only - NOT for clinical or operational use.
+
+**Restrictions:**
+- 14-day time limit
+- Maximum 50 patients, 5 donors
+- Single user only
+- No data export/import
+- No FHIR integration
+- Watermarked UI
+
+### Enterprise Version
+
+Download: `TransTrack-Enterprise-[version]`
+
+**Purpose:** Licensed organizational use for production environments.
+
+**Features:**
+- Full feature set based on license tier
+- License enforcement
+- All compliance features enabled
+- Organization binding
+
+📥 **[Download from GitHub Releases](../../releases)**
+
+---
+
 ## Contributing
 
 We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
@@ -339,14 +373,20 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 # Install dependencies
 npm install
 
-# Start development server
+# Start development server (browser)
 npm run dev
 
 # Run Electron in development
 npm run dev:electron
 
-# Run tests
-npm test
+# Build Evaluation version (Windows)
+npm run build:eval:win
+
+# Build Enterprise version (Windows)
+npm run build:enterprise:win
+
+# Build all platforms (requires platform-specific tools)
+npm run build:all
 
 # Lint code
 npm run lint

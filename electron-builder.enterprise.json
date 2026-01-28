@@ -1,0 +1,60 @@
+{
+  "appId": "com.transtrack.enterprise",
+  "productName": "TransTrack Enterprise",
+  "copyright": "Copyright © 2026 TransTrack Medical Software",
+  "directories": {
+    "output": "release/enterprise",
+    "buildResources": "electron/assets"
+  },
+  "files": [
+    "dist/**/*",
+    "electron/**/*",
+    "!electron/assets/**/*",
+    ".build-version"
+  ],
+  "extraResources": [
+    {
+      "from": "electron/assets",
+      "to": "assets"
+    }
+  ],
+  "win": {
+    "target": [
+      {
+        "target": "nsis",
+        "arch": ["x64"]
+      }
+    ],
+    "icon": "electron/assets/icon.ico",
+    "artifactName": "TransTrack-Enterprise-${version}-${arch}.${ext}"
+  },
+  "mac": {
+    "target": [
+      {
+        "target": "dmg",
+        "arch": ["x64", "arm64"]
+      }
+    ],
+    "icon": "electron/assets/icon.icns",
+    "category": "public.app-category.medical",
+    "hardenedRuntime": true,
+    "entitlements": "electron/assets/entitlements.mac.plist",
+    "entitlementsInherit": "electron/assets/entitlements.mac.plist",
+    "artifactName": "TransTrack-Enterprise-${version}-${arch}.${ext}"
+  },
+  "linux": {
+    "target": ["AppImage", "deb"],
+    "icon": "electron/assets/icons",
+    "category": "Medical",
+    "artifactName": "TransTrack-Enterprise-${version}.${ext}"
+  },
+  "nsis": {
+    "oneClick": false,
+    "perMachine": true,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "TransTrack",
+    "license": "LICENSE"
+  }
+}

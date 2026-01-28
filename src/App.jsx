@@ -9,6 +9,7 @@ import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 import Login from '@/pages/Login';
 import LicenseActivation from '@/pages/LicenseActivation';
+import { EvaluationWatermark } from '@/components/license';
 import { useState, useEffect } from 'react';
 
 const { Pages, Layout, mainPage } = pagesConfig;
@@ -101,27 +102,32 @@ const AuthenticatedApp = () => {
 
   // Render the main app
   return (
-    <Routes>
-      <Route path="/" element={
-        <LayoutWrapper currentPageName={mainPageKey}>
-          <MainPage />
-        </LayoutWrapper>
-      } />
-      <Route path="/login" element={<Login />} />
-      <Route path="/license" element={<LicenseActivation onActivated={() => window.location.reload()} />} />
-      {Object.entries(Pages).map(([path, Page]) => (
-        <Route
-          key={path}
-          path={`/${path}`}
-          element={
-            <LayoutWrapper currentPageName={path}>
-              <Page />
-            </LayoutWrapper>
-          }
-        />
-      ))}
-      <Route path="*" element={<PageNotFound />} />
-    </Routes>
+    <>
+      {/* Evaluation watermark for evaluation builds */}
+      <EvaluationWatermark />
+      
+      <Routes>
+        <Route path="/" element={
+          <LayoutWrapper currentPageName={mainPageKey}>
+            <MainPage />
+          </LayoutWrapper>
+        } />
+        <Route path="/login" element={<Login />} />
+        <Route path="/license" element={<LicenseActivation onActivated={() => window.location.reload()} />} />
+        {Object.entries(Pages).map(([path, Page]) => (
+          <Route
+            key={path}
+            path={`/${path}`}
+            element={
+              <LayoutWrapper currentPageName={path}>
+                <Page />
+              </LayoutWrapper>
+            }
+          />
+        ))}
+        <Route path="*" element={<PageNotFound />} />
+      </Routes>
+    </>
   );
 };
 

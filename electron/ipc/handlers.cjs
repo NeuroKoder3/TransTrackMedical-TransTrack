@@ -10,6 +10,8 @@ const { getDatabase } = require('../database/init.cjs');
 const { v4: uuidv4 } = require('uuid');
 const bcrypt = require('bcryptjs');
 const licenseManager = require('../license/manager.cjs');
+const featureGate = require('../license/featureGate.cjs');
+const { FEATURES, LICENSE_TIER } = require('../license/tiers.cjs');
 const riskEngine = require('../services/riskEngine.cjs');
 const accessControl = require('../services/accessControl.cjs');
 const disasterRecovery = require('../services/disasterRecovery.cjs');
@@ -245,6 +247,28 @@ function setupIPCHandlers() {
     
     const tableName = entityTableMap[entityName];
     if (!tableName) throw new Error(`Unknown entity: ${entityName}`);
+    
+    // Check license limits for patients and donors
+    if (entityName === 'Patient') {
+      const currentCount = db.prepare('SELECT COUNT(*) as count FROM patients').get().count;
+      const limitCheck = featureGate.canWithinLimit('maxPatients', currentCount);
+      if (!limitCheck.allowed) {
+        throw new Error(`Patient limit reached (${limitCheck.limit}). Please upgrade your license to add more patients.`);
+      }
+    }
+    
+    if (entityName === 'DonorOrgan') {
+      const currentCount = db.prepare('SELECT COUNT(*) as count FROM donor_organs').get().count;
+      const limitCheck = featureGate.canWithinLimit('maxDonors', currentCount);
+      if (!limitCheck.allowed) {
+        throw new Error(`Donor limit reached (${limitCheck.limit}). Please upgrade your license to add more donors.`);
+      }
+    }
+    
+    // Check write access (not in read-only mode)
+    if (featureGate.isReadOnlyMode()) {
+      throw new Error('Application is in read-only mode. Please activate or renew your license to make changes.');
+    }
     
     // Generate ID if not provided
     const id = data.id || uuidv4();
@@ -773,20 +797,152 @@ function setupIPCHandlers() {
   });
   
   // ===== LICENSE MANAGEMENT =====
+  
+  // Get comprehensive license info
   ipcMain.handle('license:getInfo', async () => {
     return licenseManager.getLicenseInfo();
   });
   
+  // Activate license with key
   ipcMain.handle('license:activate', async (event, key, customerInfo) => {
-    return await licenseManager.activateLicense(key, customerInfo);
+    if (!currentUser) throw new Error('Not authenticated');
+    
+    // Log attempt
+    logAudit('license_activation_attempt', 'License', null, null, 
+      `License activation attempted`, currentUser.email, currentUser.role);
+    
+    try {
+      const result = await licenseManager.activateLicense(key, customerInfo);
+      
+      // Log success
+      logAudit('license_activated', 'License', null, null, 
+        `License activated: ${result.tierName}`, currentUser.email, currentUser.role);
+      
+      return result;
+    } catch (error) {
+      logAudit('license_activation_failed', 'License', null, null, 
+        `License activation failed: ${error.message}`, currentUser.email, currentUser.role);
+      throw error;
+    }
   });
   
+  // Renew maintenance
+  ipcMain.handle('license:renewMaintenance', async (event, renewalKey, years) => {
+    if (!currentUser) throw new Error('Not authenticated');
+    if (currentUser.role !== 'admin') throw new Error('Admin access required');
+    
+    const result = await licenseManager.renewMaintenance(renewalKey, years);
+    
+    logAudit('maintenance_renewed', 'License', null, null, 
+      `Maintenance renewed for ${years} year(s)`, currentUser.email, currentUser.role);
+    
+    return result;
+  });
+  
+  // Check if license is valid
   ipcMain.handle('license:isValid', async () => {
     return licenseManager.isLicenseValid();
   });
   
+  // Get current license tier
+  ipcMain.handle('license:getTier', async () => {
+    return licenseManager.getCurrentTier();
+  });
+  
+  // Get tier limits
+  ipcMain.handle('license:getLimits', async () => {
+    const tier = licenseManager.getCurrentTier();
+    return licenseManager.getTierLimits(tier);
+  });
+  
+  // Check feature access
+  ipcMain.handle('license:checkFeature', async (event, feature) => {
+    return featureGate.canAccessFeature(feature);
+  });
+  
+  // Check limit
+  ipcMain.handle('license:checkLimit', async (event, limitType, currentCount) => {
+    return featureGate.canWithinLimit(limitType, currentCount);
+  });
+  
+  // Get application state
+  ipcMain.handle('license:getAppState', async () => {
+    return featureGate.checkApplicationState();
+  });
+  
+  // Get payment options
+  ipcMain.handle('license:getPaymentOptions', async () => {
+    return licenseManager.getAllPaymentOptions();
+  });
+  
+  // Get payment info for specific tier
+  ipcMain.handle('license:getPaymentInfo', async (event, tier) => {
+    return licenseManager.getPaymentInfo(tier);
+  });
+  
+  // Get organization info
+  ipcMain.handle('license:getOrganization', async () => {
+    return licenseManager.getOrganizationInfo();
+  });
+  
+  // Update organization info
+  ipcMain.handle('license:updateOrganization', async (event, updates) => {
+    if (!currentUser) throw new Error('Not authenticated');
+    if (currentUser.role !== 'admin') throw new Error('Admin access required');
+    
+    return licenseManager.updateOrganizationInfo(updates);
+  });
+  
+  // Get maintenance status
+  ipcMain.handle('license:getMaintenanceStatus', async () => {
+    return licenseManager.getMaintenanceStatus();
+  });
+  
+  // Get license audit history
+  ipcMain.handle('license:getAuditHistory', async (event, limit) => {
+    if (!currentUser) throw new Error('Not authenticated');
+    return licenseManager.getLicenseAuditHistory(limit);
+  });
+  
+  // Check if evaluation build
+  ipcMain.handle('license:isEvaluationBuild', async () => {
+    return licenseManager.isEvaluationBuild();
+  });
+  
+  // Get evaluation status
+  ipcMain.handle('license:getEvaluationStatus', async () => {
+    return {
+      isEvaluation: licenseManager.isEvaluationMode(),
+      daysRemaining: licenseManager.getEvaluationDaysRemaining(),
+      expired: licenseManager.isEvaluationExpired(),
+      inGracePeriod: licenseManager.isInEvaluationGracePeriod(),
+    };
+  });
+  
+  // Get all features and their status
+  ipcMain.handle('license:getAllFeatures', async () => {
+    const tier = licenseManager.getCurrentTier();
+    const allFeatures = Object.values(FEATURES);
+    
+    return allFeatures.map(feature => ({
+      feature,
+      ...featureGate.canAccessFeature(feature),
+    }));
+  });
+  
+  // Check full access (combined checks)
+  ipcMain.handle('license:checkFullAccess', async (event, options) => {
+    return featureGate.checkFullAccess(options);
+  });
+  
   // ===== FILE OPERATIONS =====
   ipcMain.handle('file:exportCSV', async (event, data, filename) => {
+    // Check feature access for data export
+    const exportCheck = featureGate.canAccessFeature(FEATURES.DATA_EXPORT);
+    if (!exportCheck.allowed) {
+      throw new Error('Data export is not available in your current license tier. Please upgrade to export data.');
+    }
+    
     const { dialog } = require('electron');
     const fs = require('fs');
     

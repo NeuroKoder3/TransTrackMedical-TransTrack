@@ -177,9 +177,38 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // License management
   license: {
+    // Core license info
     getInfo: () => ipcRenderer.invoke('license:getInfo'),
     activate: (key, customerInfo) => ipcRenderer.invoke('license:activate', key, customerInfo),
+    renewMaintenance: (renewalKey, years) => ipcRenderer.invoke('license:renewMaintenance', renewalKey, years),
     isValid: () => ipcRenderer.invoke('license:isValid'),
+    getTier: () => ipcRenderer.invoke('license:getTier'),
+    getLimits: () => ipcRenderer.invoke('license:getLimits'),
+    
+    // Feature gating
+    checkFeature: (feature) => ipcRenderer.invoke('license:checkFeature', feature),
+    checkLimit: (limitType, currentCount) => ipcRenderer.invoke('license:checkLimit', limitType, currentCount),
+    getAllFeatures: () => ipcRenderer.invoke('license:getAllFeatures'),
+    checkFullAccess: (options) => ipcRenderer.invoke('license:checkFullAccess', options),
+    
+    // Application state
+    getAppState: () => ipcRenderer.invoke('license:getAppState'),
+    isEvaluationBuild: () => ipcRenderer.invoke('license:isEvaluationBuild'),
+    getEvaluationStatus: () => ipcRenderer.invoke('license:getEvaluationStatus'),
+    
+    // Organization
+    getOrganization: () => ipcRenderer.invoke('license:getOrganization'),
+    updateOrganization: (updates) => ipcRenderer.invoke('license:updateOrganization', updates),
+    
+    // Maintenance
+    getMaintenanceStatus: () => ipcRenderer.invoke('license:getMaintenanceStatus'),
+    
+    // Payment & purchasing
+    getPaymentOptions: () => ipcRenderer.invoke('license:getPaymentOptions'),
+    getPaymentInfo: (tier) => ipcRenderer.invoke('license:getPaymentInfo', tier),
+    
+    // Audit
+    getAuditHistory: (limit) => ipcRenderer.invoke('license:getAuditHistory', limit),
   },
   
   // Operational Risk Intelligence
