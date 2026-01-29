@@ -39,7 +39,7 @@ export const AuthProvider = ({ children }) => {
       
       setIsLoadingAuth(false);
     } catch (error) {
-      console.error('Auth check failed:', error);
+      // Session may have expired or user not authenticated
       setIsLoadingAuth(false);
       setIsAuthenticated(false);
     }
@@ -50,11 +50,7 @@ export const AuthProvider = ({ children }) => {
       setIsLoadingAuth(true);
       setAuthError(null);
       
-      console.log('AuthContext: Calling api.auth.login');
-      console.log('electronAPI available:', !!window.electronAPI);
-      
       const result = await api.auth.login({ email, password });
-      console.log('AuthContext: Login result:', result);
       
       setUser(result);
       setIsAuthenticated(true);
@@ -62,7 +58,6 @@ export const AuthProvider = ({ children }) => {
       
       return result;
     } catch (error) {
-      console.error('AuthContext: Login error:', error);
       setAuthError({
         type: 'login_failed',
         message: error.message || 'Login failed'

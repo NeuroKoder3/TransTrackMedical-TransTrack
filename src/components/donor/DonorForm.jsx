@@ -5,7 +5,8 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { X, Save, Search } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { X, Save, Search, AlertCircle } from 'lucide-react';
 
 export default function DonorForm({ donor, onSave, onCancel, onMatch }) {
   const [formData, setFormData] = useState(donor || {
@@ -25,19 +26,86 @@ export default function DonorForm({ donor, onSave, onCancel, onMatch }) {
     expiration_date: '',
   });
 
+  const [validationErrors, setValidationErrors] = useState({});
+  const [showErrors, setShowErrors] = useState(false);
+
   const handleChange = (field, value) => {
     setFormData({ ...formData, [field]: value });
+    // Clear validation error for this field when user makes changes
+    if (validationErrors[field]) {
+      setValidationErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors[field];
+        return newErrors;
+      });
+    }
+  };
+
+  // Validate form data
+  const validateForm = () => {
+    const errors = {};
+    
+    // Required field validations
+    if (!formData.donor_id || formData.donor_id.trim() === '') {
+      errors.donor_id = 'Donor ID is required';
+    }
+    if (!formData.organ_type) {
+      errors.organ_type = 'Organ type is required';
+    }
+    if (!formData.blood_type) {
+      errors.blood_type = 'Blood type is required';
+    }
+    
+    // Age validation
+    if (formData.donor_age !== null && formData.donor_age !== '' && 
+        (formData.donor_age < 0 || formData.donor_age > 120)) {
+      errors.donor_age = 'Donor age must be between 0 and 120';
+    }
+    
+    // Cold ischemia time validation
+    if (formData.cold_ischemia_time_hours !== null && formData.cold_ischemia_time_hours !== '' && 
+        formData.cold_ischemia_time_hours < 0) {
+      errors.cold_ischemia_time_hours = 'Cold ischemia time cannot be negative';
+    }
+    
+    setValidationErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleSave = () => {
+    setShowErrors(true);
+    if (validateForm()) {
+      onSave(formData);
+    }
   };
 
   const handleSaveAndMatch = async () => {
-    await onSave(formData);
-    if (onMatch) {
-      onMatch();
+    setShowErrors(true);
+    if (validateForm()) {
+      await onSave(formData);
+      if (onMatch) {
+        onMatch();
+      }
     }
   };
 
   return (
     <div className="space-y-6">
+      {/* Validation Error Summary */}
+      {showErrors && Object.keys(validationErrors).length > 0 && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            Please fix the following errors before saving:
+            <ul className="list-disc list-inside mt-2">
+              {Object.values(validationErrors).map((error, idx) => (
+                <li key={idx}>{error}</li>
+              ))}
+            </ul>
+          </AlertDescription>
+        </Alert>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle>Donor Information</CardTitle>
@@ -45,18 +113,27 @@ export default function DonorForm({ donor, onSave, onCancel, onMatch }) {
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <Label htmlFor="donor_id">Donor ID *</Label>
+              <Label htmlFor="donor_id" className={validationErrors.donor_id ? 'text-red-600' : ''}>
+                Donor ID *
+              </Label>
               <Input
                 id="donor_id"
                 value={formData.donor_id}
                 onChange={(e) => handleChange('donor_id', e.target.value)}
                 placeholder="DONOR-12345"
+                className={validationErrors.donor_id ? 'border-red-500' : ''}
+                aria-invalid={!!validationErrors.donor_id}
               />
+              {validationErrors.donor_id && (
+                <p className="text-sm text-red-600 mt-1">{validationErrors.donor_id}</p>
+              )}
             </div>
             <div>
-              <Label htmlFor="organ_type">Organ Type *</Label>
+              <Label htmlFor="organ_type" className={validationErrors.organ_type ? 'text-red-600' : ''}>
+                Organ Type *
+              </Label>
               <Select value={formData.organ_type} onValueChange={(value) => handleChange('organ_type', value)}>
-                <SelectTrigger>
+                <SelectTrigger className={validationErrors.organ_type ? 'border-red-500' : ''}>
                   <SelectValue placeholder="Select organ" />
                 </SelectTrigger>
                 <SelectContent>
@@ -69,11 +146,16 @@ export default function DonorForm({ donor, onSave, onCancel, onMatch }) {
                   <SelectItem value="intestine">Intestine</SelectItem>
                 </SelectContent>
               </Select>
+              {validationErrors.organ_type && (
+                <p className="text-sm text-red-600 mt-1">{validationErrors.organ_type}</p>
+              )}
             </div>
             <div>
-              <Label htmlFor="blood_type">Blood Type *</Label>
+              <Label htmlFor="blood_type" className={validationErrors.blood_type ? 'text-red-600' : ''}>
+                Blood Type *
+              </Label>
               <Select value={formData.blood_type} onValueChange={(value) => handleChange('blood_type', value)}>
-                <SelectTrigger>
+                <SelectTrigger className={validationErrors.blood_type ? 'border-red-500' : ''}>
                   <SelectValue placeholder="Select blood type" />
                 </SelectTrigger>
                 <SelectContent>
@@ -82,6 +164,9 @@ export default function DonorForm({ donor, onSave, onCancel, onMatch }) {
                   ))}
                 </SelectContent>
               </Select>
+              {validationErrors.blood_type && (
+                <p className="text-sm text-red-600 mt-1">{validationErrors.blood_type}</p>
+              )}
             </div>
           </div>
 
@@ -216,7 +301,7 @@ export default function DonorForm({ donor, onSave, onCancel, onMatch }) {
           <X className="w-4 h-4 mr-2" />
           Cancel
         </Button>
-        <Button onClick={() => onSave(formData)} className="bg-slate-600 hover:bg-slate-700">
+        <Button onClick={handleSave} className="bg-slate-600 hover:bg-slate-700">
           <Save className="w-4 h-4 mr-2" />
           {donor ? 'Update' : 'Add'} Donor
         </Button>

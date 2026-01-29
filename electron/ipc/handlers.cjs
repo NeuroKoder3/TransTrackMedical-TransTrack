@@ -3,6 +3,13 @@
  * 
  * Handles all communication between renderer and main process.
  * Implements secure data access with full audit logging.
+ * 
+ * Security Features:
+ * - SQL injection prevention via parameterized queries and column whitelisting
+ * - Session expiration validation
+ * - Account lockout after failed login attempts
+ * - Password strength requirements
+ * - Audit logging for all operations
  */
 
 const { ipcMain, dialog } = require('electron');
@@ -23,6 +30,148 @@ const ahhqService = require('../services/ahhqService.cjs');
 // Current session store
 let currentSession = null;
 let currentUser = null;
+let sessionExpiry = null;
+
+// Failed login tracking for account lockout
+const failedLoginAttempts = new Map(); // email -> { count, lastAttempt, lockedUntil }
+const MAX_LOGIN_ATTEMPTS = 5;
+const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes
+const SESSION_DURATION_MS = 8 * 60 * 60 * 1000; // 8 hours (reduced from 24 for security)
+
+// Allowed columns for ORDER BY to prevent SQL injection
+const ALLOWED_ORDER_COLUMNS = {
+  patients: ['id', 'patient_id', 'first_name', 'last_name', 'blood_type', 'organ_needed', 'medical_urgency', 'waitlist_status', 'priority_score', 'created_date', 'updated_date'],
+  donor_organs: ['id', 'donor_id', 'organ_type', 'blood_type', 'organ_status', 'status', 'created_date', 'updated_date'],
+  matches: ['id', 'compatibility_score', 'match_status', 'priority_rank', 'created_date', 'updated_date'],
+  notifications: ['id', 'title', 'notification_type', 'is_read', 'priority_level', 'created_date'],
+  notification_rules: ['id', 'rule_name', 'trigger_event', 'priority_level', 'is_active', 'created_date'],
+  priority_weights: ['id', 'name', 'is_active', 'created_date', 'updated_date'],
+  ehr_integrations: ['id', 'name', 'type', 'is_active', 'last_sync_date', 'created_date'],
+  ehr_imports: ['id', 'import_type', 'status', 'created_date', 'completed_date'],
+  ehr_sync_logs: ['id', 'sync_type', 'direction', 'status', 'created_date'],
+  ehr_validation_rules: ['id', 'field_name', 'rule_type', 'is_active', 'created_date'],
+  audit_logs: ['id', 'action', 'entity_type', 'user_email', 'created_date'],
+  users: ['id', 'email', 'full_name', 'role', 'is_active', 'created_date', 'last_login'],
+  readiness_barriers: ['id', 'patient_id', 'barrier_type', 'status', 'risk_level', 'created_at', 'updated_at'],
+  adult_health_history_questionnaires: ['id', 'patient_id', 'status', 'expiration_date', 'created_at', 'updated_at'],
+};
+
+// Password strength requirements
+const PASSWORD_REQUIREMENTS = {
+  minLength: 12,
+  requireUppercase: true,
+  requireLowercase: true,
+  requireNumber: true,
+  requireSpecial: true,
+};
+
+/**
+ * Validate password strength
+ * @param {string} password - The password to validate
+ * @returns {{ valid: boolean, errors: string[] }}
+ */
+function validatePasswordStrength(password) {
+  const errors = [];
+  
+  if (!password || password.length < PASSWORD_REQUIREMENTS.minLength) {
+    errors.push(`Password must be at least ${PASSWORD_REQUIREMENTS.minLength} characters`);
+  }
+  if (PASSWORD_REQUIREMENTS.requireUppercase && !/[A-Z]/.test(password)) {
+    errors.push('Password must contain at least one uppercase letter');
+  }
+  if (PASSWORD_REQUIREMENTS.requireLowercase && !/[a-z]/.test(password)) {
+    errors.push('Password must contain at least one lowercase letter');
+  }
+  if (PASSWORD_REQUIREMENTS.requireNumber && !/[0-9]/.test(password)) {
+    errors.push('Password must contain at least one number');
+  }
+  if (PASSWORD_REQUIREMENTS.requireSpecial && !/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) {
+    errors.push('Password must contain at least one special character (!@#$%^&*...)');
+  }
+  
+  return { valid: errors.length === 0, errors };
+}
+
+/**
+ * Check if account is locked due to failed login attempts
+ * @param {string} email - The email to check
+ * @returns {{ locked: boolean, remainingTime: number }}
+ */
+function checkAccountLockout(email) {
+  const attempts = failedLoginAttempts.get(email);
+  if (!attempts) return { locked: false, remainingTime: 0 };
+  
+  if (attempts.lockedUntil && Date.now() < attempts.lockedUntil) {
+    return { 
+      locked: true, 
+      remainingTime: Math.ceil((attempts.lockedUntil - Date.now()) / 1000 / 60) // minutes
+    };
+  }
+  
+  // Reset if lockout has expired
+  if (attempts.lockedUntil && Date.now() >= attempts.lockedUntil) {
+    failedLoginAttempts.delete(email);
+    return { locked: false, remainingTime: 0 };
+  }
+  
+  return { locked: false, remainingTime: 0 };
+}
+
+/**
+ * Record a failed login attempt
+ * @param {string} email - The email that failed to login
+ */
+function recordFailedLogin(email) {
+  const attempts = failedLoginAttempts.get(email) || { count: 0, lastAttempt: null, lockedUntil: null };
+  attempts.count++;
+  attempts.lastAttempt = Date.now();
+  
+  if (attempts.count >= MAX_LOGIN_ATTEMPTS) {
+    attempts.lockedUntil = Date.now() + LOCKOUT_DURATION_MS;
+  }
+  
+  failedLoginAttempts.set(email, attempts);
+}
+
+/**
+ * Clear failed login attempts after successful login
+ * @param {string} email - The email to clear
+ */
+function clearFailedLogins(email) {
+  failedLoginAttempts.delete(email);
+}
+
+/**
+ * Validate session is still active and not expired
+ * @returns {boolean}
+ */
+function validateSession() {
+  if (!currentSession || !currentUser || !sessionExpiry) {
+    return false;
+  }
+  
+  if (Date.now() > sessionExpiry) {
+    // Session expired - clear it
+    currentSession = null;
+    currentUser = null;
+    sessionExpiry = null;
+    return false;
+  }
+  
+  return true;
+}
+
+/**
+ * Validate ORDER BY column against whitelist to prevent SQL injection
+ * @param {string} tableName - The table name
+ * @param {string} column - The column name to validate
+ * @returns {boolean}
+ */
+function isValidOrderColumn(tableName, column) {
+  const allowedColumns = ALLOWED_ORDER_COLUMNS[tableName];
+  if (!allowedColumns) return false;
+  return allowedColumns.includes(column);
+}
 
 // Entity name to table name mapping
 const entityTableMap = {
@@ -60,20 +209,35 @@ function setupIPCHandlers() {
   // ===== AUTHENTICATION =====
   ipcMain.handle('auth:login', async (event, { email, password }) => {
     try {
+      // Check for account lockout
+      const lockoutStatus = checkAccountLockout(email);
+      if (lockoutStatus.locked) {
+        logAudit('login_blocked', 'User', null, null, `Login blocked: account locked for ${lockoutStatus.remainingTime} more minutes`, email, null);
+        throw new Error(`Account temporarily locked due to too many failed attempts. Try again in ${lockoutStatus.remainingTime} minutes.`);
+      }
+      
       const user = db.prepare('SELECT * FROM users WHERE email = ? AND is_active = 1').get(email);
       
       if (!user) {
+        recordFailedLogin(email);
+        logAudit('login_failed', 'User', null, null, 'Login failed: user not found', email, null);
         throw new Error('Invalid credentials');
       }
       
       const isValid = await bcrypt.compare(password, user.password_hash);
       if (!isValid) {
+        recordFailedLogin(email);
+        logAudit('login_failed', 'User', null, null, 'Login failed: invalid password', email, null);
         throw new Error('Invalid credentials');
       }
       
-      // Create session
+      // Clear failed login attempts on successful login
+      clearFailedLogins(email);
+      
+      // Create session with proper expiration
       const sessionId = uuidv4();
-      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(); // 24 hours
+      const expiresAtDate = new Date(Date.now() + SESSION_DURATION_MS);
+      const expiresAt = expiresAtDate.toISOString();
       
       db.prepare(`
         INSERT INTO sessions (id, user_id, expires_at)
@@ -83,8 +247,9 @@ function setupIPCHandlers() {
       // Update last login
       db.prepare("UPDATE users SET last_login = datetime('now') WHERE id = ?").run(user.id);
       
-      // Store current session
+      // Store current session with expiry
       currentSession = sessionId;
+      sessionExpiry = expiresAtDate.getTime();
       currentUser = {
         id: user.id,
         email: user.email,
@@ -92,13 +257,16 @@ function setupIPCHandlers() {
         role: user.role
       };
       
-      // Log login
-      logAudit('login', 'User', user.id, null, 'User logged in', user.email, user.role);
+      // Log login (without sensitive details)
+      logAudit('login', 'User', user.id, null, 'User logged in successfully', user.email, user.role);
       
       return { success: true, user: currentUser };
     } catch (error) {
-      logAudit('login_failed', 'User', null, null, `Login failed: ${error.message}`, email, null);
-      throw error;
+      // Don't expose internal error details to client
+      const safeMessage = error.message.includes('locked') || error.message === 'Invalid credentials' 
+        ? error.message 
+        : 'Authentication failed';
+      throw new Error(safeMessage);
     }
   });
   
@@ -113,14 +281,17 @@ function setupIPCHandlers() {
   });
   
   ipcMain.handle('auth:me', async () => {
-    if (!currentUser) {
-      throw new Error('Not authenticated');
+    if (!validateSession()) {
+      currentSession = null;
+      currentUser = null;
+      sessionExpiry = null;
+      throw new Error('Session expired. Please log in again.');
     }
     return currentUser;
   });
   
   ipcMain.handle('auth:isAuthenticated', async () => {
-    return !!currentUser;
+    return validateSession();
   });
   
   ipcMain.handle('auth:register', async (event, userData) => {
@@ -132,13 +303,30 @@ function setupIPCHandlers() {
       throw new Error('Registration not allowed. Please contact administrator.');
     }
     
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(userData.email)) {
+      throw new Error('Invalid email format');
+    }
+    
+    // Validate password strength
+    const passwordValidation = validatePasswordStrength(userData.password);
+    if (!passwordValidation.valid) {
+      throw new Error(`Password requirements not met: ${passwordValidation.errors.join(', ')}`);
+    }
+    
+    // Validate full name
+    if (!userData.full_name || userData.full_name.trim().length < 2) {
+      throw new Error('Full name must be at least 2 characters');
+    }
+    
     const hashedPassword = await bcrypt.hash(userData.password, 12);
     const userId = uuidv4();
     
     db.prepare(`
       INSERT INTO users (id, email, password_hash, full_name, role)
       VALUES (?, ?, ?, ?, ?)
-    `).run(userId, userData.email, hashedPassword, userData.full_name, userData.role || 'user');
+    `).run(userId, userData.email, hashedPassword, userData.full_name.trim(), userData.role || 'user');
     
     logAudit('create', 'User', userId, null, 'User registered', userData.email, userData.role || 'user');
     
@@ -146,7 +334,13 @@ function setupIPCHandlers() {
   });
   
   ipcMain.handle('auth:changePassword', async (event, { currentPassword, newPassword }) => {
-    if (!currentUser) throw new Error('Not authenticated');
+    if (!validateSession()) throw new Error('Session expired. Please log in again.');
+    
+    // Validate new password strength
+    const passwordValidation = validatePasswordStrength(newPassword);
+    if (!passwordValidation.valid) {
+      throw new Error(`Password requirements not met: ${passwordValidation.errors.join(', ')}`);
+    }
     
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(currentUser.id);
     const isValid = await bcrypt.compare(currentPassword, user.password_hash);
@@ -165,8 +359,20 @@ function setupIPCHandlers() {
   });
   
   ipcMain.handle('auth:createUser', async (event, userData) => {
-    if (!currentUser || currentUser.role !== 'admin') {
+    if (!validateSession() || currentUser.role !== 'admin') {
       throw new Error('Unauthorized: Admin access required');
+    }
+    
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(userData.email)) {
+      throw new Error('Invalid email format');
+    }
+    
+    // Validate password strength
+    const passwordValidation = validatePasswordStrength(userData.password);
+    if (!passwordValidation.valid) {
+      throw new Error(`Password requirements not met: ${passwordValidation.errors.join(', ')}`);
     }
     
     const hashedPassword = await bcrypt.hash(userData.password, 12);
@@ -177,13 +383,13 @@ function setupIPCHandlers() {
       VALUES (?, ?, ?, ?, ?, ?)
     `).run(userId, userData.email, hashedPassword, userData.full_name, userData.role || 'user', 1);
     
-    logAudit('create', 'User', userId, null, `User created: ${userData.email}`, currentUser.email, currentUser.role);
+    logAudit('create', 'User', userId, null, 'User created', currentUser.email, currentUser.role);
     
     return { success: true, id: userId };
   });
   
   ipcMain.handle('auth:listUsers', async () => {
-    if (!currentUser) throw new Error('Not authenticated');
+    if (!validateSession()) throw new Error('Session expired. Please log in again.');
     
     const users = db.prepare(`
       SELECT id, email, full_name, role, is_active, created_date, last_login
@@ -195,7 +401,7 @@ function setupIPCHandlers() {
   });
   
   ipcMain.handle('auth:updateUser', async (event, id, userData) => {
-    if (!currentUser || (currentUser.role !== 'admin' && currentUser.id !== id)) {
+    if (!validateSession() || (currentUser.role !== 'admin' && currentUser.id !== id)) {
       throw new Error('Unauthorized');
     }
     
@@ -207,12 +413,23 @@ function setupIPCHandlers() {
       values.push(userData.full_name);
     }
     if (userData.role !== undefined && currentUser.role === 'admin') {
+      // Validate role value
+      const validRoles = ['admin', 'coordinator', 'physician', 'user', 'viewer', 'regulator'];
+      if (!validRoles.includes(userData.role)) {
+        throw new Error('Invalid role specified');
+      }
       updates.push('role = ?');
       values.push(userData.role);
     }
     if (userData.is_active !== undefined && currentUser.role === 'admin') {
       updates.push('is_active = ?');
       values.push(userData.is_active ? 1 : 0);
+      
+      // If deactivating user, invalidate their sessions
+      if (!userData.is_active) {
+        db.prepare('DELETE FROM sessions WHERE user_id = ?').run(id);
+        logAudit('session_invalidated', 'User', id, null, 'User sessions invalidated due to account deactivation', currentUser.email, currentUser.role);
+      }
     }
     
     if (updates.length > 0) {
@@ -227,7 +444,7 @@ function setupIPCHandlers() {
   });
   
   ipcMain.handle('auth:deleteUser', async (event, id) => {
-    if (!currentUser || currentUser.role !== 'admin') {
+    if (!validateSession() || currentUser.role !== 'admin') {
       throw new Error('Unauthorized: Admin access required');
     }
     
@@ -236,16 +453,21 @@ function setupIPCHandlers() {
     }
     
     const user = db.prepare('SELECT email FROM users WHERE id = ?').get(id);
+    
+    // Delete user's sessions first
+    db.prepare('DELETE FROM sessions WHERE user_id = ?').run(id);
+    
+    // Delete the user
     db.prepare('DELETE FROM users WHERE id = ?').run(id);
     
-    logAudit('delete', 'User', id, null, `User deleted: ${user?.email}`, currentUser.email, currentUser.role);
+    logAudit('delete', 'User', id, null, 'User deleted', currentUser.email, currentUser.role);
     
     return { success: true };
   });
   
   // ===== ENTITY OPERATIONS =====
   ipcMain.handle('entity:create', async (event, entityName, data) => {
-    if (!currentUser) throw new Error('Not authenticated');
+    if (!validateSession()) throw new Error('Session expired. Please log in again.');
     
     const tableName = entityTableMap[entityName];
     if (!tableName) throw new Error(`Unknown entity: ${entityName}`);
@@ -356,7 +578,7 @@ function setupIPCHandlers() {
   });
   
   ipcMain.handle('entity:get', async (event, entityName, id) => {
-    if (!currentUser) throw new Error('Not authenticated');
+    if (!validateSession()) throw new Error('Session expired. Please log in again.');
     
     const tableName = entityTableMap[entityName];
     if (!tableName) throw new Error(`Unknown entity: ${entityName}`);
@@ -365,7 +587,7 @@ function setupIPCHandlers() {
   });
   
   ipcMain.handle('entity:update', async (event, entityName, id, data) => {
-    if (!currentUser) throw new Error('Not authenticated');
+    if (!validateSession()) throw new Error('Session expired. Please log in again.');
     
     const tableName = entityTableMap[entityName];
     if (!tableName) throw new Error(`Unknown entity: ${entityName}`);
@@ -427,7 +649,7 @@ function setupIPCHandlers() {
   });
   
   ipcMain.handle('entity:delete', async (event, entityName, id) => {
-    if (!currentUser) throw new Error('Not authenticated');
+    if (!validateSession()) throw new Error('Session expired. Please log in again.');
     
     const tableName = entityTableMap[entityName];
     if (!tableName) throw new Error(`Unknown entity: ${entityName}`);
@@ -454,25 +676,35 @@ function setupIPCHandlers() {
   });
   
   ipcMain.handle('entity:list', async (event, entityName, orderBy, limit) => {
-    if (!currentUser) throw new Error('Not authenticated');
+    if (!validateSession()) throw new Error('Session expired. Please log in again.');
     
     const tableName = entityTableMap[entityName];
     if (!tableName) throw new Error(`Unknown entity: ${entityName}`);
     
     let query = `SELECT * FROM ${tableName}`;
     
-    // Handle ordering
+    // Handle ordering with SQL injection prevention
     if (orderBy) {
       const desc = orderBy.startsWith('-');
       const field = desc ? orderBy.substring(1) : orderBy;
+      
+      // Validate column name against whitelist to prevent SQL injection
+      if (!isValidOrderColumn(tableName, field)) {
+        throw new Error(`Invalid sort field: ${field}`);
+      }
+      
       query += ` ORDER BY ${field} ${desc ? 'DESC' : 'ASC'}`;
     } else {
       query += ' ORDER BY created_date DESC';
     }
     
-    // Handle limit
+    // Handle limit with bounds validation
     if (limit) {
-      query += ` LIMIT ${parseInt(limit)}`;
+      const parsedLimit = parseInt(limit, 10);
+      if (isNaN(parsedLimit) || parsedLimit < 1 || parsedLimit > 10000) {
+        throw new Error('Invalid limit value. Must be between 1 and 10000.');
+      }
+      query += ` LIMIT ${parsedLimit}`;
     }
     
     const rows = db.prepare(query).all();
@@ -480,19 +712,26 @@ function setupIPCHandlers() {
   });
   
   ipcMain.handle('entity:filter', async (event, entityName, filters, orderBy, limit) => {
-    if (!currentUser) throw new Error('Not authenticated');
+    if (!validateSession()) throw new Error('Session expired. Please log in again.');
     
     const tableName = entityTableMap[entityName];
     if (!tableName) throw new Error(`Unknown entity: ${entityName}`);
+    
+    // Get allowed columns for this table to validate filter keys
+    const allowedColumns = ALLOWED_ORDER_COLUMNS[tableName] || [];
     
     let query = `SELECT * FROM ${tableName}`;
     const conditions = [];
     const values = [];
     
-    // Build WHERE clause
+    // Build WHERE clause with column validation
     if (filters && typeof filters === 'object') {
       for (const [key, value] of Object.entries(filters)) {
         if (value !== undefined && value !== null) {
+          // Validate filter column name to prevent SQL injection
+          if (!allowedColumns.includes(key) && !['id', 'created_date', 'updated_date'].includes(key)) {
+            throw new Error(`Invalid filter field: ${key}`);
+          }
           conditions.push(`${key} = ?`);
           values.push(value);
         }
@@ -503,18 +742,28 @@ function setupIPCHandlers() {
       query += ' WHERE ' + conditions.join(' AND ');
     }
     
-    // Handle ordering
+    // Handle ordering with SQL injection prevention
     if (orderBy) {
       const desc = orderBy.startsWith('-');
       const field = desc ? orderBy.substring(1) : orderBy;
+      
+      // Validate column name against whitelist
+      if (!isValidOrderColumn(tableName, field)) {
+        throw new Error(`Invalid sort field: ${field}`);
+      }
+      
       query += ` ORDER BY ${field} ${desc ? 'DESC' : 'ASC'}`;
     } else {
       query += ' ORDER BY created_date DESC';
     }
     
-    // Handle limit
+    // Handle limit with bounds validation
     if (limit) {
-      query += ` LIMIT ${parseInt(limit)}`;
+      const parsedLimit = parseInt(limit, 10);
+      if (isNaN(parsedLimit) || parsedLimit < 1 || parsedLimit > 10000) {
+        throw new Error('Invalid limit value. Must be between 1 and 10000.');
+      }
+      query += ` LIMIT ${parsedLimit}`;
     }
     
     const rows = db.prepare(query).all(...values);

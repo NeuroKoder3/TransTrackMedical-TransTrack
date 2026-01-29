@@ -20,9 +20,7 @@ export default function Login() {
     setIsLoading(true);
 
     try {
-      console.log('Attempting login with:', email);
-      const result = await login(email, password);
-      console.log('Login successful:', result);
+      await login(email, password);
       // Redirect to dashboard
       window.location.hash = '#/';
       // Small delay before reload to ensure state is saved
@@ -30,7 +28,6 @@ export default function Login() {
         window.location.reload();
       }, 100);
     } catch (err) {
-      console.error('Login error:', err);
       setError(err.message || 'Invalid credentials. Please try again.');
       setIsLoading(false);
     }
@@ -112,7 +109,7 @@ export default function Login() {
 
             <div className="mt-6 pt-4 border-t border-slate-100">
               <p className="text-xs text-center text-slate-500">
-                Default credentials: admin@transtrack.local / admin123
+                First-time users: Check the setup documentation for initial credentials.
               </p>
             </div>
           </CardContent>

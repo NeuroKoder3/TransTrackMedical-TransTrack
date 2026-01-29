@@ -38,11 +38,16 @@ async function initDatabase() {
   const dbPath = getDatabasePath();
   const encryptionKey = getEncryptionKey();
   
-  console.log('Initializing database at:', dbPath);
+  // Only log in development mode, never expose paths in production
+  if (process.env.NODE_ENV === 'development') {
+    console.log('Initializing database...');
+  }
   
   // Create database connection
+  // Note: For full HIPAA compliance, consider using better-sqlite3-sqlcipher
+  // and enabling encryption with: db.pragma(`key='${encryptionKey}'`);
   db = new Database(dbPath, {
-    verbose: process.env.NODE_ENV === 'development' ? console.log : null
+    verbose: null // Disable verbose logging for security
   });
   
   // Enable foreign keys and WAL mode for better performance
@@ -55,7 +60,9 @@ async function initDatabase() {
   // Seed default data if needed
   await seedDefaultData();
   
-  console.log('Database initialized successfully');
+  if (process.env.NODE_ENV === 'development') {
+    console.log('Database initialized successfully');
+  }
   return db;
 }
 
@@ -548,8 +555,6 @@ function createSchema() {
     CREATE INDEX IF NOT EXISTS idx_ahhq_owning_role ON adult_health_history_questionnaires(owning_role);
     CREATE INDEX IF NOT EXISTS idx_ahhq_created_at ON adult_health_history_questionnaires(created_at DESC);
   `);
-  
-  console.log('Database schema created');
 }
 
 async function seedDefaultData() {
@@ -560,16 +565,34 @@ async function seedDefaultData() {
     const bcrypt = require('bcryptjs');
     const { v4: uuidv4 } = require('uuid');
     
-    // Create default admin user
+    // Generate a secure random password for first-time setup
+    // User must change this password on first login or via documented setup process
+    const crypto = require('crypto');
+    const securePassword = crypto.randomBytes(16).toString('base64').slice(0, 20) + 'Aa1!';
+    
+    // Create default admin user with secure password
     const adminId = uuidv4();
-    const hashedPassword = await bcrypt.hash('admin123', 12);
+    const hashedPassword = await bcrypt.hash(securePassword, 12);
     
     db.prepare(`
       INSERT INTO users (id, email, password_hash, full_name, role, is_active)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run(adminId, 'admin@transtrack.local', hashedPassword, 'System Administrator', 'admin', 1);
     
-    console.log('Default admin user created: admin@transtrack.local / admin123');
+    // Store the temporary password securely for first-time setup
+    // This will be written to a secure file that should be deleted after first login
+    const setupPath = path.join(app.getPath('userData'), '.initial-setup');
+    fs.writeFileSync(setupPath, JSON.stringify({
+      email: 'admin@transtrack.local',
+      tempPassword: securePassword,
+      createdAt: new Date().toISOString(),
+      note: 'Delete this file after your first login. Change your password immediately.'
+    }), { mode: 0o600 });
+    
+    // Only log that setup occurred, never log credentials
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Initial admin user created. Check .initial-setup file in userData folder for temporary credentials.');
+    }
     
     // Create default priority weights
     const weightsId = uuidv4();
@@ -578,14 +601,12 @@ async function seedDefaultData() {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(weightsId, 'Default Weights', 'Standard UNOS-based priority weighting', 1, 30, 25, 25, 10, 10, 0.5);
     
-    // Log initial setup
+    // Log initial setup (no sensitive data)
     const auditId = uuidv4();
     db.prepare(`
       INSERT INTO audit_logs (id, action, entity_type, details, user_email, user_role)
       VALUES (?, ?, ?, ?, ?, ?)
-    `).run(auditId, 'system_init', 'System', 'TransTrack database initialized', 'system', 'system');
-    
-    console.log('Default data seeded');
+    `).run(auditId, 'system_init', 'System', 'TransTrack database initialized with default configuration', 'system', 'system');
   }
 }
 

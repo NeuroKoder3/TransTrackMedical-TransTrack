@@ -5,7 +5,8 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { X, Save, Upload } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { X, Save, Upload, AlertCircle } from 'lucide-react';
 import { api } from '@/api/apiClient';
 
 export default function PatientForm({ patient, onSave, onCancel }) {
@@ -46,9 +47,70 @@ export default function PatientForm({ patient, onSave, onCancel }) {
   });
 
   const [uploading, setUploading] = useState(false);
+  const [validationErrors, setValidationErrors] = useState({});
+  const [showErrors, setShowErrors] = useState(false);
 
   const handleChange = (field, value) => {
     setFormData({ ...formData, [field]: value });
+    // Clear validation error for this field when user makes changes
+    if (validationErrors[field]) {
+      setValidationErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors[field];
+        return newErrors;
+      });
+    }
+  };
+
+  // Validate form data
+  const validateForm = () => {
+    const errors = {};
+    
+    // Required field validations
+    if (!formData.patient_id || formData.patient_id.trim() === '') {
+      errors.patient_id = 'Patient ID is required';
+    }
+    if (!formData.first_name || formData.first_name.trim() === '') {
+      errors.first_name = 'First name is required';
+    }
+    if (!formData.last_name || formData.last_name.trim() === '') {
+      errors.last_name = 'Last name is required';
+    }
+    if (!formData.blood_type) {
+      errors.blood_type = 'Blood type is required';
+    }
+    if (!formData.organ_needed) {
+      errors.organ_needed = 'Organ needed is required';
+    }
+    
+    // Email validation (if provided)
+    if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+      errors.email = 'Invalid email format';
+    }
+    
+    // Score range validations
+    if (formData.meld_score !== null && formData.meld_score !== '' && 
+        (formData.meld_score < 6 || formData.meld_score > 40)) {
+      errors.meld_score = 'MELD score must be between 6 and 40';
+    }
+    if (formData.las_score !== null && formData.las_score !== '' && 
+        (formData.las_score < 0 || formData.las_score > 100)) {
+      errors.las_score = 'LAS score must be between 0 and 100';
+    }
+    if (formData.pra_percentage !== null && formData.pra_percentage !== '' && 
+        (formData.pra_percentage < 0 || formData.pra_percentage > 100)) {
+      errors.pra_percentage = 'PRA must be between 0 and 100';
+    }
+    
+    setValidationErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleSave = () => {
+    setShowErrors(true);
+    if (validateForm()) {
+      onSave(formData);
+    }
   };
 
   const handleFileUpload = async (e) => {
@@ -72,6 +134,21 @@ export default function PatientForm({ patient, onSave, onCancel }) {
 
   return (
     <div className="space-y-6">
+      {/* Validation Error Summary */}
+      {showErrors && Object.keys(validationErrors).length > 0 && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            Please fix the following errors before saving:
+            <ul className="list-disc list-inside mt-2">
+              {Object.values(validationErrors).map((error, idx) => (
+                <li key={idx}>{error}</li>
+              ))}
+            </ul>
+          </AlertDescription>
+        </Alert>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle>Basic Information</CardTitle>
@@ -79,29 +156,51 @@ export default function PatientForm({ patient, onSave, onCancel }) {
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <Label htmlFor="patient_id">Patient ID *</Label>
+              <Label htmlFor="patient_id" className={validationErrors.patient_id ? 'text-red-600' : ''}>
+                Patient ID *
+              </Label>
               <Input
                 id="patient_id"
                 value={formData.patient_id}
                 onChange={(e) => handleChange('patient_id', e.target.value)}
                 placeholder="MRN-12345"
+                className={validationErrors.patient_id ? 'border-red-500' : ''}
+                aria-invalid={!!validationErrors.patient_id}
+                aria-describedby={validationErrors.patient_id ? 'patient_id-error' : undefined}
               />
+              {validationErrors.patient_id && (
+                <p id="patient_id-error" className="text-sm text-red-600 mt-1">{validationErrors.patient_id}</p>
+              )}
             </div>
             <div>
-              <Label htmlFor="first_name">First Name *</Label>
+              <Label htmlFor="first_name" className={validationErrors.first_name ? 'text-red-600' : ''}>
+                First Name *
+              </Label>
               <Input
                 id="first_name"
                 value={formData.first_name}
                 onChange={(e) => handleChange('first_name', e.target.value)}
+                className={validationErrors.first_name ? 'border-red-500' : ''}
+                aria-invalid={!!validationErrors.first_name}
               />
+              {validationErrors.first_name && (
+                <p className="text-sm text-red-600 mt-1">{validationErrors.first_name}</p>
+              )}
             </div>
             <div>
-              <Label htmlFor="last_name">Last Name *</Label>
+              <Label htmlFor="last_name" className={validationErrors.last_name ? 'text-red-600' : ''}>
+                Last Name *
+              </Label>
               <Input
                 id="last_name"
                 value={formData.last_name}
                 onChange={(e) => handleChange('last_name', e.target.value)}
+                className={validationErrors.last_name ? 'border-red-500' : ''}
+                aria-invalid={!!validationErrors.last_name}
               />
+              {validationErrors.last_name && (
+                <p className="text-sm text-red-600 mt-1">{validationErrors.last_name}</p>
+              )}
             </div>
           </div>
 
@@ -116,9 +215,11 @@ export default function PatientForm({ patient, onSave, onCancel }) {
               />
             </div>
             <div>
-              <Label htmlFor="blood_type">Blood Type *</Label>
+              <Label htmlFor="blood_type" className={validationErrors.blood_type ? 'text-red-600' : ''}>
+                Blood Type *
+              </Label>
               <Select value={formData.blood_type} onValueChange={(value) => handleChange('blood_type', value)}>
-                <SelectTrigger>
+                <SelectTrigger className={validationErrors.blood_type ? 'border-red-500' : ''}>
                   <SelectValue placeholder="Select blood type" />
                 </SelectTrigger>
                 <SelectContent>
@@ -127,11 +228,16 @@ export default function PatientForm({ patient, onSave, onCancel }) {
                   ))}
                 </SelectContent>
               </Select>
+              {validationErrors.blood_type && (
+                <p className="text-sm text-red-600 mt-1">{validationErrors.blood_type}</p>
+              )}
             </div>
             <div>
-              <Label htmlFor="organ_needed">Organ Needed *</Label>
+              <Label htmlFor="organ_needed" className={validationErrors.organ_needed ? 'text-red-600' : ''}>
+                Organ Needed *
+              </Label>
               <Select value={formData.organ_needed} onValueChange={(value) => handleChange('organ_needed', value)}>
-                <SelectTrigger>
+                <SelectTrigger className={validationErrors.organ_needed ? 'border-red-500' : ''}>
                   <SelectValue placeholder="Select organ" />
                 </SelectTrigger>
                 <SelectContent>
@@ -144,6 +250,9 @@ export default function PatientForm({ patient, onSave, onCancel }) {
                   <SelectItem value="intestine">Intestine</SelectItem>
                 </SelectContent>
               </Select>
+              {validationErrors.organ_needed && (
+                <p className="text-sm text-red-600 mt-1">{validationErrors.organ_needed}</p>
+              )}
             </div>
           </div>
 
@@ -504,7 +613,7 @@ export default function PatientForm({ patient, onSave, onCancel }) {
           <X className="w-4 h-4 mr-2" />
           Cancel
         </Button>
-        <Button onClick={() => onSave(formData)} className="bg-cyan-600 hover:bg-cyan-700">
+        <Button onClick={handleSave} className="bg-cyan-600 hover:bg-cyan-700">
           <Save className="w-4 h-4 mr-2" />
           {patient ? 'Update Patient' : 'Add Patient'}
         </Button>
