@@ -116,11 +116,20 @@ function createSchema() {
       compliance_score INTEGER,
       weight_kg REAL,
       height_cm REAL,
+      phone TEXT,
+      email TEXT,
       contact_phone TEXT,
       contact_email TEXT,
       address TEXT,
       emergency_contact_name TEXT,
       emergency_contact_phone TEXT,
+      diagnosis TEXT,
+      comorbidities TEXT,
+      medications TEXT,
+      donor_preferences TEXT,
+      psychological_clearance INTEGER DEFAULT 1,
+      support_system_rating TEXT,
+      document_urls TEXT,
       notes TEXT,
       created_date TEXT DEFAULT (datetime('now')),
       updated_date TEXT DEFAULT (datetime('now')),
@@ -128,6 +137,31 @@ function createSchema() {
       updated_by TEXT
     )
   `);
+  
+  // Add missing columns to patients table if they don't exist (for existing databases)
+  const patientColumns = db.prepare("PRAGMA table_info(patients)").all().map(c => c.name);
+  const columnsToAdd = [
+    { name: 'phone', type: 'TEXT' },
+    { name: 'email', type: 'TEXT' },
+    { name: 'diagnosis', type: 'TEXT' },
+    { name: 'comorbidities', type: 'TEXT' },
+    { name: 'medications', type: 'TEXT' },
+    { name: 'donor_preferences', type: 'TEXT' },
+    { name: 'psychological_clearance', type: 'INTEGER DEFAULT 1' },
+    { name: 'support_system_rating', type: 'TEXT' },
+    { name: 'document_urls', type: 'TEXT' },
+  ];
+  
+  for (const col of columnsToAdd) {
+    if (!patientColumns.includes(col.name)) {
+      try {
+        db.exec(`ALTER TABLE patients ADD COLUMN ${col.name} ${col.type}`);
+        console.log(`Added column ${col.name} to patients table`);
+      } catch (e) {
+        // Column might already exist, ignore
+      }
+    }
+  }
   
   // Donor organs table
   db.exec(`
@@ -143,9 +177,14 @@ function createSchema() {
       cause_of_death TEXT,
       cold_ischemia_time_hours REAL,
       organ_condition TEXT,
+      organ_quality TEXT,
       organ_status TEXT DEFAULT 'available',
+      status TEXT DEFAULT 'available',
       recovery_date TEXT,
+      procurement_date TEXT,
       recovery_hospital TEXT,
+      location TEXT,
+      expiration_date TEXT,
       notes TEXT,
       created_date TEXT DEFAULT (datetime('now')),
       updated_date TEXT DEFAULT (datetime('now')),
@@ -153,6 +192,27 @@ function createSchema() {
       updated_by TEXT
     )
   `);
+  
+  // Add missing columns to donor_organs table if they don't exist (for existing databases)
+  const donorColumns = db.prepare("PRAGMA table_info(donor_organs)").all().map(c => c.name);
+  const donorColumnsToAdd = [
+    { name: 'organ_quality', type: 'TEXT' },
+    { name: 'status', type: 'TEXT DEFAULT \'available\'' },
+    { name: 'procurement_date', type: 'TEXT' },
+    { name: 'location', type: 'TEXT' },
+    { name: 'expiration_date', type: 'TEXT' },
+  ];
+  
+  for (const col of donorColumnsToAdd) {
+    if (!donorColumns.includes(col.name)) {
+      try {
+        db.exec(`ALTER TABLE donor_organs ADD COLUMN ${col.name} ${col.type}`);
+        console.log(`Added column ${col.name} to donor_organs table`);
+      } catch (e) {
+        // Column might already exist, ignore
+      }
+    }
+  }
   
   // Matches table
   db.exec(`

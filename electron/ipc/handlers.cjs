@@ -43,7 +43,7 @@ const entityTableMap = {
 };
 
 // Fields that store JSON data
-const jsonFields = ['priority_score_breakdown', 'conditions', 'notification_template', 'metadata', 'import_data', 'error_details'];
+const jsonFields = ['priority_score_breakdown', 'conditions', 'notification_template', 'metadata', 'import_data', 'error_details', 'document_urls', 'identified_issues'];
 
 function setupIPCHandlers() {
   const db = getDatabase();
