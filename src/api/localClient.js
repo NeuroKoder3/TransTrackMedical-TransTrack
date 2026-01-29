@@ -6,7 +6,6 @@
 
 // Check if running in Electron
 const isElectron = typeof window !== 'undefined' && window.electronAPI;
-console.log('LocalClient: isElectron =', isElectron, 'electronAPI =', !!window?.electronAPI);
 
 // Create a mock client for development in browser
 const mockClient = {
@@ -73,6 +72,26 @@ const mockClient = {
       currency: 'USD',
     }),
     getAuditHistory: async () => [],
+  },
+  // Mock encryption client for development
+  encryption: {
+    getStatus: async () => ({
+      enabled: true,
+      algorithm: 'AES-256-CBC',
+      keyDerivation: 'PBKDF2-HMAC-SHA512',
+      keyIterations: 256000,
+      hmacAlgorithm: 'SHA512',
+      pageSize: 4096,
+      compliant: true,
+      standard: 'HIPAA'
+    }),
+    verifyIntegrity: async () => ({
+      valid: true,
+      encrypted: true,
+      cipher: { cipher: 'sqlcipher', cipherVersion: '4.5.6' },
+      integrityCheck: 'ok'
+    }),
+    isEnabled: async () => true,
   },
   // Mock aHHQ client for development
   ahhq: {
@@ -295,6 +314,12 @@ const createElectronClient = () => {
           return { url: URL.createObjectURL(file), name: file.name };
         },
       },
+    },
+    // Database Encryption (HIPAA Compliance)
+    encryption: {
+      getStatus: async () => await window.electronAPI.encryption.getStatus(),
+      verifyIntegrity: async () => await window.electronAPI.encryption.verifyIntegrity(),
+      isEnabled: async () => await window.electronAPI.encryption.isEnabled(),
     },
   };
 };

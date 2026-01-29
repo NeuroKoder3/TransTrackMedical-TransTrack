@@ -157,6 +157,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getAll: () => ipcRenderer.invoke('settings:getAll')
   },
   
+  // Database Encryption (HIPAA Compliance)
+  encryption: {
+    getStatus: () => ipcRenderer.invoke('encryption:getStatus'),
+    verifyIntegrity: () => ipcRenderer.invoke('encryption:verifyIntegrity'),
+    isEnabled: () => ipcRenderer.invoke('encryption:isEnabled'),
+  },
+  
   // Menu event listeners
   onMenuExport: (callback) => {
     ipcRenderer.on('menu-export', callback);
@@ -303,6 +310,3 @@ contextBridge.exposeInMainWorld('electronAPI', {
   platform: process.platform,
   isElectron: true
 });
-
-// Notify that preload is complete
-console.log('TransTrack preload script loaded');

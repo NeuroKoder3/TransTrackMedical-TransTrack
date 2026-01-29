@@ -13,7 +13,7 @@
  */
 
 const { ipcMain, dialog } = require('electron');
-const { getDatabase } = require('../database/init.cjs');
+const { getDatabase, isEncryptionEnabled, verifyDatabaseIntegrity, getEncryptionStatus } = require('../database/init.cjs');
 const { v4: uuidv4 } = require('uuid');
 const bcrypt = require('bcryptjs');
 const licenseManager = require('../license/manager.cjs');
@@ -201,10 +201,34 @@ function setupIPCHandlers() {
   ipcMain.handle('app:getInfo', () => ({
     name: 'TransTrack',
     version: '1.0.0',
-    compliance: ['HIPAA', 'FDA 21 CFR Part 11', 'AATB']
+    compliance: ['HIPAA', 'FDA 21 CFR Part 11', 'AATB'],
+    encryptionEnabled: isEncryptionEnabled()
   }));
   
   ipcMain.handle('app:getVersion', () => '1.0.0');
+  
+  // ===== DATABASE ENCRYPTION STATUS (HIPAA Compliance) =====
+  ipcMain.handle('encryption:getStatus', async () => {
+    return getEncryptionStatus();
+  });
+  
+  ipcMain.handle('encryption:verifyIntegrity', async () => {
+    if (!validateSession()) throw new Error('Session expired. Please log in again.');
+    if (currentUser.role !== 'admin') throw new Error('Admin access required');
+    
+    const result = verifyDatabaseIntegrity();
+    
+    // Log the verification
+    logAudit('encryption_verify', 'System', null, null, 
+      `Database integrity check: ${result.valid ? 'PASSED' : 'FAILED'}`, 
+      currentUser.email, currentUser.role);
+    
+    return result;
+  });
+  
+  ipcMain.handle('encryption:isEnabled', async () => {
+    return isEncryptionEnabled();
+  });
   
   // ===== AUTHENTICATION =====
   ipcMain.handle('auth:login', async (event, { email, password }) => {

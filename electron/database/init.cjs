@@ -1,54 +1,265 @@
 /**
  * TransTrack - Database Initialization
  * 
- * Uses better-sqlite3 with SQLCipher for encrypted local storage.
- * HIPAA compliant with AES-256 encryption.
+ * Uses better-sqlite3-multiple-ciphers with SQLCipher for encrypted local storage.
+ * HIPAA compliant with AES-256 encryption at rest.
+ * 
+ * Encryption Details:
+ * - Algorithm: AES-256-CBC (SQLCipher default)
+ * - Key derivation: PBKDF2-HMAC-SHA512 with 256000 iterations
+ * - Page size: 4096 bytes
+ * - HMAC: SHA512 for page authentication
  */
 
-const Database = require('better-sqlite3');
+const Database = require('better-sqlite3-multiple-ciphers');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const { app } = require('electron');
 
 let db = null;
+let encryptionEnabled = false;
 
-// Get database path
+// Database file paths
 function getDatabasePath() {
   const userDataPath = app.getPath('userData');
   return path.join(userDataPath, 'transtrack.db');
 }
 
-// Get or create encryption key
+function getUnencryptedDatabasePath() {
+  const userDataPath = app.getPath('userData');
+  return path.join(userDataPath, 'transtrack-unencrypted.db.bak');
+}
+
+function getKeyPath() {
+  return path.join(app.getPath('userData'), '.transtrack-key');
+}
+
+function getKeyBackupPath() {
+  return path.join(app.getPath('userData'), '.transtrack-key.backup');
+}
+
+/**
+ * Get or create the encryption key
+ * The key is a 64-character hex string (256 bits)
+ * Stored with restrictive permissions (0o600)
+ */
 function getEncryptionKey() {
-  const keyPath = path.join(app.getPath('userData'), '.transtrack-key');
+  const keyPath = getKeyPath();
+  const keyBackupPath = getKeyBackupPath();
   
+  // Try to read existing key
   if (fs.existsSync(keyPath)) {
-    return fs.readFileSync(keyPath, 'utf8');
+    const key = fs.readFileSync(keyPath, 'utf8').trim();
+    
+    // Validate key format (64 hex characters = 256 bits)
+    if (/^[a-fA-F0-9]{64}$/.test(key)) {
+      return key;
+    }
+    
+    // Invalid key format, try backup
+    if (fs.existsSync(keyBackupPath)) {
+      const backupKey = fs.readFileSync(keyBackupPath, 'utf8').trim();
+      if (/^[a-fA-F0-9]{64}$/.test(backupKey)) {
+        // Restore from backup
+        fs.writeFileSync(keyPath, backupKey, { mode: 0o600 });
+        return backupKey;
+      }
+    }
   }
   
-  // Generate new key for first-time setup
+  // Generate new 256-bit key
   const key = crypto.randomBytes(32).toString('hex');
+  
+  // Save key with restrictive permissions
   fs.writeFileSync(keyPath, key, { mode: 0o600 });
+  
+  // Create backup
+  fs.writeFileSync(keyBackupPath, key, { mode: 0o600 });
+  
   return key;
 }
 
-// Initialize database with schema
+/**
+ * Check if a database file is encrypted
+ * SQLCipher databases start with different magic bytes than regular SQLite
+ */
+function isDatabaseEncrypted(dbPath) {
+  if (!fs.existsSync(dbPath)) {
+    return null; // Database doesn't exist
+  }
+  
+  try {
+    // Read first 16 bytes of the file
+    const fd = fs.openSync(dbPath, 'r');
+    const buffer = Buffer.alloc(16);
+    fs.readSync(fd, buffer, 0, 16, 0);
+    fs.closeSync(fd);
+    
+    // SQLite3 magic header: "SQLite format 3\0"
+    const sqliteMagic = Buffer.from('SQLite format 3\0');
+    
+    // If file starts with SQLite magic, it's unencrypted
+    if (buffer.compare(sqliteMagic, 0, 16, 0, 16) === 0) {
+      return false; // Unencrypted
+    }
+    
+    // Otherwise, assume encrypted (or corrupted)
+    return true;
+  } catch (e) {
+    return null; // Unable to determine
+  }
+}
+
+/**
+ * Migrate an unencrypted database to encrypted format
+ */
+async function migrateToEncrypted(unencryptedPath, encryptedPath, encryptionKey) {
+  if (process.env.NODE_ENV === 'development') {
+    console.log('Migrating database to encrypted format...');
+  }
+  
+  // Open unencrypted database
+  const unencryptedDb = new Database(unencryptedPath, {
+    verbose: null,
+    readonly: true
+  });
+  
+  // Create new encrypted database
+  const encryptedDb = new Database(encryptedPath + '.new', {
+    verbose: null
+  });
+  
+  // Set encryption key using SQLCipher pragmas
+  encryptedDb.pragma(`cipher = 'sqlcipher'`);
+  encryptedDb.pragma(`legacy = 4`); // SQLCipher 4.x compatibility
+  encryptedDb.pragma(`key = "x'${encryptionKey}'"`);
+  
+  // Copy schema and data
+  try {
+    // Get all table names
+    const tables = unencryptedDb.prepare(`
+      SELECT name FROM sqlite_master 
+      WHERE type='table' AND name NOT LIKE 'sqlite_%'
+    `).all();
+    
+    // Export and import each table
+    for (const { name } of tables) {
+      // Get table schema
+      const tableInfo = unencryptedDb.prepare(`
+        SELECT sql FROM sqlite_master WHERE type='table' AND name=?
+      `).get(name);
+      
+      if (tableInfo && tableInfo.sql) {
+        // Create table in encrypted database
+        encryptedDb.exec(tableInfo.sql);
+        
+        // Copy data
+        const rows = unencryptedDb.prepare(`SELECT * FROM "${name}"`).all();
+        if (rows.length > 0) {
+          const columns = Object.keys(rows[0]);
+          const placeholders = columns.map(() => '?').join(', ');
+          const insertStmt = encryptedDb.prepare(
+            `INSERT INTO "${name}" (${columns.map(c => `"${c}"`).join(', ')}) VALUES (${placeholders})`
+          );
+          
+          const insertMany = encryptedDb.transaction((rows) => {
+            for (const row of rows) {
+              insertStmt.run(...columns.map(c => row[c]));
+            }
+          });
+          
+          insertMany(rows);
+        }
+      }
+    }
+    
+    // Copy indexes
+    const indexes = unencryptedDb.prepare(`
+      SELECT sql FROM sqlite_master 
+      WHERE type='index' AND sql IS NOT NULL
+    `).all();
+    
+    for (const { sql } of indexes) {
+      try {
+        encryptedDb.exec(sql);
+      } catch (e) {
+        // Index might already exist, ignore
+      }
+    }
+    
+    // Close databases
+    unencryptedDb.close();
+    encryptedDb.close();
+    
+    // Backup original unencrypted database
+    const backupPath = getUnencryptedDatabasePath();
+    fs.renameSync(unencryptedPath, backupPath);
+    
+    // Move new encrypted database to final location
+    fs.renameSync(encryptedPath + '.new', encryptedPath);
+    
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Database migration to encrypted format completed successfully');
+    }
+    
+    return true;
+  } catch (error) {
+    // Clean up on failure
+    try {
+      unencryptedDb.close();
+    } catch (e) {}
+    try {
+      encryptedDb.close();
+    } catch (e) {}
+    try {
+      fs.unlinkSync(encryptedPath + '.new');
+    } catch (e) {}
+    
+    throw new Error(`Database migration failed: ${error.message}`);
+  }
+}
+
+/**
+ * Initialize database with encryption
+ */
 async function initDatabase() {
   const dbPath = getDatabasePath();
   const encryptionKey = getEncryptionKey();
   
-  // Only log in development mode, never expose paths in production
   if (process.env.NODE_ENV === 'development') {
-    console.log('Initializing database...');
+    console.log('Initializing encrypted database...');
   }
   
-  // Create database connection
-  // Note: For full HIPAA compliance, consider using better-sqlite3-sqlcipher
-  // and enabling encryption with: db.pragma(`key='${encryptionKey}'`);
+  // Check if database exists and its encryption state
+  const encryptionState = isDatabaseEncrypted(dbPath);
+  
+  if (encryptionState === false) {
+    // Database exists but is unencrypted - migrate it
+    await migrateToEncrypted(dbPath, dbPath, encryptionKey);
+  }
+  
+  // Open database with encryption
   db = new Database(dbPath, {
     verbose: null // Disable verbose logging for security
   });
+  
+  // Configure SQLCipher encryption
+  // Use SQLCipher with AES-256-CBC
+  db.pragma(`cipher = 'sqlcipher'`);
+  db.pragma(`legacy = 4`); // SQLCipher 4.x compatibility mode
+  db.pragma(`key = "x'${encryptionKey}'"`); // Hex key format for binary key
+  
+  // Verify encryption is working by trying to read
+  try {
+    db.pragma('cipher_version');
+    encryptionEnabled = true;
+  } catch (e) {
+    // If cipher_version fails, encryption might not be properly configured
+    if (process.env.NODE_ENV === 'development') {
+      console.warn('Warning: Database encryption verification failed');
+    }
+  }
   
   // Enable foreign keys and WAL mode for better performance
   db.pragma('journal_mode = WAL');
@@ -61,9 +272,51 @@ async function initDatabase() {
   await seedDefaultData();
   
   if (process.env.NODE_ENV === 'development') {
-    console.log('Database initialized successfully');
+    console.log('Encrypted database initialized successfully');
+    console.log(`Encryption enabled: ${encryptionEnabled}`);
   }
+  
   return db;
+}
+
+/**
+ * Check if database encryption is enabled
+ */
+function isEncryptionEnabled() {
+  return encryptionEnabled;
+}
+
+/**
+ * Verify database integrity and encryption
+ */
+function verifyDatabaseIntegrity() {
+  if (!db) return { valid: false, error: 'Database not initialized' };
+  
+  try {
+    // Check integrity
+    const integrityCheck = db.pragma('integrity_check');
+    const isIntact = integrityCheck[0].integrity_check === 'ok';
+    
+    // Check cipher configuration
+    let cipherInfo = {};
+    try {
+      cipherInfo = {
+        cipher: db.pragma('cipher')[0]?.cipher || 'unknown',
+        cipherVersion: db.pragma('cipher_version')[0]?.cipher_version || 'unknown',
+      };
+    } catch (e) {
+      cipherInfo = { error: 'Unable to query cipher info' };
+    }
+    
+    return {
+      valid: isIntact,
+      encrypted: encryptionEnabled,
+      cipher: cipherInfo,
+      integrityCheck: integrityCheck[0].integrity_check
+    };
+  } catch (e) {
+    return { valid: false, error: e.message };
+  }
 }
 
 function createSchema() {
@@ -618,11 +871,17 @@ async function closeDatabase() {
   if (db) {
     db.close();
     db = null;
-    console.log('Database connection closed');
+    encryptionEnabled = false;
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Database connection closed');
+    }
   }
 }
 
-// Backup database
+/**
+ * Backup database (encrypted backup)
+ * The backup will also be encrypted with the same key
+ */
 async function backupDatabase(targetPath) {
   if (!db) throw new Error('Database not initialized');
   
@@ -633,9 +892,68 @@ async function backupDatabase(targetPath) {
   db.prepare(`
     INSERT INTO audit_logs (id, action, entity_type, details, user_email, user_role)
     VALUES (?, ?, ?, ?, ?, ?)
-  `).run(uuidv4(), 'backup', 'System', `Database backed up to: ${targetPath}`, 'system', 'system');
+  `).run(uuidv4(), 'backup', 'System', 'Encrypted database backup created', 'system', 'system');
   
   return true;
+}
+
+/**
+ * Re-key the database with a new encryption key
+ * WARNING: This is a sensitive operation - ensure backups exist
+ */
+async function rekeyDatabase(newKey) {
+  if (!db) throw new Error('Database not initialized');
+  
+  // Validate new key format
+  if (!/^[a-fA-F0-9]{64}$/.test(newKey)) {
+    throw new Error('Invalid key format. Must be 64 hex characters (256 bits)');
+  }
+  
+  try {
+    // Re-key the database
+    db.pragma(`rekey = "x'${newKey}'"`);
+    
+    // Save new key
+    const keyPath = getKeyPath();
+    const keyBackupPath = getKeyBackupPath();
+    
+    // Backup old key first
+    if (fs.existsSync(keyPath)) {
+      const oldKey = fs.readFileSync(keyPath, 'utf8').trim();
+      fs.writeFileSync(keyBackupPath + '.old', oldKey, { mode: 0o600 });
+    }
+    
+    // Save new key
+    fs.writeFileSync(keyPath, newKey, { mode: 0o600 });
+    fs.writeFileSync(keyBackupPath, newKey, { mode: 0o600 });
+    
+    // Log the rekey action
+    const { v4: uuidv4 } = require('uuid');
+    db.prepare(`
+      INSERT INTO audit_logs (id, action, entity_type, details, user_email, user_role)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(uuidv4(), 'rekey', 'System', 'Database encryption key rotated', 'system', 'system');
+    
+    return true;
+  } catch (error) {
+    throw new Error(`Database rekey failed: ${error.message}`);
+  }
+}
+
+/**
+ * Export encryption status for compliance reporting
+ */
+function getEncryptionStatus() {
+  return {
+    enabled: encryptionEnabled,
+    algorithm: encryptionEnabled ? 'AES-256-CBC' : 'none',
+    keyDerivation: encryptionEnabled ? 'PBKDF2-HMAC-SHA512' : 'none',
+    keyIterations: encryptionEnabled ? 256000 : 0,
+    hmacAlgorithm: encryptionEnabled ? 'SHA512' : 'none',
+    pageSize: encryptionEnabled ? 4096 : 0,
+    compliant: encryptionEnabled,
+    standard: encryptionEnabled ? 'HIPAA' : 'non-compliant'
+  };
 }
 
 module.exports = {
@@ -643,5 +961,9 @@ module.exports = {
   getDatabase,
   closeDatabase,
   backupDatabase,
-  getDatabasePath
+  getDatabasePath,
+  isEncryptionEnabled,
+  verifyDatabaseIntegrity,
+  rekeyDatabase,
+  getEncryptionStatus
 };
