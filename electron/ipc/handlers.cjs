@@ -288,11 +288,30 @@ function setupIPCHandlers() {
     const id = data.id || uuidv4();
     const entityData = { ...data, id, created_by: currentUser.email };
     
-    // Convert JSON fields to strings
-    for (const field of jsonFields) {
-      if (entityData[field] && typeof entityData[field] === 'object') {
-        entityData[field] = JSON.stringify(entityData[field]);
+    // Sanitize all values for SQLite compatibility
+    // SQLite only accepts: numbers, strings, bigints, buffers, and null
+    for (const field of Object.keys(entityData)) {
+      const value = entityData[field];
+      
+      // Convert undefined to null
+      if (value === undefined) {
+        entityData[field] = null;
+        continue;
       }
+      
+      // Convert booleans to integers (SQLite doesn't support booleans)
+      if (typeof value === 'boolean') {
+        entityData[field] = value ? 1 : 0;
+        continue;
+      }
+      
+      // Convert arrays and objects to JSON strings
+      if (Array.isArray(value) || (typeof value === 'object' && value !== null)) {
+        entityData[field] = JSON.stringify(value);
+        continue;
+      }
+      
+      // Keep numbers, strings, bigints, buffers, and null as-is
     }
     
     // Build insert statement
@@ -341,11 +360,30 @@ function setupIPCHandlers() {
     delete entityData.created_date;
     delete entityData.created_by;
     
-    // Convert JSON fields to strings
-    for (const field of jsonFields) {
-      if (entityData[field] && typeof entityData[field] === 'object') {
-        entityData[field] = JSON.stringify(entityData[field]);
+    // Sanitize all values for SQLite compatibility
+    // SQLite only accepts: numbers, strings, bigints, buffers, and null
+    for (const field of Object.keys(entityData)) {
+      const value = entityData[field];
+      
+      // Convert undefined to null
+      if (value === undefined) {
+        entityData[field] = null;
+        continue;
       }
+      
+      // Convert booleans to integers (SQLite doesn't support booleans)
+      if (typeof value === 'boolean') {
+        entityData[field] = value ? 1 : 0;
+        continue;
+      }
+      
+      // Convert arrays and objects to JSON strings
+      if (Array.isArray(value) || (typeof value === 'object' && value !== null)) {
+        entityData[field] = JSON.stringify(value);
+        continue;
+      }
+      
+      // Keep numbers, strings, bigints, buffers, and null as-is
     }
     
     // Build update statement
