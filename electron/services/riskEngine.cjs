@@ -14,6 +14,7 @@
 
 const { getDatabase } = require('../database/init.cjs');
 const readinessBarriers = require('./readinessBarriers.cjs');
+const ahhqService = require('./ahhqService.cjs');
 
 // Risk thresholds (configurable)
 const RISK_THRESHOLDS = {
@@ -195,6 +196,46 @@ function assessPatientOperationalRisk(patient) {
   } catch (e) {
     // Silently continue if barriers table doesn't exist yet
     console.log('Could not assess readiness barriers:', e.message);
+  }
+  
+  // 6. Adult Health History Questionnaire (aHHQ) Status Risk
+  // NOTE: This is OPERATIONAL DOCUMENTATION tracking only, NOT clinical assessment.
+  // It tracks whether required health history questionnaires are present, complete, and current.
+  try {
+    const ahhqSummary = ahhqService.getPatientAHHQSummary(patient.id);
+    
+    if (ahhqSummary.needsAttention) {
+      let ahhqRiskLevel = RISK_LEVEL.LOW;
+      let title = 'aHHQ Status';
+      
+      if (!ahhqSummary.exists) {
+        ahhqRiskLevel = RISK_LEVEL.HIGH;
+        title = 'aHHQ Missing';
+      } else if (ahhqSummary.riskLevel === 'high') {
+        ahhqRiskLevel = RISK_LEVEL.HIGH;
+        title = ahhqSummary.ahhq?.status === 'expired' ? 'aHHQ Expired' : 'aHHQ Incomplete';
+      } else if (ahhqSummary.riskLevel === 'medium') {
+        ahhqRiskLevel = RISK_LEVEL.MEDIUM;
+        title = 'aHHQ Attention Needed';
+      }
+      
+      risks.push({
+        type: 'ahhq_status',
+        level: ahhqRiskLevel,
+        title: title,
+        description: ahhqSummary.riskDescription,
+        status: ahhqSummary.status,
+        daysUntilExpiration: ahhqSummary.daysUntilExpiration,
+        actionRequired: ahhqSummary.exists 
+          ? 'Review and update aHHQ documentation'
+          : 'Create aHHQ record for patient',
+        isNonClinical: true, // Flag to indicate this is operational documentation, not clinical
+        isDocumentationArtifact: true,
+      });
+    }
+  } catch (e) {
+    // Silently continue if aHHQ table doesn't exist yet
+    console.log('Could not assess aHHQ status:', e.message);
   }
   
   // Calculate overall risk level
@@ -400,6 +441,30 @@ async function generateOperationalRiskReport() {
     console.log('Could not generate barrier analysis:', e.message);
   }
   
+  // Add aHHQ analysis (Non-Clinical Documentation Tracking)
+  try {
+    const ahhqDashboard = ahhqService.getAHHQDashboard();
+    const patientsWithIssues = ahhqService.getPatientsWithAHHQIssues(10);
+    
+    report.ahhqAnalysis = {
+      disclaimer: 'aHHQ tracking is NON-CLINICAL operational documentation only. It tracks whether required health history questionnaires are present, complete, and current. It does NOT store medical narratives, perform clinical interpretation, or affect allocation decisions.',
+      totalPatients: ahhqDashboard.totalPatients,
+      patientsWithAHHQ: ahhqDashboard.patientsWithAHHQ,
+      patientsWithoutAHHQ: ahhqDashboard.patientsWithoutAHHQ,
+      completeCount: ahhqDashboard.completeCount,
+      incompleteCount: ahhqDashboard.incompleteCount,
+      expiringCount: ahhqDashboard.expiringCount,
+      expiredCount: ahhqDashboard.expiredCount,
+      patientsNeedingAttention: ahhqDashboard.patientsNeedingAttention,
+      patientsNeedingAttentionPercentage: ahhqDashboard.patientsNeedingAttentionPercentage,
+      byStatus: ahhqDashboard.byStatus,
+      byOwningRole: ahhqDashboard.byOwningRole,
+      topPatientsWithIssues: patientsWithIssues,
+    };
+  } catch (e) {
+    console.log('Could not generate aHHQ analysis:', e.message);
+  }
+  
   // Generate prioritized action items
   const criticalPatients = report.patientRisks
     .filter(r => r.overallRiskLevel === RISK_LEVEL.CRITICAL)
@@ -467,6 +532,11 @@ async function getRiskDashboard() {
     highChurnPatients: 0,
     patientsWithBarriers: 0,
     totalOpenBarriers: 0,
+    // aHHQ metrics
+    ahhqExpiring: 0,
+    ahhqExpired: 0,
+    ahhqIncomplete: 0,
+    ahhqMissing: 0,
   };
   
   const atRiskPatients = [];
@@ -479,6 +549,18 @@ async function getRiskDashboard() {
     metrics.totalOpenBarriers = barrierDashboard.totalOpenBarriers;
   } catch (e) {
     console.log('Could not get barrier dashboard:', e.message);
+  }
+  
+  // Get aHHQ dashboard for overall metrics
+  let ahhqDashboard = null;
+  try {
+    ahhqDashboard = ahhqService.getAHHQDashboard();
+    metrics.ahhqExpiring = ahhqDashboard.expiringCount;
+    metrics.ahhqExpired = ahhqDashboard.expiredCount;
+    metrics.ahhqIncomplete = ahhqDashboard.incompleteCount;
+    metrics.ahhqMissing = ahhqDashboard.patientsWithoutAHHQ;
+  } catch (e) {
+    console.log('Could not get aHHQ dashboard:', e.message);
   }
   
   for (const patient of patients) {
@@ -549,6 +631,22 @@ async function getRiskDashboard() {
       totalOpenBarriers: barrierDashboard.totalOpenBarriers,
       byRiskLevel: barrierDashboard.byRiskLevel,
       byType: barrierDashboard.byType,
+    } : null,
+    // aHHQ Summary (Non-Clinical Documentation Tracking)
+    ahhqSummary: ahhqDashboard ? {
+      disclaimer: 'aHHQ tracking is NON-CLINICAL operational documentation only. It does not store medical narratives, perform clinical interpretation, or affect allocation decisions.',
+      totalPatients: ahhqDashboard.totalPatients,
+      patientsWithAHHQ: ahhqDashboard.patientsWithAHHQ,
+      patientsWithoutAHHQ: ahhqDashboard.patientsWithoutAHHQ,
+      completeCount: ahhqDashboard.completeCount,
+      incompleteCount: ahhqDashboard.incompleteCount,
+      expiringCount: ahhqDashboard.expiringCount,
+      expiredCount: ahhqDashboard.expiredCount,
+      patientsNeedingAttention: ahhqDashboard.patientsNeedingAttention,
+      patientsNeedingAttentionPercentage: ahhqDashboard.patientsNeedingAttentionPercentage,
+      byStatus: ahhqDashboard.byStatus,
+      byOwningRole: ahhqDashboard.byOwningRole,
+      warningThresholdDays: ahhqDashboard.warningThresholdDays,
     } : null,
     generatedAt: now.toISOString(),
   };

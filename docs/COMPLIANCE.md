@@ -224,6 +224,99 @@ The following non-clinical barrier types are tracked:
 
 ---
 
+## Adult Health History Questionnaire (aHHQ) Tracking (Non-Clinical Feature)
+
+### Purpose and Scope
+
+TransTrack includes an **aHHQ Tracking** feature designed for **operational documentation tracking only**. This feature answers:
+
+- Is the aHHQ present?
+- Is it complete?
+- Is it current?
+- Is it approaching expiration?
+- Is follow-up required?
+
+This feature is:
+
+- **NON-CLINICAL**: Does not store medical narratives, diagnoses, or clinical interpretations
+- **NON-ALLOCATIVE**: Does not affect organ allocation decisions
+- **Documentation-Focused**: Tracks questionnaire status as a time-bound evaluation artifact
+- **Operational Only**: Supports documentation compliance and workflow management
+
+**IMPORTANT**: This feature does NOT store actual health history content. It only tracks the status of the questionnaire documentation.
+
+### aHHQ Status Values
+
+| Status | Description |
+|--------|-------------|
+| Complete | aHHQ is fully completed and current |
+| Incomplete | aHHQ has missing sections or information |
+| Pending Update | aHHQ requires review and update |
+| Expired | aHHQ has exceeded its validity period |
+
+### Identified Issues (Operational Only)
+
+| Issue Type | Description |
+|------------|-------------|
+| Missing Sections | One or more required sections are incomplete |
+| Outdated Information | Information needs to be reviewed and updated |
+| Follow-up Required | Additional documentation or follow-up is needed |
+| Documentation Pending | Supporting documentation has been requested |
+| Signature Required | Patient or provider signature is needed |
+| Verification Needed | Information requires verification |
+
+### Compliance Safeguards
+
+1. **Data Minimization**
+   - Notes field limited to 255 characters
+   - No clinical narratives allowed
+   - Only tracks status, not content
+   - No medical opinions or interpretations stored
+
+2. **Expiration Tracking**
+   - Configurable validity period (default 365 days)
+   - Warning at 30 days before expiration
+   - Automatic expired status detection
+   - Contributes to operational risk indicators
+
+3. **Audit Trail**
+   - All aHHQ status changes logged with user attribution
+   - Create, update, complete, and delete actions tracked
+   - Immutable audit history for regulatory review
+   - Timestamp and user identification on all actions
+
+4. **Role-Based Access**
+   - Owning role assignment for accountability
+   - Access justification may be required
+   - Audit logs track all aHHQ access
+
+5. **Non-Clinical Designation**
+   - Clear UI labeling as "Non-Clinical" / "Operational Documentation"
+   - Disclaimer displayed on all aHHQ views
+   - aHHQ tracking separated from clinical records
+   - No integration with allocation algorithms
+
+### Audit Log Structure for aHHQ
+
+| Field | Description |
+|-------|-------------|
+| action | create, update, complete, follow_up_required, delete |
+| entity_type | AdultHealthHistoryQuestionnaire |
+| entity_id | aHHQ UUID |
+| patient_id | Associated patient ID |
+| details | JSON with status, changes, expiration_date |
+| user_email | User who performed action |
+| created_date | Timestamp |
+
+### Regulatory Alignment
+
+- **HIPAA**: Minimum necessary standard (no clinical content stored)
+- **FDA 21 CFR Part 11**: Immutable records with electronic signatures
+- **UNOS/OPTN**: Explicitly non-allocative (does not affect organ allocation)
+- **Documentation Compliance**: Supports evaluation artifact tracking
+
+---
+
 ## Data Security Features
 
 ### Local Storage Security

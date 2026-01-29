@@ -9,9 +9,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
   AlertTriangle, AlertCircle, Clock, FileText, Users, 
   RefreshCw, TrendingDown, Activity, Shield, ClipboardList,
-  Info, ExternalLink
+  Info, ExternalLink, FileCheck
 } from 'lucide-react';
 import { BarrierRiskBadge } from '@/components/barriers';
+import { AHHQRiskBadge } from '@/components/ahhq';
 import { createPageUrl } from '@/utils';
 import api from '@/api/localClient';
 
@@ -43,6 +44,30 @@ export default function RiskDashboard() {
   const { data: barrierDashboard } = useQuery({
     queryKey: ['barrierDashboard'],
     queryFn: () => api.barriers.getDashboard(),
+    refetchInterval: 60000,
+  });
+
+  // Fetch aHHQ dashboard data
+  const { data: ahhqDashboard } = useQuery({
+    queryKey: ['ahhqDashboard'],
+    queryFn: async () => {
+      if (window.electronAPI?.ahhq) {
+        return await window.electronAPI.ahhq.getDashboard();
+      }
+      return null;
+    },
+    refetchInterval: 60000,
+  });
+
+  // Fetch patients with aHHQ issues
+  const { data: ahhqPatientsWithIssues } = useQuery({
+    queryKey: ['ahhqPatientsWithIssues'],
+    queryFn: async () => {
+      if (window.electronAPI?.ahhq) {
+        return await window.electronAPI.ahhq.getPatientsWithIssues(10);
+      }
+      return [];
+    },
     refetchInterval: 60000,
   });
 
@@ -91,7 +116,7 @@ export default function RiskDashboard() {
         </div>
 
         {/* Risk Metrics */}
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
           <Card className="border-red-200 bg-red-50">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-red-700 flex items-center gap-2">
@@ -158,6 +183,27 @@ export default function RiskDashboard() {
             </CardContent>
           </Card>
 
+          {/* aHHQ Status Tile (Non-Clinical Documentation Tracking) */}
+          <Card className="border-purple-200 bg-purple-50">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-purple-700 flex items-center gap-2">
+                <FileCheck className="w-4 h-4" />
+                aHHQ Status
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold text-purple-900">
+                {ahhqDashboard?.patientsNeedingAttention || 0}
+                <span className="text-lg font-normal text-purple-600 ml-2">
+                  ({ahhqDashboard?.patientsNeedingAttentionPercentage || '0.0'}%)
+                </span>
+              </div>
+              <p className="text-xs text-purple-600 mt-1">
+                {ahhqDashboard?.expiringCount || 0} expiring, {ahhqDashboard?.expiredCount || 0} expired
+              </p>
+            </CardContent>
+          </Card>
+
           <Card className="border-cyan-200 bg-cyan-50">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-cyan-700 flex items-center gap-2">
@@ -181,6 +227,7 @@ export default function RiskDashboard() {
           <TabsList>
             <TabsTrigger value="patients">At-Risk Patients</TabsTrigger>
             <TabsTrigger value="barriers">Readiness Barriers</TabsTrigger>
+            <TabsTrigger value="ahhq">aHHQ Status</TabsTrigger>
             <TabsTrigger value="segments">Segment Analysis</TabsTrigger>
             <TabsTrigger value="actions">Action Items</TabsTrigger>
           </TabsList>
@@ -344,6 +391,129 @@ export default function RiskDashboard() {
                       </div>
                     )}
                   </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* aHHQ Status Tab (Non-Clinical Documentation Tracking) */}
+          <TabsContent value="ahhq">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <FileCheck className="w-5 h-5" />
+                  aHHQ Documentation Status
+                </CardTitle>
+                <CardDescription>
+                  Non-clinical operational tracking for health history questionnaire documentation
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {/* Non-clinical disclaimer */}
+                <Alert className="mb-6 bg-blue-50 border-blue-200">
+                  <Info className="h-4 w-4 text-blue-600" />
+                  <AlertDescription className="text-blue-700 text-sm">
+                    <strong>Non-Clinical Notice:</strong> aHHQ tracking is for operational documentation purposes only. 
+                    It tracks whether required questionnaires are present, complete, and current. 
+                    It does NOT store medical narratives, clinical interpretations, or affect allocation decisions.
+                  </AlertDescription>
+                </Alert>
+
+                {/* aHHQ Statistics */}
+                {ahhqDashboard && (
+                  <div className="space-y-6">
+                    {/* Summary Stats */}
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                      <div className="p-4 bg-green-50 rounded-lg border border-green-200">
+                        <div className="text-sm text-green-600">Complete</div>
+                        <div className="text-2xl font-bold text-green-900">{ahhqDashboard.completeCount || 0}</div>
+                      </div>
+                      <div className="p-4 bg-red-50 rounded-lg border border-red-200">
+                        <div className="text-sm text-red-600">Incomplete</div>
+                        <div className="text-2xl font-bold text-red-900">{ahhqDashboard.incompleteCount || 0}</div>
+                      </div>
+                      <div className="p-4 bg-amber-50 rounded-lg border border-amber-200">
+                        <div className="text-sm text-amber-600">Expiring Soon</div>
+                        <div className="text-2xl font-bold text-amber-900">{ahhqDashboard.expiringCount || 0}</div>
+                        <div className="text-xs text-amber-500">within {ahhqDashboard.warningThresholdDays || 30} days</div>
+                      </div>
+                      <div className="p-4 bg-red-50 rounded-lg border border-red-200">
+                        <div className="text-sm text-red-600">Expired</div>
+                        <div className="text-2xl font-bold text-red-900">{ahhqDashboard.expiredCount || 0}</div>
+                      </div>
+                      <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
+                        <div className="text-sm text-slate-600">No aHHQ</div>
+                        <div className="text-2xl font-bold text-slate-900">{ahhqDashboard.patientsWithoutAHHQ || 0}</div>
+                      </div>
+                    </div>
+
+                    {/* By Status */}
+                    {ahhqDashboard.byStatus && Object.keys(ahhqDashboard.byStatus).length > 0 && (
+                      <div>
+                        <h4 className="font-medium text-slate-900 mb-3">By Status</h4>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                          {Object.entries(ahhqDashboard.byStatus).map(([status, count]) => (
+                            <div key={status} className="p-3 bg-slate-50 rounded-lg border flex justify-between items-center">
+                              <span className="text-sm text-slate-600 capitalize">{status.replace(/_/g, ' ')}</span>
+                              <span className="font-bold text-slate-900">{count}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* By Owning Role */}
+                    {ahhqDashboard.byOwningRole && Object.keys(ahhqDashboard.byOwningRole).length > 0 && (
+                      <div>
+                        <h4 className="font-medium text-slate-900 mb-3">By Owning Role</h4>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                          {Object.entries(ahhqDashboard.byOwningRole).map(([role, count]) => (
+                            <div key={role} className="p-3 bg-slate-50 rounded-lg border flex justify-between items-center">
+                              <span className="text-sm text-slate-600 capitalize">{role.replace(/_/g, ' ')}</span>
+                              <span className="font-bold text-slate-900">{count}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Patients with aHHQ Issues */}
+                    {ahhqPatientsWithIssues && ahhqPatientsWithIssues.length > 0 && (
+                      <div>
+                        <h4 className="font-medium text-slate-900 mb-3">Patients Requiring Attention</h4>
+                        <div className="space-y-2">
+                          {ahhqPatientsWithIssues.map((patient, idx) => (
+                            <div 
+                              key={idx}
+                              className="p-3 bg-slate-50 rounded-lg border flex justify-between items-center"
+                            >
+                              <div>
+                                <div className="font-medium text-slate-900">{patient.patient_name || 'Unknown'}</div>
+                                <div className="text-xs text-slate-500">
+                                  {patient.status ? `Status: ${patient.status}` : 'No aHHQ on file'}
+                                  {patient.days_until_expiration !== null && patient.days_until_expiration >= 0 && (
+                                    <span className="ml-2">• {patient.days_until_expiration} days until expiry</span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <AHHQRiskBadge issueType={patient.issue_type} size="small" />
+                                <Link to={`${createPageUrl('PatientDetails')}?id=${patient.patient_id}`}>
+                                  <Button variant="outline" size="sm">
+                                    View <ExternalLink className="w-3 h-3 ml-1" />
+                                  </Button>
+                                </Link>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {!ahhqDashboard && (
+                  <p className="text-slate-500 text-center py-8">No aHHQ data available</p>
                 )}
               </CardContent>
             </Card>

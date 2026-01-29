@@ -12,6 +12,7 @@ import PriorityBadge from '../components/waitlist/PriorityBadge';
 import PriorityBreakdown from '../components/patients/PriorityBreakdown';
 import PatientSyncControls from '../components/ehr/PatientSyncControls';
 import { ReadinessBarrierList } from '../components/barriers';
+import { AHHQPanel } from '../components/ahhq';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 export default function PatientDetails() {
@@ -268,11 +269,20 @@ export default function PatientDetails() {
           </CardContent>
         </Card>
 
-        {/* Readiness Barriers Section (Non-Clinical) */}
-        <ReadinessBarrierList 
-          patientId={patient.id}
-          patientName={`${patient.first_name} ${patient.last_name}`}
-        />
+        {/* Documentation Status Section - Non-Clinical Operational Tracking */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Readiness Barriers Section (Non-Clinical) */}
+          <ReadinessBarrierList 
+            patientId={patient.id}
+            patientName={`${patient.first_name} ${patient.last_name}`}
+          />
+
+          {/* aHHQ Status Section (Non-Clinical Documentation Tracking) */}
+          <AHHQPanel 
+            patientId={patient.id}
+            patientName={`${patient.first_name} ${patient.last_name}`}
+          />
+        </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2">

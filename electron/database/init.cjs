@@ -427,6 +427,50 @@ function createSchema() {
     CREATE INDEX IF NOT EXISTS idx_barriers_created_at ON readiness_barriers(created_at DESC);
   `);
   
+  // Adult Health History Questionnaire (aHHQ) tracking table
+  // PURPOSE: Track operational status of aHHQ documentation for patients
+  // NOTE: This is NON-CLINICAL, NON-ALLOCATIVE, and for OPERATIONAL DOCUMENTATION purposes only.
+  // It tracks whether required health history questionnaires are present, complete, and current.
+  // It does NOT store medical narratives, clinical interpretations, or eligibility determinations.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS adult_health_history_questionnaires (
+      id TEXT PRIMARY KEY,
+      patient_id TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'incomplete' CHECK(status IN (
+        'complete',
+        'incomplete',
+        'pending_update',
+        'expired'
+      )),
+      last_completed_date TEXT,
+      expiration_date TEXT,
+      validity_period_days INTEGER DEFAULT 365,
+      identified_issues TEXT,
+      owning_role TEXT NOT NULL DEFAULT 'coordinator' CHECK(owning_role IN (
+        'coordinator',
+        'social_work',
+        'clinical',
+        'other'
+      )),
+      notes TEXT CHECK(length(notes) <= 255),
+      created_by TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      updated_by TEXT,
+      FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE,
+      FOREIGN KEY (created_by) REFERENCES users(id)
+    )
+  `);
+  
+  // Create indexes for aHHQ
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_ahhq_patient_id ON adult_health_history_questionnaires(patient_id);
+    CREATE INDEX IF NOT EXISTS idx_ahhq_status ON adult_health_history_questionnaires(status);
+    CREATE INDEX IF NOT EXISTS idx_ahhq_expiration_date ON adult_health_history_questionnaires(expiration_date);
+    CREATE INDEX IF NOT EXISTS idx_ahhq_owning_role ON adult_health_history_questionnaires(owning_role);
+    CREATE INDEX IF NOT EXISTS idx_ahhq_created_at ON adult_health_history_questionnaires(created_at DESC);
+  `);
+  
   console.log('Database schema created');
 }
 

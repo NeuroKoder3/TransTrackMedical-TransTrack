@@ -249,6 +249,107 @@ Barrier audit trails are available in the **Compliance Center**:
 
 ---
 
+## aHHQ Status Tracking (Non-Clinical)
+
+### Overview
+
+The aHHQ (Adult Health History Questionnaire) tracking feature helps monitor the **documentation status** of health history questionnaires. This feature tracks whether required questionnaires are:
+
+- Present
+- Complete
+- Current
+- Approaching expiration
+- Requiring follow-up
+
+This feature is:
+
+- **Non-Clinical**: Does not store medical narratives or health history content
+- **Non-Allocative**: Does not affect organ allocation decisions
+- **Documentation-Focused**: Tracks questionnaire status, not content
+- **Operational Only**: Supports documentation compliance
+
+> **Important**: This feature does NOT store actual health history information. It only tracks the operational status of the documentation.
+
+### Accessing aHHQ Status
+
+1. Navigate to a **Patient Details** page
+2. Scroll to the **aHHQ Status** section
+3. View current status and expiration information
+
+### Creating an aHHQ Record
+
+1. Click **Create aHHQ Record** on the patient's detail page
+2. Set the documentation status:
+   - **Complete**: Questionnaire is fully completed
+   - **Incomplete**: Sections are missing
+   - **Pending Update**: Review and update needed
+   - **Expired**: Past validity period
+
+3. If complete, enter the **Last Completed Date**
+4. Set the **Validity Period** (default 365 days)
+5. Assign the **Owning Role** (Coordinator, Social Work, Clinical, Other)
+6. If applicable, select any documentation issues:
+   - Missing sections
+   - Outdated information
+   - Follow-up required
+   - Documentation pending
+   - Signature required
+   - Verification needed
+
+7. Optionally add brief notes (max 255 characters, non-clinical only)
+8. Click **Create Record**
+
+### Managing aHHQ Status
+
+**Mark Complete**:
+- Click "Mark Complete" to update status and set completion date
+- Expiration date is automatically calculated based on validity period
+- Issues are cleared upon completion
+
+**Update Status**:
+- Click "Update" to modify aHHQ details
+- Change status, owning role, or identified issues
+
+**Monitor Expiration**:
+- aHHQs expiring within 30 days are flagged
+- Expired aHHQs show as high risk
+
+### Risk Dashboard Integration
+
+The **Risk Dashboard** includes an aHHQ Status tile showing:
+- Number of patients needing attention
+- Count of expiring and expired aHHQs
+- Breakdown by status and owning role
+
+Access the full aHHQ analysis in the **aHHQ Status** tab.
+
+### Expiration Timeline
+
+| Days Until Expiry | Status |
+|-------------------|--------|
+| > 30 days | Current |
+| 1-30 days | Expiring Soon (warning) |
+| 0 or negative | Expired (high risk) |
+
+### Best Practices
+
+1. **Track completion dates accurately**: Ensures correct expiration calculation
+2. **Set appropriate validity periods**: Follow organizational policy
+3. **Update status promptly**: Keeps dashboard accurate
+4. **Clear issues upon completion**: Reflects current state
+5. **Assign owning roles**: Supports accountability
+
+### Example Language
+
+| Do Use | Don't Use |
+|--------|-----------|
+| "aHHQ complete, current" | Medical history details |
+| "Signature needed" | Clinical findings |
+| "Update required" | Diagnoses or conditions |
+| "Follow-up scheduled" | Treatment recommendations |
+
+---
+
 ## Settings
 
 ### User Management (Admin Only)

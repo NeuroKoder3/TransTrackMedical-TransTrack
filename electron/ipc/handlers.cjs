@@ -18,6 +18,7 @@ const disasterRecovery = require('../services/disasterRecovery.cjs');
 const complianceView = require('../services/complianceView.cjs');
 const offlineReconciliation = require('../services/offlineReconciliation.cjs');
 const readinessBarriers = require('../services/readinessBarriers.cjs');
+const ahhqService = require('../services/ahhqService.cjs');
 
 // Current session store
 let currentSession = null;
@@ -37,7 +38,8 @@ const entityTableMap = {
   EHRValidationRule: 'ehr_validation_rules',
   AuditLog: 'audit_logs',
   User: 'users',
-  ReadinessBarrier: 'readiness_barriers'
+  ReadinessBarrier: 'readiness_barriers',
+  AdultHealthHistoryQuestionnaire: 'adult_health_history_questionnaires'
 };
 
 // Fields that store JSON data
@@ -686,6 +688,195 @@ function setupIPCHandlers() {
   ipcMain.handle('barrier:getAuditHistory', async (event, patientId, startDate, endDate) => {
     if (!currentUser) throw new Error('Not authenticated');
     return readinessBarriers.getBarrierAuditHistory(patientId, startDate, endDate);
+  });
+  
+  // ===== ADULT HEALTH HISTORY QUESTIONNAIRE (aHHQ) =====
+  // NOTE: This feature is strictly NON-CLINICAL, NON-ALLOCATIVE, and designed for
+  // OPERATIONAL DOCUMENTATION purposes only. It tracks whether required health history
+  // questionnaires are present, complete, and current. It does NOT store medical narratives,
+  // clinical interpretations, or eligibility determinations.
+  
+  // Get aHHQ constants
+  ipcMain.handle('ahhq:getStatuses', async () => {
+    return ahhqService.AHHQ_STATUS;
+  });
+  
+  ipcMain.handle('ahhq:getIssues', async () => {
+    return ahhqService.AHHQ_ISSUES;
+  });
+  
+  ipcMain.handle('ahhq:getOwningRoles', async () => {
+    return ahhqService.AHHQ_OWNING_ROLES;
+  });
+  
+  // Create aHHQ record
+  ipcMain.handle('ahhq:create', async (event, data) => {
+    if (!currentUser) throw new Error('Not authenticated');
+    
+    // Validate notes length
+    if (data.notes && data.notes.length > 255) {
+      throw new Error('Notes must be 255 characters or less');
+    }
+    
+    const result = ahhqService.createAHHQ(data, currentUser.id);
+    
+    // Audit log
+    logAudit('create', 'AdultHealthHistoryQuestionnaire', result.id, null, 
+      JSON.stringify({
+        patient_id: data.patient_id,
+        status: data.status,
+        owning_role: data.owning_role,
+        note: 'aHHQ record created (operational documentation tracking only)',
+      }),
+      currentUser.email, currentUser.role);
+    
+    return result;
+  });
+  
+  // Get aHHQ by ID
+  ipcMain.handle('ahhq:getById', async (event, id) => {
+    if (!currentUser) throw new Error('Not authenticated');
+    return ahhqService.getAHHQById(id);
+  });
+  
+  // Get aHHQ for patient
+  ipcMain.handle('ahhq:getByPatient', async (event, patientId) => {
+    if (!currentUser) throw new Error('Not authenticated');
+    return ahhqService.getAHHQByPatientId(patientId);
+  });
+  
+  // Get patient aHHQ summary
+  ipcMain.handle('ahhq:getPatientSummary', async (event, patientId) => {
+    if (!currentUser) throw new Error('Not authenticated');
+    return ahhqService.getPatientAHHQSummary(patientId);
+  });
+  
+  // Get all aHHQs with filters
+  ipcMain.handle('ahhq:getAll', async (event, filters) => {
+    if (!currentUser) throw new Error('Not authenticated');
+    return ahhqService.getAllAHHQs(filters);
+  });
+  
+  // Get expiring aHHQs
+  ipcMain.handle('ahhq:getExpiring', async (event, days) => {
+    if (!currentUser) throw new Error('Not authenticated');
+    return ahhqService.getExpiringAHHQs(days);
+  });
+  
+  // Get expired aHHQs
+  ipcMain.handle('ahhq:getExpired', async () => {
+    if (!currentUser) throw new Error('Not authenticated');
+    return ahhqService.getExpiredAHHQs();
+  });
+  
+  // Get incomplete aHHQs
+  ipcMain.handle('ahhq:getIncomplete', async () => {
+    if (!currentUser) throw new Error('Not authenticated');
+    return ahhqService.getIncompleteAHHQs();
+  });
+  
+  // Update aHHQ
+  ipcMain.handle('ahhq:update', async (event, id, data) => {
+    if (!currentUser) throw new Error('Not authenticated');
+    
+    // Validate notes length
+    if (data.notes && data.notes.length > 255) {
+      throw new Error('Notes must be 255 characters or less');
+    }
+    
+    const existing = ahhqService.getAHHQById(id);
+    const result = ahhqService.updateAHHQ(id, data, currentUser.id);
+    
+    // Audit log with changes
+    const changes = {};
+    if (data.status !== undefined && data.status !== existing.status) {
+      changes.status = { from: existing.status, to: data.status };
+    }
+    if (data.owning_role !== undefined && data.owning_role !== existing.owning_role) {
+      changes.owning_role = { from: existing.owning_role, to: data.owning_role };
+    }
+    
+    logAudit('update', 'AdultHealthHistoryQuestionnaire', id, null,
+      JSON.stringify({
+        patient_id: existing.patient_id,
+        changes,
+        note: 'aHHQ record updated (operational documentation tracking only)',
+      }),
+      currentUser.email, currentUser.role);
+    
+    return result;
+  });
+  
+  // Mark aHHQ complete
+  ipcMain.handle('ahhq:markComplete', async (event, id, completedDate) => {
+    if (!currentUser) throw new Error('Not authenticated');
+    
+    const existing = ahhqService.getAHHQById(id);
+    const result = ahhqService.markAHHQComplete(id, completedDate, currentUser.id);
+    
+    logAudit('complete', 'AdultHealthHistoryQuestionnaire', id, null,
+      JSON.stringify({
+        patient_id: existing.patient_id,
+        completed_date: completedDate || new Date().toISOString(),
+        expiration_date: result.expiration_date,
+        note: 'aHHQ marked complete (operational documentation tracking only)',
+      }),
+      currentUser.email, currentUser.role);
+    
+    return result;
+  });
+  
+  // Mark aHHQ as requiring follow-up
+  ipcMain.handle('ahhq:markFollowUpRequired', async (event, id, issues) => {
+    if (!currentUser) throw new Error('Not authenticated');
+    
+    const existing = ahhqService.getAHHQById(id);
+    const result = ahhqService.markAHHQFollowUpRequired(id, issues, currentUser.id);
+    
+    logAudit('follow_up_required', 'AdultHealthHistoryQuestionnaire', id, null,
+      JSON.stringify({
+        patient_id: existing.patient_id,
+        issues: issues,
+        note: 'aHHQ marked as requiring follow-up (operational documentation tracking only)',
+      }),
+      currentUser.email, currentUser.role);
+    
+    return result;
+  });
+  
+  // Delete aHHQ
+  ipcMain.handle('ahhq:delete', async (event, id) => {
+    if (!currentUser) throw new Error('Not authenticated');
+    if (currentUser.role !== 'admin') throw new Error('Admin access required');
+    
+    const existing = ahhqService.getAHHQById(id);
+    
+    logAudit('delete', 'AdultHealthHistoryQuestionnaire', id, null,
+      JSON.stringify({
+        patient_id: existing?.patient_id,
+        note: 'aHHQ record deleted (operational documentation tracking only)',
+      }),
+      currentUser.email, currentUser.role);
+    
+    return ahhqService.deleteAHHQ(id);
+  });
+  
+  // Get aHHQ dashboard metrics
+  ipcMain.handle('ahhq:getDashboard', async () => {
+    if (!currentUser) throw new Error('Not authenticated');
+    return ahhqService.getAHHQDashboard();
+  });
+  
+  // Get patients with aHHQ issues
+  ipcMain.handle('ahhq:getPatientsWithIssues', async (event, limit) => {
+    if (!currentUser) throw new Error('Not authenticated');
+    return ahhqService.getPatientsWithAHHQIssues(limit);
+  });
+  
+  // Get aHHQ audit history
+  ipcMain.handle('ahhq:getAuditHistory', async (event, patientId, startDate, endDate) => {
+    if (!currentUser) throw new Error('Not authenticated');
+    return ahhqService.getAHHQAuditHistory(patientId, startDate, endDate);
   });
   
   // ===== ACCESS CONTROL WITH JUSTIFICATION =====

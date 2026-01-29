@@ -238,6 +238,31 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getAuditHistory: (patientId, startDate, endDate) => ipcRenderer.invoke('barrier:getAuditHistory', patientId, startDate, endDate),
   },
   
+  // Adult Health History Questionnaire (aHHQ) Tracking
+  // NOTE: This feature is strictly NON-CLINICAL, NON-ALLOCATIVE, and designed for
+  // OPERATIONAL DOCUMENTATION purposes only. It tracks whether required health history
+  // questionnaires are present, complete, and current.
+  ahhq: {
+    getStatuses: () => ipcRenderer.invoke('ahhq:getStatuses'),
+    getIssues: () => ipcRenderer.invoke('ahhq:getIssues'),
+    getOwningRoles: () => ipcRenderer.invoke('ahhq:getOwningRoles'),
+    create: (data) => ipcRenderer.invoke('ahhq:create', data),
+    getById: (id) => ipcRenderer.invoke('ahhq:getById', id),
+    getByPatient: (patientId) => ipcRenderer.invoke('ahhq:getByPatient', patientId),
+    getPatientSummary: (patientId) => ipcRenderer.invoke('ahhq:getPatientSummary', patientId),
+    getAll: (filters) => ipcRenderer.invoke('ahhq:getAll', filters),
+    getExpiring: (days) => ipcRenderer.invoke('ahhq:getExpiring', days),
+    getExpired: () => ipcRenderer.invoke('ahhq:getExpired'),
+    getIncomplete: () => ipcRenderer.invoke('ahhq:getIncomplete'),
+    update: (id, data) => ipcRenderer.invoke('ahhq:update', id, data),
+    markComplete: (id, completedDate) => ipcRenderer.invoke('ahhq:markComplete', id, completedDate),
+    markFollowUpRequired: (id, issues) => ipcRenderer.invoke('ahhq:markFollowUpRequired', id, issues),
+    delete: (id) => ipcRenderer.invoke('ahhq:delete', id),
+    getDashboard: () => ipcRenderer.invoke('ahhq:getDashboard'),
+    getPatientsWithIssues: (limit) => ipcRenderer.invoke('ahhq:getPatientsWithIssues', limit),
+    getAuditHistory: (patientId, startDate, endDate) => ipcRenderer.invoke('ahhq:getAuditHistory', patientId, startDate, endDate),
+  },
+  
   // Access Control with Justification
   accessControl: {
     validateRequest: (permission, justification) => ipcRenderer.invoke('access:validateRequest', permission, justification),
