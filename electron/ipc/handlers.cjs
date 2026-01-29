@@ -250,6 +250,12 @@ function setupIPCHandlers() {
     const tableName = entityTableMap[entityName];
     if (!tableName) throw new Error(`Unknown entity: ${entityName}`);
     
+    // Prevent creation of audit logs via generic handler (HIPAA compliance)
+    // Audit logs should only be created internally via logAudit function
+    if (entityName === 'AuditLog') {
+      throw new Error('Audit logs cannot be created directly');
+    }
+    
     // Check license limits for patients and donors
     // Wrapped in try-catch to ensure demo/dev mode works even if license module has issues
     try {
@@ -319,7 +325,21 @@ function setupIPCHandlers() {
     const placeholders = fields.map(() => '?').join(', ');
     const values = fields.map(f => entityData[f]);
     
-    db.prepare(`INSERT INTO ${tableName} (${fields.join(', ')}) VALUES (${placeholders})`).run(...values);
+    try {
+      db.prepare(`INSERT INTO ${tableName} (${fields.join(', ')}) VALUES (${placeholders})`).run(...values);
+    } catch (dbError) {
+      // Provide user-friendly error messages for common database errors
+      if (dbError.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+        if (entityName === 'Patient' && entityData.patient_id) {
+          throw new Error(`A patient with ID "${entityData.patient_id}" already exists. Please use a unique Patient ID.`);
+        } else if (entityName === 'DonorOrgan' && entityData.donor_id) {
+          throw new Error(`A donor with ID "${entityData.donor_id}" already exists. Please use a unique Donor ID.`);
+        } else {
+          throw new Error(`A ${entityName} with this identifier already exists.`);
+        }
+      }
+      throw dbError;
+    }
     
     // Get patient name for audit log
     let patientName = null;

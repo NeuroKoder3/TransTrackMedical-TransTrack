@@ -258,21 +258,21 @@ const createElectronClient = () => {
     // NOTE: This feature is strictly NON-CLINICAL, NON-ALLOCATIVE, and designed for
     // operational workflow visibility only.
     barriers: {
-      getTypes: async () => await api.barriers.getTypes(),
-      getStatuses: async () => await api.barriers.getStatuses(),
-      getRiskLevels: async () => await api.barriers.getRiskLevels(),
-      getOwningRoles: async () => await api.barriers.getOwningRoles(),
-      create: async (data) => await api.barriers.create(data),
-      update: async (id, data) => await api.barriers.update(id, data),
-      resolve: async (id) => await api.barriers.resolve(id),
-      delete: async (id) => await api.barriers.delete(id),
+      getTypes: async () => await window.electronAPI.barriers.getTypes(),
+      getStatuses: async () => await window.electronAPI.barriers.getStatuses(),
+      getRiskLevels: async () => await window.electronAPI.barriers.getRiskLevels(),
+      getOwningRoles: async () => await window.electronAPI.barriers.getOwningRoles(),
+      create: async (data) => await window.electronAPI.barriers.create(data),
+      update: async (id, data) => await window.electronAPI.barriers.update(id, data),
+      resolve: async (id) => await window.electronAPI.barriers.resolve(id),
+      delete: async (id) => await window.electronAPI.barriers.delete(id),
       getByPatient: async (patientId, includeResolved = false) => 
-        await api.barriers.getByPatient(patientId, includeResolved),
-      getPatientSummary: async (patientId) => await api.barriers.getPatientSummary(patientId),
-      getAllOpen: async () => await api.barriers.getAllOpen(),
-      getDashboard: async () => await api.barriers.getDashboard(),
+        await window.electronAPI.barriers.getByPatient(patientId, includeResolved),
+      getPatientSummary: async (patientId) => await window.electronAPI.barriers.getPatientSummary(patientId),
+      getAllOpen: async () => await window.electronAPI.barriers.getAllOpen(),
+      getDashboard: async () => await window.electronAPI.barriers.getDashboard(),
       getAuditHistory: async (patientId, startDate, endDate) => 
-        await api.barriers.getAuditHistory(patientId, startDate, endDate),
+        await window.electronAPI.barriers.getAuditHistory(patientId, startDate, endDate),
     },
     // Alias for service role operations (same as regular in local mode)
     asServiceRole: {

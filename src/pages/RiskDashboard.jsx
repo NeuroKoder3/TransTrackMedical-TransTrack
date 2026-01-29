@@ -298,78 +298,177 @@ export default function RiskDashboard() {
                 </Alert>
 
                 {/* Barrier Statistics */}
-                {barrierDashboard && (
+                {barrierDashboard ? (
                   <div className="space-y-6">
-                    {/* Summary Stats */}
+                    {/* Summary Stats - With Status Icons */}
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      <div className="p-4 bg-slate-50 rounded-lg">
-                        <div className="text-sm text-slate-600">Open Barriers</div>
-                        <div className="text-2xl font-bold text-slate-900">{barrierDashboard.byStatus?.open || 0}</div>
+                      <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center">
+                          <div className="w-6 h-6 rounded-full bg-blue-500 flex items-center justify-center">
+                            <span className="text-white text-xs font-bold">✓</span>
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-sm text-slate-600">Open</div>
+                          <div className="text-2xl font-bold text-slate-900">{barrierDashboard.byStatus?.open || 0}</div>
+                        </div>
                       </div>
-                      <div className="p-4 bg-slate-50 rounded-lg">
-                        <div className="text-sm text-slate-600">In Progress</div>
-                        <div className="text-2xl font-bold text-slate-900">{barrierDashboard.byStatus?.in_progress || 0}</div>
+                      <div className="p-4 bg-yellow-50 rounded-lg border border-yellow-200 flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-full bg-yellow-100 flex items-center justify-center">
+                          <Clock className="w-6 h-6 text-yellow-600" />
+                        </div>
+                        <div>
+                          <div className="text-sm text-yellow-700">In Progress</div>
+                          <div className="text-2xl font-bold text-yellow-900">{barrierDashboard.byStatus?.in_progress || 0}</div>
+                        </div>
                       </div>
-                      <div className="p-4 bg-red-50 rounded-lg">
-                        <div className="text-sm text-red-600">High Risk</div>
-                        <div className="text-2xl font-bold text-red-900">{barrierDashboard.byRiskLevel?.high || 0}</div>
+                      <div className="p-4 bg-red-50 rounded-lg border border-red-200 flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center">
+                          <AlertTriangle className="w-6 h-6 text-red-600" />
+                        </div>
+                        <div>
+                          <div className="text-sm text-red-600">High Risk</div>
+                          <div className="text-2xl font-bold text-red-900">{barrierDashboard.byRiskLevel?.high || 0}</div>
+                        </div>
                       </div>
-                      <div className="p-4 bg-amber-50 rounded-lg">
-                        <div className="text-sm text-amber-600">Overdue</div>
-                        <div className="text-2xl font-bold text-amber-900">{barrierDashboard.overdueBarriers || 0}</div>
+                      <div className="p-4 bg-amber-50 rounded-lg border border-amber-200 flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center">
+                          <Clock className="w-6 h-6 text-amber-600" />
+                        </div>
+                        <div>
+                          <div className="text-sm text-amber-600">Overdue</div>
+                          <div className="text-2xl font-bold text-amber-900">{barrierDashboard.overdueBarriers || 0}</div>
+                        </div>
                       </div>
                     </div>
 
-                    {/* Barriers by Type */}
+                    {/* Barriers by Type - Horizontal Bar Chart Style */}
                     <div>
                       <h4 className="font-medium text-slate-700 mb-3">Barriers by Type</h4>
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                        {Object.entries(barrierDashboard.byType || {}).map(([type, count]) => (
-                          count > 0 && (
-                            <div key={type} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
-                              <span className="text-sm text-slate-600">{type.replace(/_/g, ' ')}</span>
-                              <Badge variant="outline">{count}</Badge>
+                      <div className="space-y-2">
+                        {(() => {
+                          const typeEntries = Object.entries(barrierDashboard.byType || {}).filter(([_, count]) => count > 0);
+                          const maxCount = Math.max(...typeEntries.map(([_, count]) => count), 1);
+                          const typeColors = {
+                            PENDING_TESTING: 'bg-blue-500',
+                            INSURANCE_CLEARANCE: 'bg-purple-500',
+                            TRANSPORTATION_PLAN: 'bg-green-500',
+                            CAREGIVER_SUPPORT: 'bg-cyan-500',
+                            HOUSING_DISTANCE: 'bg-orange-500',
+                            PSYCHOSOCIAL_FOLLOWUP: 'bg-pink-500',
+                            FINANCIAL_CLEARANCE: 'bg-amber-500',
+                            OTHER_NON_CLINICAL: 'bg-slate-500',
+                          };
+                          const typeLabels = {
+                            PENDING_TESTING: 'Pending Testing',
+                            INSURANCE_CLEARANCE: 'Insurance Clearance',
+                            TRANSPORTATION_PLAN: 'Transportation',
+                            CAREGIVER_SUPPORT: 'Caregiver Support',
+                            HOUSING_DISTANCE: 'Housing/Distance',
+                            PSYCHOSOCIAL_FOLLOWUP: 'Psychosocial Follow-up',
+                            FINANCIAL_CLEARANCE: 'Financial Clearance',
+                            OTHER_NON_CLINICAL: 'Other (Non-Clinical)',
+                          };
+                          
+                          return typeEntries.map(([type, count]) => (
+                            <div key={type} className="flex items-center gap-3">
+                              <div className="w-40 text-sm text-slate-600 truncate">
+                                {typeLabels[type] || type.replace(/_/g, ' ')}
+                              </div>
+                              <div className="flex-1 h-8 bg-slate-100 rounded-lg overflow-hidden relative">
+                                <div 
+                                  className={`h-full ${typeColors[type] || 'bg-slate-500'} rounded-lg transition-all duration-500`}
+                                  style={{ width: `${(count / maxCount) * 100}%` }}
+                                />
+                              </div>
+                              <div className="w-8 text-right">
+                                <Badge variant="secondary" className="font-bold">{count}</Badge>
+                              </div>
                             </div>
-                          )
-                        ))}
+                          ));
+                        })()}
+                        {Object.values(barrierDashboard.byType || {}).every(count => count === 0) && (
+                          <div className="text-center py-4 text-slate-500">
+                            <p className="text-sm">No barriers by type to display</p>
+                          </div>
+                        )}
                       </div>
                     </div>
 
-                    {/* Top Barrier Patients */}
+                    {/* Top Barrier Patients - Table Style */}
                     <div>
                       <h4 className="font-medium text-slate-700 mb-3">Patients with Most Barriers</h4>
                       {barrierDashboard.topBarrierPatients?.length > 0 ? (
-                        <div className="space-y-2">
-                          {barrierDashboard.topBarrierPatients.map((patient) => (
-                            <div 
-                              key={patient.patientId}
-                              className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border"
-                            >
-                              <div>
-                                <Link 
-                                  to={`${createPageUrl('PatientDetails')}?id=${patient.patientId}`}
-                                  className="font-medium text-slate-900 hover:text-cyan-600 flex items-center gap-1"
-                                >
-                                  {patient.patientName}
-                                  <ExternalLink className="w-3 h-3" />
-                                </Link>
-                                <div className="text-sm text-slate-500">{patient.mrn}</div>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                {patient.highRiskCount > 0 && (
-                                  <BarrierRiskBadge riskLevel="high" size="sm" />
-                                )}
-                                <Badge className={patient.highRiskCount > 0 ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}>
-                                  {patient.barrierCount} barrier{patient.barrierCount !== 1 ? 's' : ''}
-                                </Badge>
-                              </div>
-                            </div>
-                          ))}
+                        <div className="border rounded-lg overflow-hidden">
+                          <table className="w-full">
+                            <thead className="bg-slate-50 border-b">
+                              <tr>
+                                <th className="text-left px-4 py-3 text-sm font-medium text-slate-600">Patient Name</th>
+                                <th className="text-left px-4 py-3 text-sm font-medium text-slate-600">Patient ID</th>
+                                <th className="text-left px-4 py-3 text-sm font-medium text-slate-600">Active Barriers</th>
+                                <th className="text-left px-4 py-3 text-sm font-medium text-slate-600">Risk Score</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {barrierDashboard.topBarrierPatients.map((patient) => {
+                                // Calculate risk score display
+                                let riskLabel = 'Low';
+                                let riskColor = 'text-green-600';
+                                let riskDot = 'bg-green-500';
+                                if (patient.highRiskCount >= 2) {
+                                  riskLabel = 'High';
+                                  riskColor = 'text-red-600';
+                                  riskDot = 'bg-red-500';
+                                } else if (patient.highRiskCount >= 1 || patient.barrierCount >= 3) {
+                                  riskLabel = 'Medium-High';
+                                  riskColor = 'text-orange-600';
+                                  riskDot = 'bg-orange-500';
+                                } else if (patient.barrierCount >= 2) {
+                                  riskLabel = 'Medium';
+                                  riskColor = 'text-yellow-600';
+                                  riskDot = 'bg-yellow-500';
+                                }
+                                
+                                return (
+                                  <tr key={patient.patientId} className="hover:bg-slate-50">
+                                    <td className="px-4 py-3">
+                                      <Link 
+                                        to={`${createPageUrl('PatientDetails')}?id=${patient.patientId}`}
+                                        className="font-medium text-slate-900 hover:text-cyan-600"
+                                      >
+                                        {patient.patientName}
+                                      </Link>
+                                    </td>
+                                    <td className="px-4 py-3 text-sm text-slate-600">
+                                      {patient.mrn || '-'}
+                                    </td>
+                                    <td className="px-4 py-3">
+                                      <span className="font-medium">{patient.barrierCount}</span>
+                                      {patient.highRiskCount > 0 && (
+                                        <span className="text-red-600 text-sm ml-1">
+                                          ({patient.highRiskCount} High
+                                          {patient.barrierCount - patient.highRiskCount > 0 && 
+                                            `, ${patient.barrierCount - patient.highRiskCount} Med`})
+                                        </span>
+                                      )}
+                                    </td>
+                                    <td className="px-4 py-3">
+                                      <div className="flex items-center gap-2">
+                                        <span className={`w-2 h-2 rounded-full ${riskDot}`}></span>
+                                        <span className={`text-sm font-medium ${riskColor}`}>{riskLabel}</span>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
                         </div>
                       ) : (
-                        <div className="text-center py-8 text-slate-500">
-                          <Activity className="w-12 h-12 mx-auto mb-3 text-green-300" />
-                          <p>No patients with readiness barriers</p>
+                        <div className="text-center py-8 text-slate-500 bg-slate-50 rounded-lg border border-dashed border-slate-300">
+                          <Activity className="w-12 h-12 mx-auto mb-3 text-green-400" />
+                          <p className="font-medium">No patients with readiness barriers</p>
+                          <p className="text-sm text-slate-400 mt-1">All patients are barrier-free</p>
                         </div>
                       )}
                     </div>
@@ -390,6 +489,22 @@ export default function RiskDashboard() {
                         </div>
                       </div>
                     )}
+                  </div>
+                ) : (
+                  <div className="text-center py-12">
+                    <ClipboardList className="w-16 h-16 mx-auto mb-4 text-slate-300" />
+                    <h3 className="text-lg font-medium text-slate-700 mb-2">No Barrier Data Available</h3>
+                    <p className="text-slate-500 max-w-md mx-auto">
+                      Readiness barrier tracking is ready. Add barriers to patients from their detail pages to start tracking non-clinical operational barriers.
+                    </p>
+                    <Button 
+                      className="mt-4" 
+                      variant="outline"
+                      onClick={handleRefresh}
+                    >
+                      <RefreshCw className="w-4 h-4 mr-2" />
+                      Refresh Data
+                    </Button>
                   </div>
                 )}
               </CardContent>

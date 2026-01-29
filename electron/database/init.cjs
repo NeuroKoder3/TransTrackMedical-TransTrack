@@ -380,9 +380,27 @@ function createSchema() {
       user_role TEXT,
       ip_address TEXT,
       user_agent TEXT,
-      created_date TEXT DEFAULT (datetime('now'))
+      created_date TEXT DEFAULT (datetime('now')),
+      created_by TEXT
     )
   `);
+  
+  // Add missing columns to audit_logs table if they don't exist (for existing databases)
+  const auditLogColumns = db.prepare("PRAGMA table_info(audit_logs)").all().map(c => c.name);
+  const auditLogColumnsToAdd = [
+    { name: 'created_by', type: 'TEXT' },
+  ];
+  
+  for (const col of auditLogColumnsToAdd) {
+    if (!auditLogColumns.includes(col.name)) {
+      try {
+        db.exec(`ALTER TABLE audit_logs ADD COLUMN ${col.name} ${col.type}`);
+        console.log(`Added column ${col.name} to audit_logs table`);
+      } catch (e) {
+        // Column might already exist, ignore
+      }
+    }
+  }
   
   // Settings table
   db.exec(`
