@@ -1617,35 +1617,8 @@ function setupIPCHandlers() {
     return offlineReconciliation.getOperationMode();
   });
   
-  // ===== LICENSE MANAGEMENT =====
-  
-  // Get comprehensive license info
-  ipcMain.handle('license:getInfo', async () => {
-    return licenseManager.getLicenseInfo();
-  });
-  
-  // Activate license with key
-  ipcMain.handle('license:activate', async (event, key, customerInfo) => {
-    if (!currentUser) throw new Error('Not authenticated');
-    
-    // Log attempt
-    logAudit('license_activation_attempt', 'License', null, null, 
-      `License activation attempted`, currentUser.email, currentUser.role);
-    
-    try {
-      const result = await licenseManager.activateLicense(key, customerInfo);
-      
-      // Log success
-      logAudit('license_activated', 'License', null, null, 
-        `License activated: ${result.tierName}`, currentUser.email, currentUser.role);
-      
-      return result;
-    } catch (error) {
-      logAudit('license_activation_failed', 'License', null, null, 
-        `License activation failed: ${error.message}`, currentUser.email, currentUser.role);
-      throw error;
-    }
-  });
+  // ===== LICENSE MANAGEMENT (Additional Handlers) =====
+  // Note: license:getInfo, license:activate, license:checkFeature are defined earlier
   
   // Renew maintenance
   ipcMain.handle('license:renewMaintenance', async (event, renewalKey, years) => {
@@ -1674,11 +1647,6 @@ function setupIPCHandlers() {
   ipcMain.handle('license:getLimits', async () => {
     const tier = licenseManager.getCurrentTier();
     return licenseManager.getTierLimits(tier);
-  });
-  
-  // Check feature access
-  ipcMain.handle('license:checkFeature', async (event, feature) => {
-    return featureGate.canAccessFeature(feature);
   });
   
   // Check limit
