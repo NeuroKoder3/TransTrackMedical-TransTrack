@@ -505,7 +505,7 @@ async function initDatabase() {
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
   
-  // Create schema (new multi-org schema)
+  // Create schema (new multi-org schema) - tables only, no indexes yet
   createSchema(db);
   
   // Check if we need to migrate from pre-org schema
@@ -521,6 +521,9 @@ async function initDatabase() {
   if (migrateNeeded) {
     migrateToOrgSchema(defaultOrg.id);
   }
+  
+  // Now create indexes AFTER migration ensures org_id columns exist
+  createIndexes(db);
   
   // Seed default data if needed
   await seedDefaultData(defaultOrg.id);

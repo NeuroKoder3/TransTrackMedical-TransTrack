@@ -549,10 +549,8 @@ function createSchema(db) {
     )
   `);
 
-  // =========================================================================
-  // CREATE INDEXES
-  // =========================================================================
-  createIndexes(db);
+  // NOTE: Indexes are created AFTER migration in init.cjs, not here
+  // This is because existing databases may not have org_id columns yet
 }
 
 /**
