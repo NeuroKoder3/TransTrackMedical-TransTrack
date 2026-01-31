@@ -9,13 +9,10 @@ import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { 
   Shield, 
-  ShieldAlert, 
-  ShieldCheck, 
   Clock, 
   AlertTriangle,
   Crown,
-  Star,
-  Sparkles
+  Star
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import {

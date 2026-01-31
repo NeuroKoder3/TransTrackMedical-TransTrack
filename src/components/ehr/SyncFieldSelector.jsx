@@ -4,7 +4,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Save, Shield, ArrowRight } from 'lucide-react';
+import { Save, Shield } from 'lucide-react';
 
 export default function SyncFieldSelector({ integration, onSave }) {
   const availableFields = [

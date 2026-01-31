@@ -1,0 +1,150 @@
+name: Security Scanning
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  schedule:
+    # Run security scans daily at 6 AM UTC
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  # NPM Audit - Check for vulnerable dependencies
+  npm-audit:
+    name: NPM Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run npm audit
+        run: npm audit --audit-level=moderate
+        continue-on-error: true
+
+      - name: Run npm audit (JSON output)
+        run: npm audit --json > npm-audit-results.json || true
+
+      - name: Upload audit results
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-audit-results
+          path: npm-audit-results.json
+          retention-days: 30
+
+  # Check for outdated dependencies
+  dependency-check:
+    name: Dependency Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check for outdated packages
+        run: npm outdated || true
+
+      - name: Generate outdated report
+        run: npm outdated --json > outdated-packages.json || true
+
+      - name: Upload outdated packages report
+        uses: actions/upload-artifact@v4
+        with:
+          name: outdated-packages
+          path: outdated-packages.json
+          retention-days: 30
+
+  # ESLint security checks
+  lint-security:
+    name: Lint & Security Patterns
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint
+
+  # Run existing security tests
+  security-tests:
+    name: Security Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run security tests
+        run: npm run test:security
+
+  # License compliance check
+  license-check:
+    name: License Compliance
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install license-checker
+        run: npm install -g license-checker
+
+      - name: Check licenses
+        run: license-checker --summary --production
+
+      - name: Generate license report
+        run: license-checker --json --production > license-report.json
+
+      - name: Upload license report
+        uses: actions/upload-artifact@v4
+        with:
+          name: license-report
+          path: license-report.json
+          retention-days: 30

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -11,7 +11,6 @@ import {
   RefreshCw, TrendingDown, Activity, Shield, ClipboardList,
   Info, ExternalLink, FileCheck
 } from 'lucide-react';
-import { BarrierRiskBadge } from '@/components/barriers';
 import { AHHQRiskBadge } from '@/components/ahhq';
 import { createPageUrl } from '@/utils';
 import api from '@/api/localClient';

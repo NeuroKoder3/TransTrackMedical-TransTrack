@@ -8,7 +8,7 @@ import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { api } from '@/api/apiClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Settings, Plus, X, Save, RefreshCw, Link as LinkIcon, Copy, ArrowLeftRight, AlertCircle } from 'lucide-react';
+import { Settings, Plus, X, Save, Link as LinkIcon, Copy, ArrowLeftRight, AlertCircle } from 'lucide-react';
 import { format } from 'date-fns';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import SyncFieldSelector from './SyncFieldSelector';

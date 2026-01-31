@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { api } from '@/api/apiClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
@@ -6,10 +6,9 @@ import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Bell, AlertCircle, CheckCircle, X } from 'lucide-react';
+import { Bell, AlertCircle, X } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 

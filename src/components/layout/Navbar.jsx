@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
-import { Activity, Users, FileText, Settings, LogOut, Shield, Heart, Database, Bell, AlertTriangle, HardDrive, CreditCard } from 'lucide-react';
+import { Activity, Users, FileText, Settings, LogOut, Shield, Heart, Database, AlertTriangle, HardDrive } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { api } from '@/api/apiClient';
 import NotificationBell from '../notifications/NotificationBell';

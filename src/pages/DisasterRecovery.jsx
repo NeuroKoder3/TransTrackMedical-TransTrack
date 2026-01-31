@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/dialog';
 import { 
   Database, Download, Upload, CheckCircle, AlertTriangle,
-  Clock, HardDrive, RefreshCw, Shield, Trash2
+  Clock, HardDrive, RefreshCw, Shield
 } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';

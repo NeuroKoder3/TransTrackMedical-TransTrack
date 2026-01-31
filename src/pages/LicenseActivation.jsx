@@ -14,15 +14,14 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
 import { 
-  Loader2, Key, Shield, ExternalLink, Mail, Clock, CheckCircle, 
-  CreditCard, Building, Star, Crown, AlertTriangle, Copy, RefreshCw,
-  ArrowRight, Check, Info
+  Loader2, Key, Shield, Mail, Clock, 
+  CreditCard, Building, Star, Crown, AlertTriangle, Copy, Check, Info
 } from 'lucide-react';
 
 const TIER_CONFIG = {

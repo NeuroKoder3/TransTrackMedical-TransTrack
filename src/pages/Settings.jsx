@@ -2,8 +2,7 @@ import React from 'react';
 import { api } from '@/api/apiClient';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Settings as SettingsIcon, Users, Shield, Activity } from 'lucide-react';
+import { Users, Shield, Activity } from 'lucide-react';
 import { format } from 'date-fns';
 
 export default function Settings() {

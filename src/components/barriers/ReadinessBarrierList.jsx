@@ -17,7 +17,6 @@ import {
   Plus, 
   Edit2, 
   CheckCircle, 
-  Trash2, 
   Clock,
   Calendar,
   User,

@@ -9,7 +9,6 @@ import React from 'react';
 import { 
   CreditCard, 
   Mail, 
-  ExternalLink, 
   Shield, 
   Star, 
   Crown,
