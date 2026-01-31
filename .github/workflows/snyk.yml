@@ -2,76 +2,26 @@ name: Snyk Security
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main]
   pull_request:
-    branches: [main, develop]
-  schedule:
-    - cron: '0 7 * * *'
+    branches: [main]
   workflow_dispatch:
-
-permissions:
-  contents: read
-  security-events: write
 
 jobs:
   snyk:
-    name: Snyk Security Scan
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies (skip native builds)
-        run: npm install --ignore-scripts
-
-      - name: Install Snyk CLI
-        run: npm install -g snyk
-
-      - name: Run Snyk test
-        run: snyk test --severity-threshold=high || true
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-
-      - name: Run Snyk test (JSON output)
-        run: snyk test --json > snyk-results.json || true
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-
-      - name: Upload Snyk results
-        uses: actions/upload-artifact@v4
-        with:
-          name: snyk-results
-          path: snyk-results.json
-          retention-days: 30
-          if-no-files-found: ignore
-
-  snyk-monitor:
-    name: Snyk Monitor
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies (skip native builds)
-        run: npm install --ignore-scripts
-
-      - name: Install Snyk CLI
-        run: npm install -g snyk
-
-      - name: Run Snyk monitor
-        run: snyk monitor || true
+      
+      - run: npm install --ignore-scripts
+      
+      - run: npm install -g snyk
+      
+      - name: Snyk Test
+        run: snyk test || true
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}

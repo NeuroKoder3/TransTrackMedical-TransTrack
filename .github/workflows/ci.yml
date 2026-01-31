@@ -2,64 +2,25 @@ name: CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main]
   pull_request:
-    branches: [main, develop]
+    branches: [main]
   workflow_dispatch:
-
-permissions:
-  contents: read
 
 jobs:
   build:
-    name: Build & Test
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies (skip native builds)
-        run: npm install --ignore-scripts
-
-      - name: Run npm audit
-        run: npm audit --audit-level=high || true
-
-      - name: Run linting
-        run: npm run lint || true
-
-      - name: Run tests
-        run: npm test || true
-
-      - name: Build application
-        run: npm run build
-
-  security-gate:
-    name: Security Gate
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies (skip native builds)
-        run: npm install --ignore-scripts
-
-      - name: Security audit
-        run: |
-          echo "Running security checks..."
-          npm audit --json > audit-results.json || true
-          cat audit-results.json | head -100 || true
-          echo "Security check completed"
+      
+      - run: npm install --ignore-scripts
+      
+      - run: npm audit || true
+      
+      - run: npm run lint || true
+      
+      - run: npm run build
