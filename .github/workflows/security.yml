@@ -37,7 +37,7 @@ jobs:
         run: npm audit --json > npm-audit-results.json || true
 
       - name: Upload audit results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: npm-audit-results
           path: npm-audit-results.json
@@ -67,7 +67,7 @@ jobs:
         run: npm outdated --json > outdated-packages.json || true
 
       - name: Upload outdated packages report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: outdated-packages
           path: outdated-packages.json
@@ -138,7 +138,7 @@ jobs:
         run: license-checker --json --production > license-report.json || true
 
       - name: Upload license report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: license-report
           path: license-report.json
