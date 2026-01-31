@@ -33,7 +33,7 @@ export default function EHRIntegrationManager() {
 
   const { data: integrations = [] } = useQuery({
     queryKey: ['ehrIntegrations'],
-    queryFn: () => api.entities.EHRIntegration.list('-created_date', 50),
+    queryFn: () => api.entities.EHRIntegration.list('-created_at', 50),
   });
 
   const createIntegrationMutation = useMutation({

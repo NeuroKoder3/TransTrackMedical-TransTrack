@@ -299,7 +299,7 @@ export default function ComplianceCenter() {
                       {auditTrail?.logs?.slice(0, 50).map((log) => (
                         <TableRow key={log.id}>
                           <TableCell className="text-sm">
-                            {log.created_date ? format(new Date(log.created_date), 'MMM d, yyyy HH:mm') : 'N/A'}
+                            {log.created_at ? format(new Date(log.created_at), 'MMM d, yyyy HH:mm') : 'N/A'}
                           </TableCell>
                           <TableCell>
                             <Badge variant="outline">{log.action}</Badge>
@@ -418,7 +418,7 @@ export default function ComplianceCenter() {
                         barrierAuditHistory.slice(0, 100).map((log) => (
                           <TableRow key={log.id}>
                             <TableCell className="text-sm">
-                              {log.created_date ? format(new Date(log.created_date), 'MMM d, yyyy HH:mm') : 'N/A'}
+                              {log.created_at ? format(new Date(log.created_at), 'MMM d, yyyy HH:mm') : 'N/A'}
                             </TableCell>
                             <TableCell>
                               <Badge 

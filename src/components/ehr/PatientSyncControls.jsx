@@ -27,7 +27,7 @@ export default function PatientSyncControls({ patient }) {
     queryKey: ['ehrSyncLogs', patient.id],
     queryFn: () => api.entities.EHRSyncLog.filter({ 
       patient_id: patient.id 
-    }, '-created_date', 10),
+    }, '-created_at', 10),
   });
 
   const handlePushToEHR = async () => {
@@ -197,7 +197,7 @@ export default function PatientSyncControls({ patient }) {
                         {log.status}
                       </Badge>
                       <span className="text-xs text-slate-500">
-                        {format(new Date(log.created_date), 'MMM d, h:mm a')}
+                        {format(new Date(log.created_at), 'MMM d, h:mm a')}
                       </span>
                     </div>
                     {log.fields_synced && log.fields_synced.length > 0 && (

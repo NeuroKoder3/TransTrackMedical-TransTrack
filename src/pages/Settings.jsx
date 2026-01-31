@@ -19,7 +19,7 @@ export default function Settings() {
 
   const { data: auditLogs = [] } = useQuery({
     queryKey: ['recentAuditLogs'],
-    queryFn: () => api.entities.AuditLog.list('-created_date', 20),
+    queryFn: () => api.entities.AuditLog.list('-created_at', 20),
     enabled: user?.role === 'admin',
   });
 
@@ -115,7 +115,7 @@ export default function Settings() {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-600">
-                        {format(new Date(u.created_date), 'MMM d, yyyy')}
+                        {format(new Date(u.created_at), 'MMM d, yyyy')}
                       </td>
                     </tr>
                   ))}
@@ -144,7 +144,7 @@ export default function Settings() {
                       </div>
                       <p className="text-sm text-slate-700 mt-1">{log.details}</p>
                       <p className="text-xs text-slate-500 mt-1">
-                        {format(new Date(log.created_date), 'MMM d, yyyy h:mm a')} by {log.user_email}
+                        {format(new Date(log.created_at), 'MMM d, yyyy h:mm a')} by {log.user_email}
                       </p>
                     </div>
                   </div>

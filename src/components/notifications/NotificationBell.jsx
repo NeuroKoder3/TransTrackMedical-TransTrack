@@ -20,7 +20,7 @@ export default function NotificationBell({ user }) {
     queryKey: ['notifications', user?.email],
     queryFn: () => api.entities.Notification.filter(
       { recipient_email: user.email },
-      '-created_date',
+      '-created_at',
       50
     ),
     enabled: !!user,
@@ -138,7 +138,7 @@ export default function NotificationBell({ user }) {
                       </p>
                     )}
                     <p className="text-xs text-slate-400 mt-1">
-                      {formatDistanceToNow(new Date(notification.created_date), { addSuffix: true })}
+                      {formatDistanceToNow(new Date(notification.created_at), { addSuffix: true })}
                     </p>
                   </div>
                 </div>

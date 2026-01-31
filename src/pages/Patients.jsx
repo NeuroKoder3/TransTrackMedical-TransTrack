@@ -16,7 +16,7 @@ export default function Patients() {
 
   const { data: patients = [], isLoading, error: queryError } = useQuery({
     queryKey: ['patients'],
-    queryFn: () => api.entities.Patient.list('-created_date', 500),
+    queryFn: () => api.entities.Patient.list('-created_at', 500),
   });
 
   const { data: user } = useQuery({

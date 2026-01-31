@@ -21,7 +21,7 @@ export default function DonorMatching() {
 
   const { data: donors = [], isLoading } = useQuery({
     queryKey: ['donors'],
-    queryFn: () => api.entities.DonorOrgan.list('-created_date', 100),
+    queryFn: () => api.entities.DonorOrgan.list('-created_at', 100),
   });
 
   const { data: user } = useQuery({

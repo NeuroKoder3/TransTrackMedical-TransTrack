@@ -33,7 +33,7 @@ export default function PatientDetails() {
 
   const { data: auditLogs = [] } = useQuery({
     queryKey: ['auditLogs', patientId],
-    queryFn: () => api.entities.AuditLog.filter({ entity_id: patientId }, '-created_date', 50),
+    queryFn: () => api.entities.AuditLog.filter({ entity_id: patientId }, '-created_at', 50),
     enabled: !!patientId,
   });
 
@@ -309,7 +309,7 @@ export default function PatientDetails() {
                     <div className="flex-1">
                       <p className="text-sm text-slate-900">{log.details}</p>
                       <p className="text-xs text-slate-500 mt-1">
-                        {format(new Date(log.created_date), 'MMM d, yyyy h:mm a')} by {log.user_email}
+                        {format(new Date(log.created_at), 'MMM d, yyyy h:mm a')} by {log.user_email}
                       </p>
                     </div>
                   </div>

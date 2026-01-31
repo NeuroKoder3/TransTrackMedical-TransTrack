@@ -28,7 +28,7 @@ export default function ValidationRuleManager() {
 
   const { data: rules = [] } = useQuery({
     queryKey: ['ehrValidationRules'],
-    queryFn: () => api.entities.EHRValidationRule.list('-created_date', 100),
+    queryFn: () => api.entities.EHRValidationRule.list('-created_at', 100),
   });
 
   const createRuleMutation = useMutation({

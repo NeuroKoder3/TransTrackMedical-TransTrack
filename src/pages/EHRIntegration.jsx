@@ -18,7 +18,7 @@ export default function EHRIntegration() {
 
   const { data: importHistory = [], refetch: refetchHistory } = useQuery({
     queryKey: ['ehrImports'],
-    queryFn: () => api.entities.EHRImport.list('-created_date', 50),
+    queryFn: () => api.entities.EHRImport.list('-created_at', 50),
   });
 
   const handleImportComplete = () => {
@@ -114,7 +114,7 @@ export default function EHRIntegration() {
                               </Badge>
                             </div>
                             <p className="text-sm text-slate-600 mt-2">
-                              {format(new Date(importRecord.created_date), 'MMM d, yyyy h:mm a')} by {importRecord.imported_by}
+                              {format(new Date(importRecord.created_at), 'MMM d, yyyy h:mm a')} by {importRecord.imported_by}
                             </p>
                             <div className="flex space-x-6 mt-3 text-sm">
                               <span className="text-slate-600">

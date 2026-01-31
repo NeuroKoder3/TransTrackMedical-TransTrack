@@ -24,7 +24,7 @@ export default function Notifications() {
 
   const { data: rules = [] } = useQuery({
     queryKey: ['notificationRules'],
-    queryFn: () => api.entities.NotificationRule.list('-created_date', 100),
+    queryFn: () => api.entities.NotificationRule.list('-created_at', 100),
     enabled: user?.role === 'admin',
   });
 
@@ -32,7 +32,7 @@ export default function Notifications() {
     queryKey: ['allNotifications', user?.email],
     queryFn: () => api.entities.Notification.filter(
       { recipient_email: user.email },
-      '-created_date',
+      '-created_at',
       100
     ),
     enabled: !!user,
@@ -146,7 +146,7 @@ export default function Notifications() {
                           </div>
                           <p className="text-sm text-slate-600 mt-1">{notification.message}</p>
                           <p className="text-xs text-slate-400 mt-2">
-                            {format(new Date(notification.created_date), 'MMM d, yyyy h:mm a')}
+                            {format(new Date(notification.created_at), 'MMM d, yyyy h:mm a')}
                           </p>
                         </div>
                       </div>
