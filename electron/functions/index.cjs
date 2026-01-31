@@ -235,7 +235,7 @@ async function calculatePriorityAdvanced(params, context) {
   
   // Update patient with new priority score
   db.prepare(`
-    UPDATE patients SET priority_score = ?, priority_score_breakdown = ?, updated_date = datetime('now')
+    UPDATE patients SET priority_score = ?, priority_score_breakdown = ?, updated_at = datetime('now')
     WHERE id = ?
   `).run(finalScore, JSON.stringify(breakdown), patient_id);
   

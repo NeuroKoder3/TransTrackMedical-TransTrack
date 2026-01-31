@@ -90,7 +90,7 @@ function assessPatientOperationalRisk(patient) {
   }
   
   // 2. Documentation Staleness Risk
-  const lastUpdate = patient.updated_date ? new Date(patient.updated_date) : null;
+  const lastUpdate = patient.updated_at ? new Date(patient.updated_at) : null;
   if (lastUpdate) {
     const daysSinceUpdate = Math.floor((now - lastUpdate) / (1000 * 60 * 60 * 24));
     
@@ -313,8 +313,8 @@ function analyzeWaitlistSegment(patients, segmentName) {
   
   // 3. Documentation Gap Analysis
   const patientsWithStaleData = patients.filter(p => {
-    if (!p.updated_date) return true;
-    const updateDate = new Date(p.updated_date);
+    if (!p.updated_at) return true;
+    const updateDate = new Date(p.updated_at);
     const daysSince = Math.floor((now - updateDate) / (1000 * 60 * 60 * 24));
     return daysSince > 60;
   });
@@ -578,8 +578,8 @@ async function getRiskDashboard() {
     }
     
     // Check documentation staleness
-    if (patient.updated_date) {
-      const updateDate = new Date(patient.updated_date);
+    if (patient.updated_at) {
+      const updateDate = new Date(patient.updated_at);
       const daysSince = Math.floor((now - updateDate) / (1000 * 60 * 60 * 24));
       if (daysSince > 60) {
         metrics.staleDocumentation++;

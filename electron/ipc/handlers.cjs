@@ -100,23 +100,23 @@ const SESSION_DURATION_MS = 8 * 60 * 60 * 1000; // 8 hours (reduced from 24 for 
 // Allowed columns for ORDER BY to prevent SQL injection
 // Note: org_id is NOT included as it should never be used for sorting (it's always filtered, not sorted)
 const ALLOWED_ORDER_COLUMNS = {
-  patients: ['id', 'patient_id', 'first_name', 'last_name', 'blood_type', 'organ_needed', 'medical_urgency', 'waitlist_status', 'priority_score', 'created_at', 'updated_at'],
-  donor_organs: ['id', 'donor_id', 'organ_type', 'blood_type', 'organ_status', 'status', 'created_at', 'updated_at'],
-  matches: ['id', 'compatibility_score', 'match_status', 'priority_rank', 'created_at', 'updated_at'],
-  notifications: ['id', 'title', 'notification_type', 'is_read', 'priority_level', 'created_at'],
-  notification_rules: ['id', 'rule_name', 'trigger_event', 'priority_level', 'is_active', 'created_at'],
+  patients: ['id', 'patient_id', 'first_name', 'last_name', 'blood_type', 'organ_needed', 'medical_urgency', 'waitlist_status', 'priority_score', 'date_of_birth', 'email', 'phone', 'created_at', 'updated_at'],
+  donor_organs: ['id', 'donor_id', 'organ_type', 'blood_type', 'organ_status', 'status', 'patient_id', 'created_at', 'updated_at'],
+  matches: ['id', 'donor_organ_id', 'patient_id', 'patient_name', 'compatibility_score', 'match_status', 'priority_rank', 'created_at', 'updated_at'],
+  notifications: ['id', 'recipient_email', 'title', 'notification_type', 'is_read', 'priority_level', 'related_patient_id', 'created_at'],
+  notification_rules: ['id', 'rule_name', 'trigger_event', 'priority_level', 'is_active', 'created_at', 'updated_at'],
   priority_weights: ['id', 'name', 'is_active', 'created_at', 'updated_at'],
-  ehr_integrations: ['id', 'name', 'type', 'is_active', 'last_sync_date', 'created_at'],
-  ehr_imports: ['id', 'import_type', 'status', 'created_at', 'completed_date'],
-  ehr_sync_logs: ['id', 'sync_type', 'direction', 'status', 'created_at'],
-  ehr_validation_rules: ['id', 'field_name', 'rule_type', 'is_active', 'created_at'],
-  audit_logs: ['id', 'action', 'entity_type', 'user_email', 'created_at'],
-  users: ['id', 'email', 'full_name', 'role', 'is_active', 'created_at', 'last_login'],
-  readiness_barriers: ['id', 'patient_id', 'barrier_type', 'status', 'risk_level', 'created_at', 'updated_at'],
-  adult_health_history_questionnaires: ['id', 'patient_id', 'status', 'expiration_date', 'created_at', 'updated_at'],
+  ehr_integrations: ['id', 'name', 'type', 'is_active', 'last_sync_date', 'base_url', 'sync_frequency_minutes', 'created_at', 'updated_at'],
+  ehr_imports: ['id', 'integration_id', 'import_type', 'status', 'created_at', 'completed_date'],
+  ehr_sync_logs: ['id', 'integration_id', 'sync_type', 'direction', 'status', 'created_at', 'completed_date'],
+  ehr_validation_rules: ['id', 'field_name', 'rule_type', 'is_active', 'created_at', 'updated_at'],
+  audit_logs: ['id', 'action', 'entity_type', 'entity_id', 'patient_name', 'user_id', 'user_email', 'user_role', 'created_at'],
+  users: ['id', 'email', 'full_name', 'role', 'is_active', 'created_at', 'updated_at', 'last_login'],
+  readiness_barriers: ['id', 'patient_id', 'barrier_type', 'status', 'risk_level', 'owning_role', 'created_at', 'updated_at'],
+  adult_health_history_questionnaires: ['id', 'patient_id', 'status', 'expiration_date', 'owning_role', 'created_at', 'updated_at'],
   organizations: ['id', 'name', 'type', 'status', 'created_at', 'updated_at'],
-  licenses: ['id', 'tier', 'activated_at', 'license_expires_at', 'created_at'],
-  settings: ['id', 'key', 'updated_at'],
+  licenses: ['id', 'tier', 'activated_at', 'license_expires_at', 'created_at', 'updated_at'],
+  settings: ['id', 'key', 'value', 'updated_at'],
 };
 
 // Password strength requirements
@@ -740,7 +740,7 @@ function setupIPCHandlers() {
     }
     
     const hashedPassword = await bcrypt.hash(newPassword, 12);
-    db.prepare("UPDATE users SET password_hash = ?, updated_date = datetime('now') WHERE id = ?")
+    db.prepare("UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE id = ?")
       .run(hashedPassword, currentUser.id);
     
     logAudit('update', 'User', currentUser.id, null, 'Password changed', currentUser.email, currentUser.role);
@@ -846,7 +846,7 @@ function setupIPCHandlers() {
     }
     
     if (updates.length > 0) {
-      updates.push("updated_date = datetime('now')");
+      updates.push("updated_at = datetime('now')");
       values.push(id);
       
       db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...values);
