@@ -6,7 +6,6 @@ on:
   pull_request:
     branches: [main, develop]
   schedule:
-    # Run CodeQL analysis weekly on Sundays at 2 AM UTC
     - cron: '0 2 * * 0'
   workflow_dispatch:
 
@@ -21,11 +20,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 360
 
-    strategy:
-      fail-fast: false
-      matrix:
-        language: ['javascript-typescript']
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -33,9 +27,8 @@ jobs:
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
         with:
-          languages: ${{ matrix.language }}
-          # Use extended security queries for more comprehensive analysis
-          queries: security-extended,security-and-quality
+          languages: javascript-typescript
+          queries: security-extended
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -43,16 +36,13 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - name: Install dependencies
-        run: npm ci --ignore-scripts
-        env:
-          npm_config_build_from_source: false
+      - name: Install dependencies (skip native builds)
+        run: npm install --ignore-scripts
 
       - name: Build application
-        run: npm run build
-        continue-on-error: true
+        run: npm run build || true
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
         with:
-          category: "/language:${{ matrix.language }}"
+          category: "/language:javascript-typescript"

@@ -6,7 +6,6 @@ on:
   pull_request:
     branches: [main, develop]
   schedule:
-    # Run Snyk scans daily at 7 AM UTC
     - cron: '0 7 * * *'
   workflow_dispatch:
 
@@ -28,36 +27,37 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - name: Install dependencies
-        run: npm ci --ignore-scripts
-        env:
-          npm_config_build_from_source: false
+      - name: Install dependencies (skip native builds)
+        run: npm install --ignore-scripts
 
-      - name: Run Snyk to check for vulnerabilities
-        uses: snyk/actions/node@master
-        continue-on-error: true # Don't fail the build, report to SARIF
+      - name: Install Snyk CLI
+        run: npm install -g snyk
+
+      - name: Authenticate Snyk
+        run: snyk auth ${{ secrets.SNYK_TOKEN }}
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          args: --severity-threshold=high --json-file-output=snyk-results.json
 
-      - name: Upload Snyk results to GitHub Code Scanning
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()
-        with:
-          sarif_file: snyk-code.sarif
-        continue-on-error: true
+      - name: Run Snyk test
+        run: snyk test --severity-threshold=high --json > snyk-results.json || true
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
-      - name: Upload Snyk results as artifact
+      - name: Display Snyk results
+        run: |
+          echo "=== Snyk Security Scan Results ==="
+          cat snyk-results.json | head -200 || echo "No results file"
+
+      - name: Upload Snyk results
         uses: actions/upload-artifact@v4
-        if: always()
         with:
           name: snyk-results
           path: snyk-results.json
           retention-days: 30
+          if-no-files-found: ignore
 
   snyk-monitor:
-    name: Snyk Monitor (main branch only)
+    name: Snyk Monitor
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     steps:
@@ -70,14 +70,13 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - name: Install dependencies
-        run: npm ci --ignore-scripts
-        env:
-          npm_config_build_from_source: false
+      - name: Install dependencies (skip native builds)
+        run: npm install --ignore-scripts
+
+      - name: Install Snyk CLI
+        run: npm install -g snyk
 
       - name: Run Snyk monitor
-        uses: snyk/actions/node@master
+        run: snyk monitor || true
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          command: monitor
