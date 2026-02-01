@@ -13,6 +13,7 @@ import PriorityBreakdown from '../components/patients/PriorityBreakdown';
 import PatientSyncControls from '../components/ehr/PatientSyncControls';
 import { ReadinessBarrierList } from '../components/barriers';
 import { AHHQPanel } from '../components/ahhq';
+import { LabsPanel } from '../components/labs';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 export default function PatientDetails() {
@@ -270,6 +271,12 @@ export default function PatientDetails() {
             )}
           </CardContent>
         </Card>
+
+        {/* Operational Risk Intelligence - Lab Results (Non-Clinical Documentation) */}
+        <LabsPanel 
+          patientId={patient.id}
+          patientName={`${patient.first_name} ${patient.last_name}`}
+        />
 
         {/* Documentation Status Section - Non-Clinical Operational Tracking */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

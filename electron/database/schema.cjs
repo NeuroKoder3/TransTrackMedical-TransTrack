@@ -549,6 +549,84 @@ function createSchema(db) {
     )
   `);
 
+  // =========================================================================
+  // LAB RESULTS TABLE (Org-Scoped)
+  // =========================================================================
+  // NOTE: This feature is strictly NON-CLINICAL and NON-ALLOCATIVE.
+  // Lab results are stored for OPERATIONAL documentation purposes only.
+  // The system does NOT interpret lab values, provide clinical recommendations,
+  // or make allocation-related decisions. It only tracks lab currency/completeness.
+  // Values are stored as strings to prevent any clinical interpretation.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS lab_results (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      patient_id TEXT NOT NULL,
+      
+      -- Lab identification
+      test_code TEXT NOT NULL,
+      test_name TEXT NOT NULL,
+      
+      -- Result data (stored as strings to prevent clinical interpretation)
+      value TEXT NOT NULL,
+      units TEXT,
+      reference_range TEXT,
+      
+      -- Timestamps
+      collected_at TEXT NOT NULL,
+      resulted_at TEXT,
+      
+      -- Source tracking (for audit purposes)
+      source TEXT NOT NULL DEFAULT 'MANUAL' CHECK(source IN ('MANUAL', 'FHIR_IMPORT')),
+      ordering_service TEXT,
+      
+      -- Audit fields
+      entered_by TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      updated_by TEXT,
+      
+      FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE,
+      FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE,
+      FOREIGN KEY (entered_by) REFERENCES users(id)
+    )
+  `);
+
+  // =========================================================================
+  // REQUIRED LAB TYPES TABLE (Org-Scoped Configuration)
+  // =========================================================================
+  // Defines which labs are required for operational readiness tracking.
+  // This is purely for documentation completeness, not clinical requirements.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS required_lab_types (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      
+      -- Lab type definition
+      test_code TEXT NOT NULL,
+      test_name TEXT NOT NULL,
+      
+      -- Applicability
+      organ_type TEXT,
+      
+      -- Currency requirements (for operational tracking only)
+      max_age_days INTEGER DEFAULT 30,
+      
+      -- Configuration
+      is_active INTEGER DEFAULT 1,
+      
+      -- Audit fields
+      created_by TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      updated_by TEXT,
+      
+      FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE,
+      FOREIGN KEY (created_by) REFERENCES users(id),
+      UNIQUE(org_id, test_code)
+    )
+  `);
+
   // NOTE: Indexes are created AFTER migration in init.cjs, not here
   // This is because existing databases may not have org_id columns yet
 }
@@ -626,6 +704,17 @@ function createIndexes(db) {
     CREATE INDEX IF NOT EXISTS idx_ahhq_patient_id ON adult_health_history_questionnaires(org_id, patient_id);
     CREATE INDEX IF NOT EXISTS idx_ahhq_status ON adult_health_history_questionnaires(org_id, status);
     CREATE INDEX IF NOT EXISTS idx_ahhq_expiration ON adult_health_history_questionnaires(org_id, expiration_date);
+    
+    -- Lab results indexes (org-scoped)
+    CREATE INDEX IF NOT EXISTS idx_lab_results_org_id ON lab_results(org_id);
+    CREATE INDEX IF NOT EXISTS idx_lab_results_patient_id ON lab_results(org_id, patient_id);
+    CREATE INDEX IF NOT EXISTS idx_lab_results_test_code ON lab_results(org_id, test_code);
+    CREATE INDEX IF NOT EXISTS idx_lab_results_collected ON lab_results(org_id, collected_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_lab_results_patient_test ON lab_results(org_id, patient_id, test_code, collected_at DESC);
+    
+    -- Required lab types indexes (org-scoped)
+    CREATE INDEX IF NOT EXISTS idx_required_labs_org_id ON required_lab_types(org_id);
+    CREATE INDEX IF NOT EXISTS idx_required_labs_organ ON required_lab_types(org_id, organ_type);
   `);
 }
 
@@ -661,7 +750,7 @@ function addOrgIdToExistingTables(db, defaultOrgId) {
     'users', 'patients', 'donor_organs', 'matches', 'notifications',
     'notification_rules', 'priority_weights', 'ehr_integrations', 'ehr_imports',
     'ehr_sync_logs', 'ehr_validation_rules', 'audit_logs', 'access_justification_logs',
-    'readiness_barriers', 'adult_health_history_questionnaires'
+    'readiness_barriers', 'adult_health_history_questionnaires', 'lab_results', 'required_lab_types'
   ];
 
   for (const table of tablesToMigrate) {

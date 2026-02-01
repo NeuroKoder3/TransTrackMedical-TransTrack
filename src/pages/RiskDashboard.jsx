@@ -9,9 +9,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
   AlertTriangle, AlertCircle, Clock, FileText, Users, 
   RefreshCw, TrendingDown, Activity, Shield, ClipboardList,
-  Info, ExternalLink, FileCheck
+  Info, ExternalLink, FileCheck, FlaskConical, FileX
 } from 'lucide-react';
 import { AHHQRiskBadge } from '@/components/ahhq';
+import { LabCountBadge } from '@/components/labs';
 import { createPageUrl } from '@/utils';
 import api from '@/api/localClient';
 
@@ -70,6 +71,13 @@ export default function RiskDashboard() {
     refetchInterval: 60000,
   });
 
+  // Fetch labs dashboard data (Non-Clinical Documentation Tracking)
+  const { data: labsDashboard } = useQuery({
+    queryKey: ['labsDashboard'],
+    queryFn: () => api.labs.getDashboard(),
+    refetchInterval: 60000,
+  });
+
   const handleRefresh = async () => {
     setIsRefreshing(true);
     await refetch();
@@ -115,7 +123,7 @@ export default function RiskDashboard() {
         </div>
 
         {/* Risk Metrics */}
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-4">
           <Card className="border-red-200 bg-red-50">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-red-700 flex items-center gap-2">
@@ -203,6 +211,24 @@ export default function RiskDashboard() {
             </CardContent>
           </Card>
 
+          {/* Labs Status Tile (Non-Clinical Documentation Tracking) */}
+          <Card className="border-teal-200 bg-teal-50">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-teal-700 flex items-center gap-2">
+                <FlaskConical className="w-4 h-4" />
+                Lab Currency
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold text-teal-900">
+                {(labsDashboard?.patientsWithMissingLabs || 0) + (labsDashboard?.patientsWithExpiredLabs || 0)}
+              </div>
+              <p className="text-xs text-teal-600 mt-1">
+                {labsDashboard?.totalMissingLabs || 0} missing, {labsDashboard?.totalExpiredLabs || 0} expired
+              </p>
+            </CardContent>
+          </Card>
+
           <Card className="border-cyan-200 bg-cyan-50">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-cyan-700 flex items-center gap-2">
@@ -227,6 +253,7 @@ export default function RiskDashboard() {
             <TabsTrigger value="patients">At-Risk Patients</TabsTrigger>
             <TabsTrigger value="barriers">Readiness Barriers</TabsTrigger>
             <TabsTrigger value="ahhq">aHHQ Status</TabsTrigger>
+            <TabsTrigger value="labs">Lab Currency</TabsTrigger>
             <TabsTrigger value="segments">Segment Analysis</TabsTrigger>
             <TabsTrigger value="actions">Action Items</TabsTrigger>
           </TabsList>
@@ -628,6 +655,169 @@ export default function RiskDashboard() {
 
                 {!ahhqDashboard && (
                   <p className="text-slate-500 text-center py-8">No aHHQ data available</p>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Labs Currency Tab (Non-Clinical Documentation Tracking) */}
+          <TabsContent value="labs">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <FlaskConical className="w-5 h-5" />
+                  Lab Documentation Currency
+                </CardTitle>
+                <CardDescription>
+                  Non-clinical tracking of lab result documentation completeness
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {/* Non-clinical disclaimer */}
+                <Alert className="mb-6 bg-blue-50 border-blue-200">
+                  <Info className="h-4 w-4 text-blue-600" />
+                  <AlertDescription className="text-blue-700 text-sm">
+                    <strong>Non-Clinical Notice:</strong> Lab tracking monitors documentation currency only. 
+                    It does NOT interpret lab values, flag abnormal results, or provide clinical recommendations.
+                  </AlertDescription>
+                </Alert>
+
+                {labsDashboard ? (
+                  <div className="space-y-6">
+                    {/* Summary Stats */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div className="p-4 bg-green-50 rounded-lg border border-green-200 flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center">
+                          <FileCheck className="w-6 h-6 text-green-600" />
+                        </div>
+                        <div>
+                          <div className="text-sm text-green-700">Current Labs</div>
+                          <div className="text-2xl font-bold text-green-900">{labsDashboard.patientsWithCurrentLabs || 0}</div>
+                        </div>
+                      </div>
+                      <div className="p-4 bg-amber-50 rounded-lg border border-amber-200 flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center">
+                          <Clock className="w-6 h-6 text-amber-600" />
+                        </div>
+                        <div>
+                          <div className="text-sm text-amber-700">Expired Labs</div>
+                          <div className="text-2xl font-bold text-amber-900">{labsDashboard.patientsWithExpiredLabs || 0}</div>
+                        </div>
+                      </div>
+                      <div className="p-4 bg-red-50 rounded-lg border border-red-200 flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center">
+                          <FileX className="w-6 h-6 text-red-600" />
+                        </div>
+                        <div>
+                          <div className="text-sm text-red-700">Missing Labs</div>
+                          <div className="text-2xl font-bold text-red-900">{labsDashboard.patientsWithMissingLabs || 0}</div>
+                        </div>
+                      </div>
+                      <div className="p-4 bg-teal-50 rounded-lg border border-teal-200 flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-full bg-teal-100 flex items-center justify-center">
+                          <FlaskConical className="w-6 h-6 text-teal-600" />
+                        </div>
+                        <div>
+                          <div className="text-sm text-teal-700">Total Active</div>
+                          <div className="text-2xl font-bold text-teal-900">{labsDashboard.totalActivePatients || 0}</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Labs by Test Type */}
+                    {Object.keys(labsDashboard.byTestType || {}).length > 0 && (
+                      <div>
+                        <h4 className="text-sm font-medium text-slate-700 mb-3">Issues by Test Type</h4>
+                        <div className="space-y-2">
+                          {Object.entries(labsDashboard.byTestType).map(([code, data]) => (
+                            <div key={code} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+                              <div className="flex items-center gap-2">
+                                <Badge variant="outline" className="text-xs">{code}</Badge>
+                                <span className="text-sm font-medium">{data.test_name}</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {data.missing > 0 && (
+                                  <Badge className="bg-red-100 text-red-700 border-red-200">
+                                    {data.missing} missing
+                                  </Badge>
+                                )}
+                                {data.expired > 0 && (
+                                  <Badge className="bg-amber-100 text-amber-700 border-amber-200">
+                                    {data.expired} expired
+                                  </Badge>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Patients Needing Attention */}
+                    {labsDashboard.patientsNeedingAttention?.length > 0 && (
+                      <div>
+                        <h4 className="text-sm font-medium text-slate-700 mb-3">Patients Needing Documentation Updates</h4>
+                        <div className="border rounded-lg overflow-hidden">
+                          <table className="w-full">
+                            <thead className="bg-slate-50 border-b">
+                              <tr>
+                                <th className="text-left px-4 py-3 text-sm font-medium text-slate-600">Patient</th>
+                                <th className="text-center px-4 py-3 text-sm font-medium text-slate-600">MRN</th>
+                                <th className="text-center px-4 py-3 text-sm font-medium text-slate-600">Missing</th>
+                                <th className="text-center px-4 py-3 text-sm font-medium text-slate-600">Expired</th>
+                                <th className="text-center px-4 py-3 text-sm font-medium text-slate-600">Risk</th>
+                                <th className="text-right px-4 py-3 text-sm font-medium text-slate-600">Action</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {labsDashboard.patientsNeedingAttention.map((patient) => (
+                                <tr key={patient.patientId} className="hover:bg-slate-50">
+                                  <td className="px-4 py-3 font-medium">{patient.patientName}</td>
+                                  <td className="px-4 py-3 text-center text-slate-600">{patient.mrn || '—'}</td>
+                                  <td className="px-4 py-3 text-center">
+                                    {patient.missingCount > 0 ? (
+                                      <Badge className="bg-red-100 text-red-700">{patient.missingCount}</Badge>
+                                    ) : '—'}
+                                  </td>
+                                  <td className="px-4 py-3 text-center">
+                                    {patient.expiredCount > 0 ? (
+                                      <Badge className="bg-amber-100 text-amber-700">{patient.expiredCount}</Badge>
+                                    ) : '—'}
+                                  </td>
+                                  <td className="px-4 py-3 text-center">
+                                    <Badge className={
+                                      patient.riskLevel === 'high' 
+                                        ? 'bg-red-100 text-red-700' 
+                                        : 'bg-amber-100 text-amber-700'
+                                    }>
+                                      {patient.riskLevel}
+                                    </Badge>
+                                  </td>
+                                  <td className="px-4 py-3 text-right">
+                                    <Link to={createPageUrl('PatientDetails') + `?id=${patient.patientId}`}>
+                                      <Button size="sm" variant="ghost" className="text-cyan-600">
+                                        View <ExternalLink className="w-3 h-3 ml-1" />
+                                      </Button>
+                                    </Link>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
+                    {labsDashboard.patientsNeedingAttention?.length === 0 && (
+                      <div className="text-center py-8 text-slate-500">
+                        <FlaskConical className="w-12 h-12 mx-auto mb-3 text-green-400" />
+                        <p className="font-medium">All Lab Documentation Current</p>
+                        <p className="text-sm">No patients have missing or expired lab documentation</p>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-slate-500 text-center py-8">No lab data available</p>
                 )}
               </CardContent>
             </Card>

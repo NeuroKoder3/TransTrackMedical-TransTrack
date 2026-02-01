@@ -35,6 +35,7 @@ const complianceView = require('../services/complianceView.cjs');
 const offlineReconciliation = require('../services/offlineReconciliation.cjs');
 const readinessBarriers = require('../services/readinessBarriers.cjs');
 const ahhqService = require('../services/ahhqService.cjs');
+const labsService = require('../services/labsService.cjs');
 
 // =============================================================================
 // SESSION STORE (Includes org_id for hard org isolation)
@@ -117,6 +118,8 @@ const ALLOWED_ORDER_COLUMNS = {
   organizations: ['id', 'name', 'type', 'status', 'created_at', 'updated_at'],
   licenses: ['id', 'tier', 'activated_at', 'license_expires_at', 'created_at', 'updated_at'],
   settings: ['id', 'key', 'value', 'updated_at'],
+  lab_results: ['id', 'patient_id', 'test_code', 'test_name', 'collected_at', 'resulted_at', 'source', 'created_at', 'updated_at'],
+  required_lab_types: ['id', 'test_code', 'test_name', 'organ_type', 'max_age_days', 'is_active', 'created_at', 'updated_at'],
 };
 
 // Password strength requirements
@@ -1507,6 +1510,88 @@ function setupIPCHandlers() {
   ipcMain.handle('ahhq:getAuditHistory', async (event, patientId, startDate, endDate) => {
     if (!validateSession()) throw new Error('Session expired. Please log in again.');
     return ahhqService.getAHHQAuditHistory(getSessionOrgId(), patientId, startDate, endDate);
+  });
+  
+  // =========================================================================
+  // LAB RESULTS (Operational Documentation Only - Non-Clinical)
+  // =========================================================================
+  // NOTE: This feature is strictly NON-CLINICAL and NON-ALLOCATIVE.
+  // Lab results are stored for DOCUMENTATION COMPLETENESS purposes only.
+  // The system does NOT interpret lab values, provide clinical recommendations,
+  // or make allocation decisions. Values are stored as strings.
+  
+  // Get common lab codes reference
+  ipcMain.handle('labs:getCodes', async () => labsService.COMMON_LAB_CODES);
+  ipcMain.handle('labs:getSources', async () => labsService.LAB_SOURCES);
+  
+  // Create a new lab result
+  ipcMain.handle('labs:create', async (event, data) => {
+    if (!validateSession()) throw new Error('Session expired. Please log in again.');
+    const orgId = getSessionOrgId();
+    return labsService.createLabResult(
+      data,
+      orgId,
+      currentUser.id,
+      currentUser.email
+    );
+  });
+  
+  // Get lab result by ID
+  ipcMain.handle('labs:get', async (event, id) => {
+    if (!validateSession()) throw new Error('Session expired. Please log in again.');
+    return labsService.getLabResultById(id, getSessionOrgId());
+  });
+  
+  // Get all lab results for a patient
+  ipcMain.handle('labs:getByPatient', async (event, patientId, options) => {
+    if (!validateSession()) throw new Error('Session expired. Please log in again.');
+    return labsService.getLabResultsByPatient(patientId, getSessionOrgId(), options);
+  });
+  
+  // Get latest lab for each test type for a patient
+  ipcMain.handle('labs:getLatestByPatient', async (event, patientId) => {
+    if (!validateSession()) throw new Error('Session expired. Please log in again.');
+    return labsService.getLatestLabsByPatient(patientId, getSessionOrgId());
+  });
+  
+  // Update a lab result
+  ipcMain.handle('labs:update', async (event, id, data) => {
+    if (!validateSession()) throw new Error('Session expired. Please log in again.');
+    const orgId = getSessionOrgId();
+    return labsService.updateLabResult(
+      id,
+      data,
+      orgId,
+      currentUser.id,
+      currentUser.email
+    );
+  });
+  
+  // Delete a lab result
+  ipcMain.handle('labs:delete', async (event, id) => {
+    if (!validateSession()) throw new Error('Session expired. Please log in again.');
+    if (currentUser.role !== 'admin' && currentUser.role !== 'coordinator') {
+      throw new Error('Coordinator or admin access required to delete lab results');
+    }
+    return labsService.deleteLabResult(id, getSessionOrgId(), currentUser.email);
+  });
+  
+  // Get patient lab status (operational readiness signals only)
+  ipcMain.handle('labs:getPatientStatus', async (event, patientId) => {
+    if (!validateSession()) throw new Error('Session expired. Please log in again.');
+    return labsService.getPatientLabStatus(patientId, getSessionOrgId());
+  });
+  
+  // Get labs dashboard metrics
+  ipcMain.handle('labs:getDashboard', async () => {
+    if (!validateSession()) throw new Error('Session expired. Please log in again.');
+    return labsService.getLabsDashboard(getSessionOrgId());
+  });
+  
+  // Get required lab types for configuration
+  ipcMain.handle('labs:getRequiredTypes', async (event, organType) => {
+    if (!validateSession()) throw new Error('Session expired. Please log in again.');
+    return labsService.getRequiredLabTypes(getSessionOrgId(), organType);
   });
   
   // ===== ACCESS CONTROL WITH JUSTIFICATION =====

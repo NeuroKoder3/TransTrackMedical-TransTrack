@@ -189,6 +189,50 @@ const mockClient = {
     }),
     getAuditHistory: async () => [],
   },
+  // Mock labs client for development (Documentation tracking only - non-clinical)
+  labs: {
+    getCodes: async () => [
+      { code: 'CREAT', name: 'Creatinine', category: 'Kidney' },
+      { code: 'BUN', name: 'Blood Urea Nitrogen', category: 'Kidney' },
+      { code: 'EGFR', name: 'eGFR', category: 'Kidney' },
+      { code: 'K', name: 'Potassium', category: 'Kidney' },
+      { code: 'HGB', name: 'Hemoglobin', category: 'CBC' },
+      { code: 'INR', name: 'INR', category: 'Liver' },
+      { code: 'BILI', name: 'Bilirubin', category: 'Liver' },
+    ],
+    getSources: async () => ({ MANUAL: 'MANUAL', FHIR_IMPORT: 'FHIR_IMPORT' }),
+    create: async (data) => ({ id: Date.now().toString(), ...data, source: 'MANUAL' }),
+    get: async (id) => null,
+    getByPatient: async () => [],
+    getLatestByPatient: async () => ({}),
+    update: async (id, data) => ({ id, ...data }),
+    delete: async (id) => ({ success: true }),
+    getPatientStatus: async () => ({
+      patientId: null,
+      disclaimer: 'This is OPERATIONAL documentation tracking only.',
+      totalRequired: 0,
+      documented: 0,
+      missing: 0,
+      expired: 0,
+      current: 0,
+      labs: [],
+      missingLabs: [],
+      expiredLabs: [],
+      documentationRiskLevel: 'low',
+    }),
+    getDashboard: async () => ({
+      disclaimer: 'Lab tracking is NON-CLINICAL operational documentation only.',
+      totalActivePatients: 0,
+      patientsWithMissingLabs: 0,
+      patientsWithExpiredLabs: 0,
+      patientsWithCurrentLabs: 0,
+      totalMissingLabs: 0,
+      totalExpiredLabs: 0,
+      patientsNeedingAttention: [],
+      byTestType: {},
+    }),
+    getRequiredTypes: async () => [],
+  },
 };
 
 // Create entity proxy for mock client
@@ -292,6 +336,27 @@ const createElectronClient = () => {
       getDashboard: async () => await window.electronAPI.barriers.getDashboard(),
       getAuditHistory: async (patientId, startDate, endDate) => 
         await window.electronAPI.barriers.getAuditHistory(patientId, startDate, endDate),
+    },
+    // Lab Results (Non-Clinical Documentation Tracking)
+    // NOTE: This feature is strictly NON-CLINICAL and NON-ALLOCATIVE.
+    // Lab results are stored for DOCUMENTATION COMPLETENESS purposes only.
+    // The system does NOT interpret lab values or provide clinical assessments.
+    labs: {
+      getCodes: async () => await window.electronAPI.labs.getCodes(),
+      getSources: async () => await window.electronAPI.labs.getSources(),
+      create: async (data) => await window.electronAPI.labs.create(data),
+      get: async (id) => await window.electronAPI.labs.get(id),
+      getByPatient: async (patientId, options) => 
+        await window.electronAPI.labs.getByPatient(patientId, options),
+      getLatestByPatient: async (patientId) => 
+        await window.electronAPI.labs.getLatestByPatient(patientId),
+      update: async (id, data) => await window.electronAPI.labs.update(id, data),
+      delete: async (id) => await window.electronAPI.labs.delete(id),
+      getPatientStatus: async (patientId) => 
+        await window.electronAPI.labs.getPatientStatus(patientId),
+      getDashboard: async () => await window.electronAPI.labs.getDashboard(),
+      getRequiredTypes: async (organType) => 
+        await window.electronAPI.labs.getRequiredTypes(organType),
     },
     // Alias for service role operations (same as regular in local mode)
     asServiceRole: {

@@ -15,6 +15,7 @@
 const { getDatabase } = require('../database/init.cjs');
 const readinessBarriers = require('./readinessBarriers.cjs');
 const ahhqService = require('./ahhqService.cjs');
+const labsService = require('./labsService.cjs');
 
 // Risk thresholds (configurable)
 const RISK_THRESHOLDS = {
@@ -236,6 +237,55 @@ function assessPatientOperationalRisk(patient) {
   } catch (e) {
     // Silently continue if aHHQ table doesn't exist yet
     console.log('Could not assess aHHQ status:', e.message);
+  }
+  
+  // 7. Lab Results Documentation Status (Non-Clinical)
+  // NOTE: This tracks LAB CURRENCY only - whether required labs are documented and current.
+  // It does NOT interpret lab values or provide clinical assessments.
+  try {
+    const db = getDatabase();
+    const orgId = patient.org_id;
+    
+    if (orgId) {
+      const labStatus = labsService.getPatientLabStatus(patient.id, orgId);
+      
+      if (labStatus && (labStatus.missing > 0 || labStatus.expired > 0)) {
+        let labRiskLevel = RISK_LEVEL.LOW;
+        let title = 'Lab Documentation';
+        let description = '';
+        
+        if (labStatus.missing > 0) {
+          labRiskLevel = RISK_LEVEL.HIGH;
+          title = 'Required Labs Missing';
+          description = `${labStatus.missing} required lab(s) not documented`;
+        } else if (labStatus.expired >= 3) {
+          labRiskLevel = RISK_LEVEL.HIGH;
+          title = 'Multiple Expired Labs';
+          description = `${labStatus.expired} lab(s) exceed max age threshold`;
+        } else if (labStatus.expired > 0) {
+          labRiskLevel = RISK_LEVEL.MEDIUM;
+          title = 'Expired Labs';
+          description = `${labStatus.expired} lab(s) exceed max age threshold`;
+        }
+        
+        risks.push({
+          type: 'lab_documentation',
+          level: labRiskLevel,
+          title: title,
+          description: description,
+          missingCount: labStatus.missing,
+          expiredCount: labStatus.expired,
+          actionRequired: labStatus.missing > 0 
+            ? 'Document required lab results'
+            : 'Update expired lab results',
+          isNonClinical: true, // This is documentation tracking, not clinical interpretation
+          isDocumentationArtifact: true,
+        });
+      }
+    }
+  } catch (e) {
+    // Silently continue if labs table doesn't exist yet
+    console.log('Could not assess lab documentation status:', e.message);
   }
   
   // Calculate overall risk level
@@ -537,6 +587,10 @@ async function getRiskDashboard() {
     ahhqExpired: 0,
     ahhqIncomplete: 0,
     ahhqMissing: 0,
+    // Lab metrics (documentation tracking only)
+    labsExpired: 0,
+    labsMissing: 0,
+    patientsWithLabIssues: 0,
   };
   
   const atRiskPatients = [];
@@ -561,6 +615,21 @@ async function getRiskDashboard() {
     metrics.ahhqMissing = ahhqDashboard.patientsWithoutAHHQ;
   } catch (e) {
     console.log('Could not get aHHQ dashboard:', e.message);
+  }
+  
+  // Get labs dashboard for overall metrics (documentation tracking only)
+  let labsDashboard = null;
+  try {
+    // Get org_id from first patient or from a valid source
+    const firstPatient = patients[0];
+    if (firstPatient && firstPatient.org_id) {
+      labsDashboard = labsService.getLabsDashboard(firstPatient.org_id);
+      metrics.labsExpired = labsDashboard.totalExpiredLabs;
+      metrics.labsMissing = labsDashboard.totalMissingLabs;
+      metrics.patientsWithLabIssues = labsDashboard.patientsWithMissingLabs + labsDashboard.patientsWithExpiredLabs;
+    }
+  } catch (e) {
+    console.log('Could not get labs dashboard:', e.message);
   }
   
   for (const patient of patients) {
@@ -647,6 +716,20 @@ async function getRiskDashboard() {
       byStatus: ahhqDashboard.byStatus,
       byOwningRole: ahhqDashboard.byOwningRole,
       warningThresholdDays: ahhqDashboard.warningThresholdDays,
+    } : null,
+    // Labs Summary (Non-Clinical Documentation Tracking)
+    labsSummary: labsDashboard ? {
+      disclaimer: 'Lab tracking is NON-CLINICAL operational documentation only. It tracks lab currency, not clinical interpretation. The system does NOT interpret lab values.',
+      totalActivePatients: labsDashboard.totalActivePatients,
+      patientsWithMissingLabs: labsDashboard.patientsWithMissingLabs,
+      patientsWithExpiredLabs: labsDashboard.patientsWithExpiredLabs,
+      patientsWithCurrentLabs: labsDashboard.patientsWithCurrentLabs,
+      totalMissingLabs: labsDashboard.totalMissingLabs,
+      totalExpiredLabs: labsDashboard.totalExpiredLabs,
+      patientsWithMissingLabsPercentage: labsDashboard.patientsWithMissingLabsPercentage,
+      patientsWithExpiredLabsPercentage: labsDashboard.patientsWithExpiredLabsPercentage,
+      patientsNeedingAttention: labsDashboard.patientsNeedingAttention,
+      byTestType: labsDashboard.byTestType,
     } : null,
     generatedAt: now.toISOString(),
   };

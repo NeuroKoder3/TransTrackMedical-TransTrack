@@ -276,6 +276,32 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getAuditHistory: (patientId, startDate, endDate) => ipcRenderer.invoke('ahhq:getAuditHistory', patientId, startDate, endDate),
   },
   
+  // Lab Results Tracking (Operational Documentation Only)
+  // NOTE: This feature is strictly NON-CLINICAL and NON-ALLOCATIVE.
+  // Lab results are stored for DOCUMENTATION COMPLETENESS purposes only.
+  // The system does NOT interpret lab values, provide clinical recommendations,
+  // or make allocation decisions. It only tracks lab currency/completeness.
+  labs: {
+    // Reference data
+    getCodes: () => ipcRenderer.invoke('labs:getCodes'),
+    getSources: () => ipcRenderer.invoke('labs:getSources'),
+    
+    // CRUD operations
+    create: (data) => ipcRenderer.invoke('labs:create', data),
+    get: (id) => ipcRenderer.invoke('labs:get', id),
+    getByPatient: (patientId, options) => ipcRenderer.invoke('labs:getByPatient', patientId, options),
+    getLatestByPatient: (patientId) => ipcRenderer.invoke('labs:getLatestByPatient', patientId),
+    update: (id, data) => ipcRenderer.invoke('labs:update', id, data),
+    delete: (id) => ipcRenderer.invoke('labs:delete', id),
+    
+    // Operational status (documentation signals only, NOT clinical)
+    getPatientStatus: (patientId) => ipcRenderer.invoke('labs:getPatientStatus', patientId),
+    getDashboard: () => ipcRenderer.invoke('labs:getDashboard'),
+    
+    // Configuration
+    getRequiredTypes: (organType) => ipcRenderer.invoke('labs:getRequiredTypes', organType),
+  },
+  
   // Access Control with Justification
   accessControl: {
     validateRequest: (permission, justification) => ipcRenderer.invoke('access:validateRequest', permission, justification),
