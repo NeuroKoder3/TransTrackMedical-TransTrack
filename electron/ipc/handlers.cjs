@@ -1854,6 +1854,52 @@ function setupIPCHandlers() {
   });
   
   // =========================================================================
+  // TRANSPLANT CLOCK (Operational Activity Rhythm)
+  // =========================================================================
+  // The Transplant Clock provides real-time operational awareness for transplant
+  // coordination teams. It acts as a visual heartbeat of the program.
+  // 100% computed locally from the encrypted SQLite database.
+  // No cloud, API, or AI inference required.
+  
+  const transplantClock = require('../services/transplantClock.cjs');
+  
+  ipcMain.handle('clock:getData', async () => {
+    if (!validateSession()) throw new Error('Session expired. Please log in again.');
+    const orgId = getSessionOrgId();
+    return transplantClock.getTransplantClockData(orgId);
+  });
+  
+  ipcMain.handle('clock:getTimeSinceLastUpdate', async () => {
+    if (!validateSession()) throw new Error('Session expired. Please log in again.');
+    const orgId = getSessionOrgId();
+    return transplantClock.getTimeSinceLastUpdate(orgId);
+  });
+  
+  ipcMain.handle('clock:getAverageResolutionTime', async () => {
+    if (!validateSession()) throw new Error('Session expired. Please log in again.');
+    const orgId = getSessionOrgId();
+    return transplantClock.getAverageResolutionTime(orgId);
+  });
+  
+  ipcMain.handle('clock:getNextExpiration', async () => {
+    if (!validateSession()) throw new Error('Session expired. Please log in again.');
+    const orgId = getSessionOrgId();
+    return transplantClock.getNextExpiration(orgId);
+  });
+  
+  ipcMain.handle('clock:getTaskCounts', async () => {
+    if (!validateSession()) throw new Error('Session expired. Please log in again.');
+    const orgId = getSessionOrgId();
+    return transplantClock.getTaskCounts(orgId);
+  });
+  
+  ipcMain.handle('clock:getCoordinatorLoad', async () => {
+    if (!validateSession()) throw new Error('Session expired. Please log in again.');
+    const orgId = getSessionOrgId();
+    return transplantClock.getCoordinatorLoad(orgId);
+  });
+  
+  // =========================================================================
   // HELPER FUNCTIONS
   // =========================================================================
   

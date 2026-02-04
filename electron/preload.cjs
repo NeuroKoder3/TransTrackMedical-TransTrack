@@ -302,6 +302,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getRequiredTypes: (organType) => ipcRenderer.invoke('labs:getRequiredTypes', organType),
   },
   
+  // Transplant Clock (Operational Activity Rhythm)
+  // The Transplant Clock provides real-time operational awareness for transplant
+  // coordination teams. It acts as a visual heartbeat of the program.
+  // 100% computed locally from the encrypted SQLite database.
+  // No cloud, API, or AI inference required.
+  clock: {
+    getData: () => ipcRenderer.invoke('clock:getData'),
+    getTimeSinceLastUpdate: () => ipcRenderer.invoke('clock:getTimeSinceLastUpdate'),
+    getAverageResolutionTime: () => ipcRenderer.invoke('clock:getAverageResolutionTime'),
+    getNextExpiration: () => ipcRenderer.invoke('clock:getNextExpiration'),
+    getTaskCounts: () => ipcRenderer.invoke('clock:getTaskCounts'),
+    getCoordinatorLoad: () => ipcRenderer.invoke('clock:getCoordinatorLoad'),
+  },
+  
   // Access Control with Justification
   accessControl: {
     validateRequest: (permission, justification) => ipcRenderer.invoke('access:validateRequest', permission, justification),

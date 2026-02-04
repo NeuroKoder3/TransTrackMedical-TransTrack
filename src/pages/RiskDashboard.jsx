@@ -12,7 +12,7 @@ import {
   Info, ExternalLink, FileCheck, FlaskConical, FileX
 } from 'lucide-react';
 import { AHHQRiskBadge } from '@/components/ahhq';
-import { LabCountBadge } from '@/components/labs';
+import { TransplantClock } from '@/components/clock';
 import { createPageUrl } from '@/utils';
 import api from '@/api/localClient';
 
@@ -244,6 +244,58 @@ export default function RiskDashboard() {
                 </span>
               </div>
               <p className="text-xs text-cyan-600 mt-1">Of {dashboard?.totalActive || 0} active</p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Transplant Clock - System Activity Rhythm */}
+        <div className="flex flex-col lg:flex-row gap-6 items-start">
+          {/* Clock Widget */}
+          <div className="flex-shrink-0">
+            <TransplantClock compact />
+          </div>
+          
+          {/* Quick Summary Panel */}
+          <Card className="flex-1 border-slate-200">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-slate-700 flex items-center gap-2">
+                <Activity className="w-4 h-4 text-cyan-600" />
+                Operational Pulse
+              </CardTitle>
+              <CardDescription className="text-xs">
+                When the clock glows red, the center is behind on readiness tasks
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                <div className="p-3 bg-slate-50 rounded-lg">
+                  <div className="text-xs text-slate-500">Open Barriers</div>
+                  <div className="text-xl font-bold text-slate-800">
+                    {barrierDashboard?.totalOpenBarriers || 0}
+                  </div>
+                </div>
+                <div className="p-3 bg-slate-50 rounded-lg">
+                  <div className="text-xs text-slate-500">aHHQ Issues</div>
+                  <div className="text-xl font-bold text-slate-800">
+                    {ahhqDashboard?.patientsNeedingAttention || 0}
+                  </div>
+                </div>
+                <div className="p-3 bg-slate-50 rounded-lg">
+                  <div className="text-xs text-slate-500">Lab Gaps</div>
+                  <div className="text-xl font-bold text-slate-800">
+                    {(labsDashboard?.patientsWithMissingLabs || 0) + (labsDashboard?.patientsWithExpiredLabs || 0)}
+                  </div>
+                </div>
+                <div className="p-3 bg-slate-50 rounded-lg">
+                  <div className="text-xs text-slate-500">At-Risk</div>
+                  <div className="text-xl font-bold text-slate-800">
+                    {dashboard?.atRiskCount || 0}
+                  </div>
+                </div>
+              </div>
+              <div className="mt-3 text-xs text-slate-400 text-center">
+                Clock pulse rate increases with more open tasks • Status color reflects operational freshness
+              </div>
             </CardContent>
           </Card>
         </div>

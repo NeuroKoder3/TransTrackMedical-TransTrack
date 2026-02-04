@@ -233,6 +233,28 @@ const mockClient = {
     }),
     getRequiredTypes: async () => [],
   },
+  // Mock Transplant Clock client for development
+  // The Transplant Clock provides real-time operational awareness
+  clock: {
+    getData: async () => ({
+      timeSinceLastUpdate: { hours: 2.5, lastUpdate: new Date(Date.now() - 2.5 * 60 * 60 * 1000).toISOString() },
+      averageResolutionTime: { hours: 6.4, sampleSize: 12 },
+      nextExpiration: { days: 2, type: 'aHHQ', date: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString() },
+      tasks: { open: 12, overdue: 4, barriers: { open: 8, overdue: 2 }, ahhq: { incomplete: 4, expired: 2 } },
+      coordinatorLoad: { ratio: 4.0, level: 'moderate', label: 'Moderate', staffCount: 3, taskCount: 12 },
+      pulseRate: 1.3,
+      pulsePeriod: 769,
+      statusColor: 'green',
+      thresholds: { GREEN: 24, YELLOW: 72 },
+      generatedAt: new Date().toISOString(),
+      disclaimer: 'Operational metrics only. Non-clinical, non-allocative.',
+    }),
+    getTimeSinceLastUpdate: async () => ({ hours: 2.5, lastUpdate: new Date(Date.now() - 2.5 * 60 * 60 * 1000).toISOString() }),
+    getAverageResolutionTime: async () => ({ hours: 6.4, sampleSize: 12 }),
+    getNextExpiration: async () => ({ days: 2, type: 'aHHQ', date: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString() }),
+    getTaskCounts: async () => ({ open: 12, overdue: 4, barriers: { open: 8, overdue: 2 }, ahhq: { incomplete: 4, expired: 2 } }),
+    getCoordinatorLoad: async () => ({ ratio: 4.0, level: 'moderate', label: 'Moderate', staffCount: 3, taskCount: 12 }),
+  },
 };
 
 // Create entity proxy for mock client
@@ -357,6 +379,17 @@ const createElectronClient = () => {
       getDashboard: async () => await window.electronAPI.labs.getDashboard(),
       getRequiredTypes: async (organType) => 
         await window.electronAPI.labs.getRequiredTypes(organType),
+    },
+    // Transplant Clock (Operational Activity Rhythm)
+    // Real-time operational awareness for transplant coordination teams.
+    // 100% computed locally from the encrypted SQLite database.
+    clock: {
+      getData: async () => await window.electronAPI.clock.getData(),
+      getTimeSinceLastUpdate: async () => await window.electronAPI.clock.getTimeSinceLastUpdate(),
+      getAverageResolutionTime: async () => await window.electronAPI.clock.getAverageResolutionTime(),
+      getNextExpiration: async () => await window.electronAPI.clock.getNextExpiration(),
+      getTaskCounts: async () => await window.electronAPI.clock.getTaskCounts(),
+      getCoordinatorLoad: async () => await window.electronAPI.clock.getCoordinatorLoad(),
     },
     // Alias for service role operations (same as regular in local mode)
     asServiceRole: {
