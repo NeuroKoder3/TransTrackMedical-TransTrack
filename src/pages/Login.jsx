@@ -21,12 +21,8 @@ export default function Login() {
 
     try {
       await login(email, password);
-      // Redirect to dashboard
-      window.location.hash = '#/';
-      // Small delay before reload to ensure state is saved
-      setTimeout(() => {
-        window.location.reload();
-      }, 100);
+      // Navigation is handled automatically by AuthContext state change
+      // The App component will render the authenticated view when isAuthenticated becomes true
     } catch (err) {
       setError(err.message || 'Invalid credentials. Please try again.');
       setIsLoading(false);
