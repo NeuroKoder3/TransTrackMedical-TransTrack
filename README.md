@@ -67,10 +67,28 @@ The heart of TransTrack is proactive detection of operational risks that can del
 * **Status Churn Detection** – Track frequent candidate status changes
 * **Readiness Barriers** – Manage non-clinical obstacles (insurance, transport, support, etc.)
 * **Risk-Level Indicators** – Highlight high-risk cases before they cause inactivation
+* **Transplant Clock** – Real-time operational pulse and activity rhythm monitoring
 
 <p align="center">
   <img src="docs/images/risk-intelligence-dashboard.png" alt="Operational Risk Intelligence Dashboard" width="700">
 </p>
+
+### Transplant Clock — Real-Time Operational Awareness
+
+The **Transplant Clock** is a visual heartbeat of your transplant program, providing real-time operational awareness for coordination teams:
+
+* **Time Since Last Update** – Visual indicator showing system activity freshness (green/yellow/red status)
+* **Operational Pulse** – Aggregated view of open barriers, aHHQ issues, lab gaps, and at-risk patients
+* **Average Resolution Time** – Track how quickly your team resolves operational tasks
+* **Next Expiration** – Countdown to the nearest expiring document or evaluation
+* **Team Load Indicator** – Monitor coordinator workload distribution (Light/Moderate/Heavy)
+* **Pulse Rate (Hz)** – Dynamic rhythm that increases with more open tasks
+
+<p align="center">
+  <img src="docs/images/transplant-clock.png" alt="Transplant Clock - Real-Time Operational Awareness" width="700">
+</p>
+
+> **100% Local Computation** – All metrics are computed locally from the encrypted SQLite database. No cloud, API, or AI inference required.
 
 ---
 
@@ -87,6 +105,13 @@ The heart of TransTrack is proactive detection of operational risks that can del
 * Track operational barriers (insurance, logistics, caregiver support)
 * Assign tasks to staff roles (Social Work, Financial, Coordinator)
 * Integrated into the risk intelligence dashboard
+
+### Transplant Clock (Real-Time Monitoring)
+
+* Visual system activity rhythm with color-coded freshness indicators
+* Operational pulse showing open barriers, aHHQ issues, and lab gaps
+* Team workload monitoring and task resolution metrics
+* Computed 100% locally — no cloud dependencies
 
 ### EHR Integration
 
@@ -137,6 +162,12 @@ The heart of TransTrack is proactive detection of operational risks that can del
 
 <p align="center">
   <img src="docs/images/readiness-barriers.png" alt="Readiness Barriers" width="700">
+</p>
+
+### Transplant Clock & Operational Pulse
+
+<p align="center">
+  <img src="docs/images/transplant-clock.png" alt="Transplant Clock - Operational Pulse" width="700">
 </p>
 
 ### Patient Documentation & Workflow Tracking
