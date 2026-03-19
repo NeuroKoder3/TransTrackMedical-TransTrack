@@ -32,7 +32,6 @@ import {
   Info,
   ChevronDown,
   ChevronUp,
-  CheckCircle,
   AlertTriangle,
   FileX,
   Filter,

@@ -45,7 +45,7 @@ export default function FHIRImporter({ onImportComplete }) {
 
       // Call import function
       const response = await api.functions.invoke('importFHIRData', {
-        fhir_bundle: fhirBundle,
+        fhir_data: fhirBundle,
         source_system: sourceSystem || 'Manual Upload',
         auto_create: autoCreate,
         auto_update: autoUpdate,

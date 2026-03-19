@@ -2,27 +2,24 @@
  * TransTrack - Utility Functions
  */
 
-// Create URL for page navigation (using hash router for Electron)
-export function createPageUrl(pageName: string): string {
+export function createPageUrl(pageName) {
   if (pageName === 'Dashboard') {
     return '/';
   }
   return `/${pageName}`;
 }
 
-// Format date for display
-export function formatDate(date: string | Date): string {
+export function formatDate(date) {
   if (!date) return 'N/A';
   const d = new Date(date);
   return d.toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'short',
-    day: 'numeric'
+    day: 'numeric',
   });
 }
 
-// Format date with time
-export function formatDateTime(date: string | Date): string {
+export function formatDateTime(date) {
   if (!date) return 'N/A';
   const d = new Date(date);
   return d.toLocaleString('en-US', {
@@ -30,12 +27,11 @@ export function formatDateTime(date: string | Date): string {
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
-    minute: '2-digit'
+    minute: '2-digit',
   });
 }
 
-// Calculate age from date of birth
-export function calculateAge(dateOfBirth: string | Date): number {
+export function calculateAge(dateOfBirth) {
   if (!dateOfBirth) return 0;
   const dob = new Date(dateOfBirth);
   const today = new Date();
@@ -47,56 +43,53 @@ export function calculateAge(dateOfBirth: string | Date): number {
   return age;
 }
 
-// Format priority score with color class
-export function getPriorityClass(score: number): string {
+export function getPriorityClass(score) {
   if (score >= 80) return 'text-red-600 bg-red-50';
   if (score >= 60) return 'text-orange-600 bg-orange-50';
   if (score >= 40) return 'text-yellow-600 bg-yellow-50';
   return 'text-green-600 bg-green-50';
 }
 
-// Get priority label
-export function getPriorityLabel(score: number): string {
+export function getPriorityLabel(score) {
   if (score >= 80) return 'Critical';
   if (score >= 60) return 'High';
   if (score >= 40) return 'Medium';
   return 'Low';
 }
 
-// Format blood type for display
-export function formatBloodType(bloodType: string): string {
+export function formatBloodType(bloodType) {
   return bloodType || 'Unknown';
 }
 
-// Format organ type for display
-export function formatOrganType(organType: string): string {
+export function formatOrganType(organType) {
   if (!organType) return 'Unknown';
   return organType.replace(/_/g, '-').replace(/\b\w/g, l => l.toUpperCase());
 }
 
-// Export patient data to CSV format
-export function exportToCSV(data: any[], filename: string): void {
+export function exportToCSV(data, filename) {
   if (!data || data.length === 0) {
     console.warn('No data to export');
     return;
   }
-  
+
   const headers = Object.keys(data[0]);
   const csvContent = [
     headers.join(','),
-    ...data.map(row => 
-      headers.map(header => {
-        const value = row[header];
-        if (value === null || value === undefined) return '';
-        if (typeof value === 'object') return JSON.stringify(value).replace(/"/g, '""');
-        if (typeof value === 'string' && (value.includes(',') || value.includes('"') || value.includes('\n'))) {
-          return `"${value.replace(/"/g, '""')}"`;
-        }
-        return value;
-      }).join(',')
-    )
+    ...data.map(row =>
+      headers
+        .map(header => {
+          const value = row[header];
+          if (value === null || value === undefined) return '';
+          if (typeof value === 'object') return JSON.stringify(value).replace(/"/g, '""');
+          if (typeof value === 'string' && (value.includes(',') || value.includes('"') || value.includes('\n'))) {
+            return `"${value.replace(/"/g, '""')}"`;
+          }
+          return value;
+        })
+        .join(',')
+    ),
   ].join('\n');
-  
+
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
@@ -108,24 +101,18 @@ export function exportToCSV(data: any[], filename: string): void {
   URL.revokeObjectURL(url);
 }
 
-// Validate email format
-export function isValidEmail(email: string): boolean {
+export function isValidEmail(email) {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   return emailRegex.test(email);
 }
 
-// Generate unique ID
-export function generateId(): string {
+export function generateId() {
   return Date.now().toString(36) + Math.random().toString(36).substr(2);
 }
 
-// Debounce function
-export function debounce<T extends (...args: any[]) => void>(
-  func: T,
-  wait: number
-): (...args: Parameters<T>) => void {
-  let timeout: NodeJS.Timeout | null = null;
-  return (...args: Parameters<T>) => {
+export function debounce(func, wait) {
+  let timeout = null;
+  return (...args) => {
     if (timeout) clearTimeout(timeout);
     timeout = setTimeout(() => func(...args), wait);
   };

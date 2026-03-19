@@ -552,8 +552,8 @@ async function seedDefaultData(defaultOrgId) {
   if (!adminExists || adminExists.count === 0) {
     const bcrypt = require('bcryptjs');
     
-    // Default admin password - CHANGE THIS AFTER FIRST LOGIN!
     const defaultPassword = 'Admin123!';
+    const mustChangePassword = true;
     
     // Create default admin user
     const adminId = uuidv4();
@@ -561,8 +561,8 @@ async function seedDefaultData(defaultOrgId) {
     const now = new Date().toISOString();
     
     db.prepare(`
-      INSERT INTO users (id, org_id, email, password_hash, full_name, role, is_active, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO users (id, org_id, email, password_hash, full_name, role, is_active, must_change_password, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       adminId, 
       defaultOrgId,
@@ -571,21 +571,17 @@ async function seedDefaultData(defaultOrgId) {
       'System Administrator', 
       'admin', 
       1,
+      mustChangePassword ? 1 : 0,
       now,
       now
     );
     
-    // Log credentials to console for first-time setup
-    console.log('');
-    console.log('╔══════════════════════════════════════════════════════════════╗');
-    console.log('║           INITIAL ADMIN CREDENTIALS CREATED                  ║');
-    console.log('╠══════════════════════════════════════════════════════════════╣');
-    console.log('║  Email:    admin@transtrack.local                            ║');
-    console.log('║  Password: Admin123!                                         ║');
-    console.log('╠══════════════════════════════════════════════════════════════╣');
-    console.log('║  ⚠️  CHANGE YOUR PASSWORD AFTER FIRST LOGIN!                  ║');
-    console.log('╚══════════════════════════════════════════════════════════════╝');
-    console.log('');
+    if (process.env.NODE_ENV === 'development') {
+      console.log('');
+      console.log('Initial admin credentials: admin@transtrack.local / Admin123!');
+      console.log('CHANGE YOUR PASSWORD AFTER FIRST LOGIN');
+      console.log('');
+    }
     
     // Create default priority weights for this organization
     const weightsId = uuidv4();

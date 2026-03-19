@@ -113,9 +113,11 @@ function checkApplicationState() {
     // SECURITY: Fail closed on license errors in production
     console.error('License check error:', error.message);
     
-    // Only fail-open in development mode with explicit flag
-    if (process.env.NODE_ENV === 'development' && process.env.LICENSE_FAIL_OPEN === 'true') {
-      console.warn('WARNING: Failing open due to LICENSE_FAIL_OPEN flag');
+    // Only fail-open in development mode with explicit flag AND unpackaged app
+    const { app } = require('electron');
+    const isDevUnpackaged = !app.isPackaged && process.env.NODE_ENV === 'development' && process.env.LICENSE_FAIL_OPEN === 'true';
+    if (isDevUnpackaged) {
+      console.warn('WARNING: Failing open due to LICENSE_FAIL_OPEN flag (dev only)');
       return {
         usable: true,
         info: null,
@@ -123,7 +125,6 @@ function checkApplicationState() {
       };
     }
     
-    // Default: fail closed - application not usable
     return {
       usable: false,
       reason: 'license_check_error',
@@ -251,9 +252,10 @@ function canWithinLimit(limitType, currentCount) {
     // SECURITY: Fail closed on limit check errors
     console.error('Limit check error:', error.message);
     
-    // Only fail-open in development mode with explicit flag
-    if (process.env.NODE_ENV === 'development' && process.env.LICENSE_FAIL_OPEN === 'true') {
-      console.warn('WARNING: Failing open on limit check due to LICENSE_FAIL_OPEN flag');
+    const { app } = require('electron');
+    const isDevUnpackaged = !app.isPackaged && process.env.NODE_ENV === 'development' && process.env.LICENSE_FAIL_OPEN === 'true';
+    if (isDevUnpackaged) {
+      console.warn('WARNING: Failing open on limit check due to LICENSE_FAIL_OPEN flag (dev only)');
       return {
         allowed: true,
         current: currentCount,
