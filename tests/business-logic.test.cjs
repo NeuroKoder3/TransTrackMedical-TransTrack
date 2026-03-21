@@ -490,6 +490,198 @@ async function runTests() {
     assertEqual(data.name, 'test', 'String unchanged');
   });
 
+  // ─── 8. Priority Calculation Edge Cases ──────────────────
+  console.log('\nSuite 8: Priority Calculation Edge Cases');
+  console.log('----------------------------------------');
+
+  test('8.1: MELD score at minimum boundary (6) is valid', async () => {
+    const p = seedPatient({ organ_needed: 'liver', meld_score: 6 });
+    const r = await functions.calculatePriorityAdvanced({ patient_id: p.id }, mockContext());
+    assert(r.success, 'Should succeed with MELD 6');
+    assertInRange(r.priority_score, 0, 100, 'Score range with minimum MELD');
+  });
+
+  test('8.2: MELD score at maximum boundary (40) is valid', async () => {
+    const p = seedPatient({ organ_needed: 'liver', meld_score: 40 });
+    const r = await functions.calculatePriorityAdvanced({ patient_id: p.id }, mockContext());
+    assert(r.success, 'Should succeed with MELD 40');
+  });
+
+  test('8.3: Missing organ-specific scores handled gracefully', async () => {
+    const p = seedPatient({ organ_needed: 'liver', meld_score: null });
+    const r = await functions.calculatePriorityAdvanced({ patient_id: p.id }, mockContext());
+    assert(r.success, 'Should succeed even without MELD score');
+    assertInRange(r.priority_score, 0, 100, 'Score range without MELD');
+  });
+
+  test('8.4: LAS score boundaries (0 and 100)', async () => {
+    const pMin = seedPatient({ organ_needed: 'lung', las_score: 0 });
+    const rMin = await functions.calculatePriorityAdvanced({ patient_id: pMin.id }, mockContext());
+    assert(rMin.success, 'Should succeed with LAS 0');
+
+    const pMax = seedPatient({ organ_needed: 'lung', las_score: 100 });
+    const rMax = await functions.calculatePriorityAdvanced({ patient_id: pMax.id }, mockContext());
+    assert(rMax.success, 'Should succeed with LAS 100');
+    assert(rMax.priority_score >= rMin.priority_score, 'LAS 100 should score >= LAS 0');
+  });
+
+  test('8.5: Patient with no waitlist date gets lower time score', async () => {
+    const pNoDate = seedPatient({
+      medical_urgency: 'high',
+      date_added_to_waitlist: null,
+    });
+    const rNoDate = await functions.calculatePriorityAdvanced({ patient_id: pNoDate.id }, mockContext());
+    assert(rNoDate.success, 'Should succeed without waitlist date');
+
+    const pWithDate = seedPatient({
+      medical_urgency: 'high',
+      date_added_to_waitlist: new Date(Date.now() - 365 * 24 * 3600 * 1000).toISOString(),
+    });
+    const rWithDate = await functions.calculatePriorityAdvanced({ patient_id: pWithDate.id }, mockContext());
+    assert(rWithDate.priority_score >= rNoDate.priority_score,
+      'Patient with long waitlist date should score >= patient without');
+  });
+
+  test('8.6: All urgency levels produce valid scores', async () => {
+    const levels = ['critical', 'high', 'medium', 'low'];
+    const scores = [];
+    for (const urgency of levels) {
+      const p = seedPatient({ medical_urgency: urgency });
+      const r = await functions.calculatePriorityAdvanced({ patient_id: p.id }, mockContext());
+      assert(r.success, `Should succeed with urgency ${urgency}`);
+      assertInRange(r.priority_score, 0, 100, `Score range for ${urgency}`);
+      scores.push(r.priority_score);
+    }
+    assert(scores[0] >= scores[3], 'Critical urgency should score >= low urgency');
+  });
+
+  // ─── 9. HLA Matching Correctness ────────────────────────
+  console.log('\nSuite 9: HLA Matching Correctness');
+  console.log('---------------------------------');
+
+  test('9.1: Perfect HLA match scores highest', async () => {
+    const donor = seedDonor({
+      blood_type: 'O-',
+      organ_type: 'kidney',
+      hla_typing: 'A2 A24 B7 B44 DR4 DR11',
+    });
+
+    const pPerfect = seedPatient({
+      blood_type: 'O+',
+      organ_needed: 'kidney',
+      hla_typing: 'A2 A24 B7 B44 DR4 DR11',
+      priority_score: 50,
+    });
+
+    const pPartial = seedPatient({
+      blood_type: 'O+',
+      organ_needed: 'kidney',
+      hla_typing: 'A1 A3 B8 B51 DR17 DR7',
+      priority_score: 50,
+    });
+
+    const result = await functions.matchDonorAdvanced(
+      { donor_organ_id: donor.id, simulation_mode: true },
+      mockContext()
+    );
+
+    assert(result.success, 'Should succeed');
+
+    const perfectMatch = result.matches.find(m => m.patient_id === pPerfect.id);
+    const partialMatch = result.matches.find(m => m.patient_id === pPartial.id);
+
+    if (perfectMatch && partialMatch) {
+      assert(perfectMatch.hla_match_score > partialMatch.hla_match_score,
+        `Perfect HLA match (${perfectMatch.hla_match_score}) should score higher than partial (${partialMatch.hla_match_score})`);
+    }
+  });
+
+  test('9.2: Missing HLA data uses default score', async () => {
+    const donor = seedDonor({
+      blood_type: 'O-',
+      organ_type: 'kidney',
+      hla_typing: null,
+    });
+
+    const p = seedPatient({
+      blood_type: 'O+',
+      organ_needed: 'kidney',
+      hla_typing: 'A2 A24 B7 B44 DR4 DR11',
+      priority_score: 50,
+    });
+
+    const result = await functions.matchDonorAdvanced(
+      { donor_organ_id: donor.id, simulation_mode: true },
+      mockContext()
+    );
+
+    assert(result.success, 'Should succeed with missing donor HLA');
+    const match = result.matches.find(m => m.patient_id === p.id);
+    if (match) {
+      assertEqual(match.hla_match_score, 50, 'Should use default HLA score of 50');
+    }
+  });
+
+  test('9.3: Incompatible blood types excluded from matches', async () => {
+    const donor = seedDonor({
+      blood_type: 'AB+',
+      organ_type: 'kidney',
+    });
+
+    const pIncompat = seedPatient({
+      blood_type: 'O+',
+      organ_needed: 'kidney',
+      priority_score: 99,
+    });
+
+    const result = await functions.matchDonorAdvanced(
+      { donor_organ_id: donor.id, simulation_mode: true },
+      mockContext()
+    );
+
+    assert(result.success, 'Should succeed');
+    const found = result.matches.find(m => m.patient_id === pIncompat.id);
+    assert(!found, 'AB+ donor should not match O+ patient');
+  });
+
+  test('9.4: Size compatibility check enforced', async () => {
+    const donor = seedDonor({
+      blood_type: 'O-',
+      organ_type: 'kidney',
+      donor_weight_kg: 100,
+    });
+
+    const pTooSmall = seedPatient({
+      blood_type: 'O+',
+      organ_needed: 'kidney',
+      weight_kg: 50,
+      priority_score: 80,
+    });
+
+    const pGoodSize = seedPatient({
+      blood_type: 'O+',
+      organ_needed: 'kidney',
+      weight_kg: 80,
+      priority_score: 80,
+    });
+
+    const result = await functions.matchDonorAdvanced(
+      { donor_organ_id: donor.id, simulation_mode: true },
+      mockContext()
+    );
+
+    assert(result.success, 'Should succeed');
+    const smallMatch = result.matches.find(m => m.patient_id === pTooSmall.id);
+    const goodMatch = result.matches.find(m => m.patient_id === pGoodSize.id);
+
+    if (smallMatch) {
+      assert(!smallMatch.size_compatible, 'Patient too small should be flagged as size incompatible');
+    }
+    if (goodMatch) {
+      assert(goodMatch.size_compatible, 'Patient with good size ratio should be compatible');
+    }
+  });
+
   // ─── Summary ──────────────────────────────────────────────
   console.log('\n========================================');
   console.log('Test Summary');

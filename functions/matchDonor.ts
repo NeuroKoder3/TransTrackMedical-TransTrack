@@ -1,100 +1,126 @@
 import { createClientFromRequest } from 'npm:@api/sdk@0.8.6';
+import {
+  MATCHING,
+  BLOOD_COMPATIBILITY,
+  PRIORITY_SCORING,
+} from './lib/constants.ts';
+import {
+  isValidUUID,
+  validateHLATyping,
+  parseHLATyping,
+  calculateHLAMatchScore,
+  sanitizePatientName,
+} from './lib/validators.ts';
+import { createLogger, generateRequestId, safeErrorResponse } from './lib/logger.ts';
+import { createHIPAAAuditLog } from './lib/audit.ts';
+
+const logger = createLogger('matchDonor');
 
 Deno.serve(async (req) => {
+  const requestId = generateRequestId();
+
   try {
     const api = createClientFromRequest(req);
-    
+
     const user = await api.auth.me();
     if (!user) {
       return Response.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { donor_organ_id } = await req.json();
+    const body = await req.json();
+    const { donor_organ_id } = body;
+
+    if (!donor_organ_id || !isValidUUID(donor_organ_id)) {
+      return Response.json(
+        { error: 'Invalid or missing donor_organ_id. Must be a valid UUID.' },
+        { status: 400 }
+      );
+    }
 
     // Get donor organ details
     const donor = await api.entities.DonorOrgan.get(donor_organ_id);
-    
+
     if (!donor) {
       return Response.json({ error: 'Donor organ not found' }, { status: 404 });
     }
 
-    // Get all active patients waiting for this organ type
-    const allPatients = await api.entities.Patient.list();
-    const candidates = allPatients.filter(p => 
-      p.waitlist_status === 'active' && 
-      p.organ_needed === donor.organ_type
-    );
+    // Parse and validate donor HLA once (cached for all patient comparisons)
+    const donorHLAValidation = validateHLATyping(donor.hla_typing);
+    if (donor.hla_typing && !donorHLAValidation.valid) {
+      logger.warn('Donor has invalid HLA typing', {
+        donor_id: donor.id,
+        errors: donorHLAValidation.errors,
+        request_id: requestId,
+      });
+    }
+    const donorHLAAntigens = donorHLAValidation.valid ? donorHLAValidation.antigens : [];
 
-    const matches = [];
+    // Filter active patients for this organ type to reduce data loaded
+    let candidates;
+    try {
+      const allPatients = await api.entities.Patient.list();
+      candidates = allPatients.filter(
+        (p: Record<string, unknown>) =>
+          p.waitlist_status === 'active' && p.organ_needed === donor.organ_type
+      );
+    } catch (fetchError) {
+      logger.error('Failed to fetch patient list', fetchError, { request_id: requestId });
+      return safeErrorResponse(requestId, 'Failed to retrieve patient data.');
+    }
 
-    // Blood type compatibility matrix
-    const bloodCompatibility = {
-      'O-': ['O-', 'O+', 'A-', 'A+', 'B-', 'B+', 'AB-', 'AB+'],
-      'O+': ['O+', 'A+', 'B+', 'AB+'],
-      'A-': ['A-', 'A+', 'AB-', 'AB+'],
-      'A+': ['A+', 'AB+'],
-      'B-': ['B-', 'B+', 'AB-', 'AB+'],
-      'B+': ['B+', 'AB+'],
-      'AB-': ['AB-', 'AB+'],
-      'AB+': ['AB+']
-    };
+    const matchResults: Array<Record<string, unknown>> = [];
 
     for (const patient of candidates) {
       // Check blood type compatibility
-      const compatible = bloodCompatibility[donor.blood_type]?.includes(patient.blood_type) || false;
-      
-      if (!compatible) continue; // Skip incompatible blood types
+      const compatible =
+        BLOOD_COMPATIBILITY[donor.blood_type]?.includes(patient.blood_type) || false;
 
-      // Calculate HLA match score (simplified)
-      let hlaScore = 0;
-      if (donor.hla_typing && patient.hla_typing) {
-        const donorHLA = donor.hla_typing.split(/[\s,;]+/);
-        const patientHLA = patient.hla_typing.split(/[\s,;]+/);
-        
-        // Count matching antigens (simplified - in reality much more complex)
-        const matches = donorHLA.filter(hla => patientHLA.includes(hla));
-        hlaScore = (matches.length / 6) * 100; // Assume 6 key antigens
-      } else {
-        hlaScore = 50; // Default if HLA data not available
-      }
+      if (!compatible) continue;
+
+      // Calculate HLA match score using validated/cached antigens
+      const patientHLAAntigens = parseHLATyping(patient.hla_typing);
+      const hlaScore = calculateHLAMatchScore(donorHLAAntigens, patientHLAAntigens);
 
       // Size compatibility check
       let sizeCompatible = true;
       if (donor.donor_weight_kg && patient.weight_kg) {
         const weightRatio = donor.donor_weight_kg / patient.weight_kg;
-        // Acceptable range: 0.7 to 1.5
-        sizeCompatible = weightRatio >= 0.7 && weightRatio <= 1.5;
+        sizeCompatible =
+          weightRatio >= MATCHING.WEIGHT_RATIO_MIN && weightRatio <= MATCHING.WEIGHT_RATIO_MAX;
       }
 
       // Calculate overall compatibility score
       let compatibilityScore = 0;
-      
+
       // Priority score (40% weight)
-      compatibilityScore += (patient.priority_score || 0) * 0.4;
-      
+      compatibilityScore += (patient.priority_score || 0) * MATCHING.WEIGHT_PRIORITY;
+
       // HLA match (25% weight)
-      compatibilityScore += hlaScore * 0.25;
-      
+      compatibilityScore += hlaScore * MATCHING.WEIGHT_HLA;
+
       // Blood type perfect match bonus (15% weight)
       if (donor.blood_type === patient.blood_type) {
-        compatibilityScore += 15;
+        compatibilityScore += MATCHING.WEIGHT_BLOOD_TYPE * 100;
       }
-      
+
       // Size compatibility (10% weight)
       if (sizeCompatible) {
-        compatibilityScore += 10;
+        compatibilityScore += MATCHING.WEIGHT_SIZE * 100;
       }
-      
+
       // Time on waitlist (10% weight)
       if (patient.date_added_to_waitlist) {
         const daysOnList = Math.floor(
-          (new Date() - new Date(patient.date_added_to_waitlist)) / (1000 * 60 * 60 * 24)
+          (Date.now() - new Date(patient.date_added_to_waitlist).getTime()) /
+            (1000 * 60 * 60 * 24)
         );
-        // Max 10 points for 365+ days
-        compatibilityScore += Math.min(10, (daysOnList / 365) * 10);
+        compatibilityScore += Math.min(
+          MATCHING.WEIGHT_WAITTIME * 100,
+          (daysOnList / PRIORITY_SCORING.MAX_WAITTIME_DAYS) * MATCHING.WEIGHT_WAITTIME * 100
+        );
       }
 
-      matches.push({
+      matchResults.push({
         patient,
         compatibility_score: Math.min(100, compatibilityScore),
         blood_type_compatible: compatible,
@@ -104,90 +130,127 @@ Deno.serve(async (req) => {
     }
 
     // Sort by compatibility score (highest first)
-    matches.sort((a, b) => b.compatibility_score - a.compatibility_score);
+    matchResults.sort(
+      (a, b) => (b.compatibility_score as number) - (a.compatibility_score as number)
+    );
 
     // Assign priority ranks
-    matches.forEach((match, index) => {
+    matchResults.forEach((match, index) => {
       match.priority_rank = index + 1;
     });
 
-    // Create Match records for top candidates
-    const createdMatches = [];
-    for (const match of matches.slice(0, 10)) { // Top 10 matches
+    // Create Match records for top candidates with freshness check
+    const createdMatches: unknown[] = [];
+    for (const match of matchResults.slice(0, MATCHING.MAX_MATCHES_TO_CREATE)) {
+      const patient = match.patient as Record<string, unknown>;
+
+      // Re-check patient status before creating match (race condition mitigation)
+      try {
+        const freshPatient = await api.entities.Patient.get(patient.id as string);
+        if (!freshPatient || freshPatient.waitlist_status !== 'active') {
+          logger.info('Skipping match - patient no longer active', {
+            patient_id: patient.id,
+            request_id: requestId,
+          });
+          continue;
+        }
+      } catch {
+        logger.warn('Could not re-verify patient status, skipping', {
+          patient_id: patient.id,
+          request_id: requestId,
+        });
+        continue;
+      }
+
+      const sanitizedName = sanitizePatientName(patient.first_name, patient.last_name);
       const matchRecord = await api.entities.Match.create({
         donor_organ_id: donor.id,
-        patient_id: match.patient.id,
-        patient_name: `${match.patient.first_name} ${match.patient.last_name}`,
+        patient_id: patient.id,
+        patient_name: sanitizedName,
         compatibility_score: match.compatibility_score,
         blood_type_compatible: match.blood_type_compatible,
         hla_match_score: match.hla_match_score,
         size_compatible: match.size_compatible,
         match_status: 'potential',
-        priority_rank: match.priority_rank
+        priority_rank: match.priority_rank,
       });
       createdMatches.push(matchRecord);
     }
 
-    // Create notifications for top 3 matches
-    for (const match of matches.slice(0, 3)) {
-      // Get all admin users to notify
+    // Create notifications for top matches (sanitized)
+    for (const match of matchResults.slice(0, MATCHING.TOP_PRIORITY_NOTIFICATIONS)) {
+      const patient = match.patient as Record<string, unknown>;
+      const sanitizedName = sanitizePatientName(patient.first_name, patient.last_name);
+      const safeScore = Math.round(match.compatibility_score as number);
+
       const allUsers = await api.asServiceRole.entities.User.list();
-      const admins = allUsers.filter(u => u.role === 'admin');
+      const admins = (allUsers as Array<Record<string, unknown>>).filter(
+        (u) => u.role === 'admin'
+      );
 
       for (const admin of admins) {
         await api.entities.Notification.create({
           recipient_email: admin.email,
           title: 'New Donor Match Available',
-          message: `High-priority match found: ${match.patient.first_name} ${match.patient.last_name} (${match.compatibility_score.toFixed(0)}% compatible) for ${donor.organ_type} from donor ${donor.donor_id}`,
+          message: `High-priority match found: ${sanitizedName} (${safeScore}% compatible) for ${donor.organ_type}`,
           notification_type: 'donor_match',
           is_read: false,
-          related_patient_id: match.patient.id,
-          related_patient_name: `${match.patient.first_name} ${match.patient.last_name}`,
+          related_patient_id: patient.id,
+          related_patient_name: sanitizedName,
           priority_level: match.priority_rank === 1 ? 'critical' : 'high',
           action_url: `/DonorMatching?donor_id=${donor.id}`,
-          metadata: { 
+          metadata: {
             donor_id: donor.id,
-            patient_id: match.patient.id,
-            compatibility_score: match.compatibility_score
-          }
+            patient_id: patient.id,
+            compatibility_score: match.compatibility_score,
+          },
         });
       }
     }
 
-    // Log the matching activity
-    await api.entities.AuditLog.create({
-      action: 'create',
-      entity_type: 'DonorOrgan',
-      entity_id: donor.id,
-      details: `Matched donor ${donor.donor_id} with ${matches.length} potential recipients. Top match: ${matches[0]?.compatibility_score.toFixed(0)}% compatible`,
-      user_email: user.email,
-      user_role: user.role,
+    // HIPAA-compliant audit log
+    await createHIPAAAuditLog(api, {
+      action: 'MATCH',
+      entityType: 'DonorOrgan',
+      entityId: donor.id,
+      details: `Matched donor ${donor.donor_id} with ${matchResults.length} potential recipients. Top match: ${matchResults[0]?.compatibility_score ? (matchResults[0].compatibility_score as number).toFixed(0) : 'N/A'}% compatible`,
+      user: { email: user.email, role: user.role },
+      outcome: 'SUCCESS',
+      accessJustification: 'Donor-patient matching algorithm execution',
+      requestId,
     });
 
     return Response.json({
       success: true,
       donor,
-      matches: matches.map(m => ({
-        patient_id: m.patient.id,
-        patient_name: `${m.patient.first_name} ${m.patient.last_name}`,
-        patient_id_mrn: m.patient.patient_id,
-        blood_type: m.patient.blood_type,
-        organ_needed: m.patient.organ_needed,
-        priority_score: m.patient.priority_score,
-        compatibility_score: m.compatibility_score,
-        blood_type_compatible: m.blood_type_compatible,
-        hla_match_score: m.hla_match_score,
-        size_compatible: m.size_compatible,
-        priority_rank: m.priority_rank,
-        medical_urgency: m.patient.medical_urgency,
-        days_on_waitlist: m.patient.date_added_to_waitlist 
-          ? Math.floor((new Date() - new Date(m.patient.date_added_to_waitlist)) / (1000 * 60 * 60 * 24))
-          : 0
-      })),
-      total_matches: matches.length,
-      matches_created: createdMatches.length
+      matches: matchResults.map((m) => {
+        const p = m.patient as Record<string, unknown>;
+        return {
+          patient_id: p.id,
+          patient_name: sanitizePatientName(p.first_name, p.last_name),
+          patient_id_mrn: p.patient_id,
+          blood_type: p.blood_type,
+          organ_needed: p.organ_needed,
+          priority_score: p.priority_score,
+          compatibility_score: m.compatibility_score,
+          blood_type_compatible: m.blood_type_compatible,
+          hla_match_score: m.hla_match_score,
+          size_compatible: m.size_compatible,
+          priority_rank: m.priority_rank,
+          medical_urgency: p.medical_urgency,
+          days_on_waitlist: p.date_added_to_waitlist
+            ? Math.floor(
+                (Date.now() - new Date(p.date_added_to_waitlist as string).getTime()) /
+                  (1000 * 60 * 60 * 24)
+              )
+            : 0,
+        };
+      }),
+      total_matches: matchResults.length,
+      matches_created: createdMatches.length,
     });
   } catch (error) {
-    return Response.json({ error: error.message }, { status: 500 });
+    logger.error('Donor matching failed', error, { request_id: requestId });
+    return safeErrorResponse(requestId, 'Donor matching failed. Contact support.');
   }
 });

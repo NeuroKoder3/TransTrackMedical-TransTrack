@@ -1,6 +1,11 @@
 import { createClientFromRequest } from 'npm:@api/sdk@0.8.6';
+import { createLogger, generateRequestId, safeErrorResponse } from './lib/logger.ts';
+
+const logger = createLogger('calculatePriorityAdvanced');
 
 Deno.serve(async (req) => {
+  const requestId = generateRequestId();
+
   try {
     const api = createClientFromRequest(req);
     
@@ -272,6 +277,7 @@ Deno.serve(async (req) => {
       patient_id,
     });
   } catch (error) {
-    return Response.json({ error: error.message }, { status: 500 });
+    logger.error('Advanced priority calculation failed', error, { request_id: requestId });
+    return safeErrorResponse(requestId, 'Priority calculation failed. Contact support.');
   }
 });

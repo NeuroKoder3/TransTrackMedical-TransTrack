@@ -1,6 +1,11 @@
 import { createClientFromRequest } from 'npm:@api/sdk@0.8.6';
+import { createLogger, generateRequestId, safeErrorResponse } from './lib/logger.ts';
+
+const logger = createLogger('fhirWebhook');
 
 Deno.serve(async (req) => {
+  const requestId = generateRequestId();
+
   try {
     // Validate webhook authentication
     const authHeader = req.headers.get('Authorization');
@@ -88,6 +93,7 @@ Deno.serve(async (req) => {
       resourceType: payload.resourceType
     });
   } catch (error) {
-    return Response.json({ error: error.message }, { status: 500 });
+    logger.error('FHIR webhook processing failed', error, { request_id: requestId });
+    return safeErrorResponse(requestId, 'Webhook processing failed.');
   }
 });

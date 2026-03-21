@@ -1,6 +1,12 @@
 import { createClientFromRequest } from 'npm:@api/sdk@0.8.6';
+import { sanitizePatientName } from './lib/validators.ts';
+import { createLogger, generateRequestId, safeErrorResponse } from './lib/logger.ts';
+
+const logger = createLogger('checkNotificationRules');
 
 Deno.serve(async (req) => {
+  const requestId = generateRequestId();
+
   try {
     const api = createClientFromRequest(req);
     
@@ -30,7 +36,7 @@ Deno.serve(async (req) => {
           if (patient.priority_score >= (conditions.priority_score || 80)) {
             if (!conditions.organ_type || patient.organ_needed === conditions.organ_type) {
               shouldTrigger = true;
-              message = `${patient.first_name} ${patient.last_name} has reached critical priority score of ${patient.priority_score.toFixed(0)}`;
+              message = `${sanitizePatientName(patient.first_name, patient.last_name)} has reached critical priority score of ${patient.priority_score.toFixed(0)}`;
             }
           }
           break;
@@ -39,7 +45,7 @@ Deno.serve(async (req) => {
           if (event_type === 'update' && old_data && old_data.waitlist_status !== patient.waitlist_status) {
             if (!conditions.status_to || patient.waitlist_status === conditions.status_to) {
               shouldTrigger = true;
-              message = `${patient.first_name} ${patient.last_name} status changed from ${old_data.waitlist_status} to ${patient.waitlist_status}`;
+              message = `${sanitizePatientName(patient.first_name, patient.last_name)} status changed from ${old_data.waitlist_status} to ${patient.waitlist_status}`;
             }
           }
           break;
@@ -47,12 +53,12 @@ Deno.serve(async (req) => {
         case 'evaluation_overdue':
           if (patient.last_evaluation_date) {
             const daysSinceEval = Math.floor(
-              (new Date() - new Date(patient.last_evaluation_date)) / (1000 * 60 * 60 * 24)
+              (Date.now() - new Date(patient.last_evaluation_date).getTime()) / (1000 * 60 * 60 * 24)
             );
             const threshold = conditions.days_threshold || 90;
             if (daysSinceEval >= threshold) {
               shouldTrigger = true;
-              message = `${patient.first_name} ${patient.last_name} evaluation is ${daysSinceEval} days overdue (threshold: ${threshold} days)`;
+              message = `${sanitizePatientName(patient.first_name, patient.last_name)} evaluation is ${daysSinceEval} days overdue (threshold: ${threshold} days)`;
             }
           }
           break;
@@ -60,12 +66,12 @@ Deno.serve(async (req) => {
         case 'time_on_waitlist':
           if (patient.date_added_to_waitlist) {
             const daysOnList = Math.floor(
-              (new Date() - new Date(patient.date_added_to_waitlist)) / (1000 * 60 * 60 * 24)
+              (Date.now() - new Date(patient.date_added_to_waitlist).getTime()) / (1000 * 60 * 60 * 24)
             );
             const threshold = conditions.days_threshold || 365;
             if (daysOnList >= threshold) {
               shouldTrigger = true;
-              message = `${patient.first_name} ${patient.last_name} has been on waitlist for ${daysOnList} days`;
+              message = `${sanitizePatientName(patient.first_name, patient.last_name)} has been on waitlist for ${daysOnList} days`;
             }
           }
           break;
@@ -75,7 +81,7 @@ Deno.serve(async (req) => {
             const scoreChange = patient.priority_score - old_data.priority_score;
             if (Math.abs(scoreChange) >= 10) {
               shouldTrigger = true;
-              message = `${patient.first_name} ${patient.last_name} priority score changed by ${scoreChange > 0 ? '+' : ''}${scoreChange.toFixed(0)} points`;
+              message = `${sanitizePatientName(patient.first_name, patient.last_name)} priority score changed by ${scoreChange > 0 ? '+' : ''}${scoreChange.toFixed(0)} points`;
             }
           }
           break;
@@ -83,7 +89,7 @@ Deno.serve(async (req) => {
         case 'new_patient':
           if (event_type === 'create') {
             shouldTrigger = true;
-            message = `New patient added: ${patient.first_name} ${patient.last_name} (${patient.organ_needed})`;
+            message = `New patient added: ${sanitizePatientName(patient.first_name, patient.last_name)} (${patient.organ_needed})`;
           }
           break;
       }
@@ -173,6 +179,7 @@ Deno.serve(async (req) => {
       notifications: triggeredNotifications
     });
   } catch (error) {
-    return Response.json({ error: error.message }, { status: 500 });
+    logger.error('Notification rule check failed', error, { request_id: requestId });
+    return safeErrorResponse(requestId, 'Notification processing failed. Contact support.');
   }
 });
