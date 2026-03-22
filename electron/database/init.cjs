@@ -21,7 +21,7 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const { app } = require('electron');
-const { createSchema, createIndexes, addOrgIdToExistingTables } = require('./schema.cjs');
+const { createSchema, createIndexes, createAuditLogTriggers, addOrgIdToExistingTables } = require('./schema.cjs');
 const { runMigrations } = require('./migrations.cjs');
 
 let db = null;
@@ -532,21 +532,8 @@ async function initDatabase() {
     console.log(`Applied ${migrationResult.applied} migration(s): ${migrationResult.migrations.join(', ')}`);
   }
 
-  // Enforce audit log immutability at the database layer (HIPAA requirement)
-  db.exec(`
-    CREATE TRIGGER IF NOT EXISTS audit_logs_no_update
-    BEFORE UPDATE ON audit_logs
-    BEGIN
-      SELECT RAISE(ABORT, 'Audit logs are immutable and cannot be updated (HIPAA compliance)');
-    END
-  `);
-  db.exec(`
-    CREATE TRIGGER IF NOT EXISTS audit_logs_no_delete
-    BEFORE DELETE ON audit_logs
-    BEGIN
-      SELECT RAISE(ABORT, 'Audit logs are immutable and cannot be deleted (HIPAA compliance)');
-    END
-  `);
+  // Enforce audit log immutability at the database layer (HIPAA 164.312(b))
+  createAuditLogTriggers(db);
   
   // Seed default data if needed
   await seedDefaultData(defaultOrg.id);

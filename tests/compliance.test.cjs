@@ -42,10 +42,14 @@ test('Database encryption module exists', () => {
 });
 
 test('Audit log immutability triggers defined', () => {
-  const content = fs.readFileSync(path.join(__dirname, '..', 'electron', 'database', 'init.cjs'), 'utf8');
-  assert(content.includes('audit_logs_no_update'), 'Must have update prevention trigger');
-  assert(content.includes('audit_logs_no_delete'), 'Must have delete prevention trigger');
-  assert(content.includes('RAISE(ABORT'), 'Triggers must use RAISE(ABORT)');
+  const schemaContent = fs.readFileSync(path.join(__dirname, '..', 'electron', 'database', 'schema.cjs'), 'utf8');
+  assert(schemaContent.includes('audit_logs_immutable_update'), 'Must have update prevention trigger');
+  assert(schemaContent.includes('audit_logs_immutable_delete'), 'Must have delete prevention trigger');
+  assert(schemaContent.includes('RAISE(ABORT'), 'Triggers must use RAISE(ABORT)');
+  assert(schemaContent.includes('createAuditLogTriggers'), 'Must export createAuditLogTriggers function');
+
+  const initContent = fs.readFileSync(path.join(__dirname, '..', 'electron', 'database', 'init.cjs'), 'utf8');
+  assert(initContent.includes('createAuditLogTriggers'), 'init.cjs must call createAuditLogTriggers');
 });
 
 test('Audit log schema includes required fields', () => {
