@@ -232,11 +232,20 @@ export function sanitizeDiagnosis(diagnosis: unknown): string {
 
 /**
  * Strips HTML tags and dangerous characters from a string.
+ * Uses iterative stripping to prevent incomplete sanitization
+ * (e.g. nested or split tags like "<scr<script>ipt>").
  */
 export function sanitizePlainText(input: string, maxLength = 1000): string {
   if (typeof input !== 'string') return '';
-  return input
-    .replace(/<[^>]*>/g, '')
+
+  let result = input;
+  let previous = '';
+  while (result !== previous) {
+    previous = result;
+    result = result.replace(/<[^>]*>/g, '');
+  }
+
+  return result
     .replace(/[<>"'&]/g, (ch) => {
       const entities: Record<string, string> = {
         '<': '&lt;',

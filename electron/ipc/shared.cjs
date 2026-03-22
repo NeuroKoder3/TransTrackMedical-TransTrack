@@ -300,13 +300,11 @@ function sanitizeForSQLite(entityData) {
 // =============================================================================
 
 function logAudit(action, entityType, entityId, patientName, details, userEmail, userRole, requestId) {
-function logAudit(action, entityType, entityId, patientName, details, userEmail, userRole) {
   const db = getDatabase();
   const id = uuidv4();
   const orgId = currentUser?.org_id || 'SYSTEM';
   const now = new Date().toISOString();
 
-  // Use request_id column if it exists, otherwise fall back to basic insert
   try {
     db.prepare(
       'INSERT INTO audit_logs (id, org_id, action, entity_type, entity_id, patient_name, details, user_email, user_role, request_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
@@ -316,9 +314,6 @@ function logAudit(action, entityType, entityId, patientName, details, userEmail,
       'INSERT INTO audit_logs (id, org_id, action, entity_type, entity_id, patient_name, details, user_email, user_role, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     ).run(id, orgId, action, entityType, entityId, patientName, details, userEmail, userRole, now);
   }
-  db.prepare(
-    'INSERT INTO audit_logs (id, org_id, action, entity_type, entity_id, patient_name, details, user_email, user_role, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-  ).run(id, orgId, action, entityType, entityId, patientName, details, userEmail, userRole, now);
 }
 
 // =============================================================================
