@@ -33,9 +33,9 @@ const { v4: uuidv4 } = require('uuid');
 
 const results = { passed: 0, failed: 0, errors: [] };
 
-function test(name, fn) {
+async function test(name, fn) {
   try {
-    fn();
+    await fn();
     console.log(`  \u2713 ${name}`);
     results.passed++;
   } catch (e) {
@@ -204,18 +204,18 @@ async function runTests() {
   const p2 = seedPatient({ medical_urgency: 'low', functional_status: 'independent', prognosis_rating: 'excellent' });
 
   const r1 = await functions.calculatePriorityAdvanced({ patient_id: p1.id }, mockContext());
-  test('1.1: High-acuity patient gets high priority', () => {
+  await test('1.1: High-acuity patient gets high priority', () => {
     assert(r1.success, 'Should succeed');
     assertInRange(r1.priority_score, 40, 100, 'Critical patient score');
   });
 
   const r2 = await functions.calculatePriorityAdvanced({ patient_id: p2.id }, mockContext());
-  test('1.2: Low-acuity patient gets lower priority', () => {
+  await test('1.2: Low-acuity patient gets lower priority', () => {
     assert(r2.success, 'Should succeed');
     assert(r1.priority_score > r2.priority_score, `Critical (${r1.priority_score}) should exceed low (${r2.priority_score})`);
   });
 
-  test('1.3: Score breakdown includes all components', () => {
+  await test('1.3: Score breakdown includes all components', () => {
     const b = r1.breakdown;
     assert(b.components.medical_urgency, 'Should have medical_urgency');
     assert(b.components.time_on_waitlist !== undefined, 'Should have time_on_waitlist');
@@ -224,25 +224,25 @@ async function runTests() {
     assert(b.components.blood_type_rarity, 'Should have blood_type_rarity');
   });
 
-  test('1.4: Score is clamped to [0, 100]', () => {
+  await test('1.4: Score is clamped to [0, 100]', () => {
     assertInRange(r1.priority_score, 0, 100, 'Score range');
     assertInRange(r2.priority_score, 0, 100, 'Score range');
   });
 
   const pLiver = seedPatient({ organ_needed: 'liver', meld_score: 30 });
   const rLiver = await functions.calculatePriorityAdvanced({ patient_id: pLiver.id }, mockContext());
-  test('1.5: Liver patient uses MELD scoring', () => {
+  await test('1.5: Liver patient uses MELD scoring', () => {
     assertEqual(rLiver.breakdown.components.organ_specific.type, 'MELD', 'Should use MELD');
     assertEqual(rLiver.breakdown.components.organ_specific.score, 30, 'MELD score should be 30');
   });
 
   const pLung = seedPatient({ organ_needed: 'lung', las_score: 75 });
   const rLung = await functions.calculatePriorityAdvanced({ patient_id: pLung.id }, mockContext());
-  test('1.6: Lung patient uses LAS scoring', () => {
+  await test('1.6: Lung patient uses LAS scoring', () => {
     assertEqual(rLung.breakdown.components.organ_specific.type, 'LAS', 'Should use LAS');
   });
 
-  test('1.7: Non-existent patient throws', async () => {
+  await test('1.7: Non-existent patient throws', async () => {
     let threw = false;
     try { await functions.calculatePriorityAdvanced({ patient_id: 'nonexistent' }, mockContext()); }
     catch { threw = true; }
@@ -264,13 +264,13 @@ async function runTests() {
     mockContext()
   );
 
-  test('2.1: Matching returns results for correct organ type', () => {
+  await test('2.1: Matching returns results for correct organ type', () => {
     assert(matchResult.success, 'Should succeed');
     assert(matchResult.matches.length > 0, 'Should find matches');
     matchResult.matches.forEach(m => assertEqual(m.organ_needed, 'kidney', 'All matches should be kidney'));
   });
 
-  test('2.2: Matches are sorted by compatibility descending', () => {
+  await test('2.2: Matches are sorted by compatibility descending', () => {
     for (let i = 1; i < matchResult.matches.length; i++) {
       assert(
         matchResult.matches[i - 1].compatibility_score >= matchResult.matches[i].compatibility_score,
@@ -279,17 +279,17 @@ async function runTests() {
     }
   });
 
-  test('2.3: Blood type compatibility is enforced', () => {
+  await test('2.3: Blood type compatibility is enforced', () => {
     matchResult.matches.forEach(m => assert(m.blood_type_compatible, 'All matches should be blood type compatible'));
   });
 
-  test('2.4: Simulation mode does not create DB records', () => {
+  await test('2.4: Simulation mode does not create DB records', () => {
     assert(matchResult.simulation_mode, 'Should be simulation');
     const dbMatches = db.prepare('SELECT COUNT(*) as cnt FROM matches').get();
     assertEqual(dbMatches.cnt, 0, 'No matches in DB during simulation');
   });
 
-  test('2.5: Non-existent donor throws', async () => {
+  await test('2.5: Non-existent donor throws', async () => {
     let threw = false;
     try { await functions.matchDonorAdvanced({ donor_organ_id: 'ghost' }, mockContext()); }
     catch { threw = true; }
@@ -302,7 +302,7 @@ async function runTests() {
     hypothetical_donor: { organ_type: 'kidney', blood_type: 'AB+', hla_typing: 'A1 A2 B7 B8 DR4 DR17' },
   }, mockContext());
 
-  test('2.6: Hypothetical donor matching works', () => {
+  await test('2.6: Hypothetical donor matching works', () => {
     assert(hypoResult.success, 'Should succeed');
     assert(hypoResult.simulation_mode, 'Should be simulation');
   });
@@ -323,14 +323,14 @@ async function runTests() {
   };
 
   const valResult = await functions.validateFHIRData({ fhir_data: validBundle }, mockContext());
-  test('3.1: Valid FHIR bundle passes validation', () => {
+  await test('3.1: Valid FHIR bundle passes validation', () => {
     assert(valResult.valid, 'Should be valid');
     assertEqual(valResult.errors.length, 0, 'No errors');
   });
 
   const invalidBundle = { resourceType: 'Observation' };
   const invResult = await functions.validateFHIRData({ fhir_data: invalidBundle }, mockContext());
-  test('3.2: Non-Bundle resource type fails validation', () => {
+  await test('3.2: Non-Bundle resource type fails validation', () => {
     assert(!invResult.valid, 'Should be invalid');
     assert(invResult.errors.length > 0, 'Should have errors');
   });
@@ -340,13 +340,13 @@ async function runTests() {
     entry: [{ resource: { resourceType: 'Patient' } }],
   };
   const noNameResult = await functions.validateFHIRData({ fhir_data: noNameBundle }, mockContext());
-  test('3.3: Patient without name produces error', () => {
+  await test('3.3: Patient without name produces error', () => {
     assert(!noNameResult.valid || noNameResult.errors.length > 0, 'Should flag missing name');
   });
 
   const emptyBundle = { resourceType: 'Bundle', entry: [] };
   const emptyResult = await functions.validateFHIRData({ fhir_data: emptyBundle }, mockContext());
-  test('3.4: Empty bundle produces warning', () => {
+  await test('3.4: Empty bundle produces warning', () => {
     assert(emptyResult.warnings.length > 0, 'Should have warning for empty bundle');
   });
 
@@ -359,19 +359,19 @@ async function runTests() {
     integration_id: 'int-123',
   }, mockContext());
 
-  test('4.1: Valid FHIR import succeeds', () => {
+  await test('4.1: Valid FHIR import succeeds', () => {
     assert(importResult.success, 'Should succeed');
     assertEqual(importResult.records_imported, 1, 'Should import 1 record');
     assertEqual(importResult.records_failed, 0, 'No failures');
   });
 
-  test('4.2: Import creates audit trail', () => {
+  await test('4.2: Import creates audit trail', () => {
     const importRecord = db.prepare('SELECT * FROM ehr_imports WHERE id = ?').get(importResult.import_id);
     assert(importRecord, 'Import record should exist');
     assertEqual(importRecord.status, 'completed', 'Status should be completed');
   });
 
-  test('4.3: Invalid FHIR data throws', async () => {
+  await test('4.3: Invalid FHIR data throws', async () => {
     let threw = false;
     try {
       await functions.importFHIRData({ fhir_data: 'not json', integration_id: 'x' }, mockContext());
@@ -398,7 +398,7 @@ async function runTests() {
     event_type: 'patient_update',
   }, mockContext());
 
-  test('5.1: Matching rule triggers notification', () => {
+  await test('5.1: Matching rule triggers notification', () => {
     assert(notifResult.success, 'Should succeed');
     assert(notifResult.notifications_created > 0, 'Should create notifications');
   });
@@ -409,7 +409,7 @@ async function runTests() {
     event_type: 'patient_update',
   }, mockContext());
 
-  test('5.2: Below-threshold patient does not trigger rule', () => {
+  await test('5.2: Below-threshold patient does not trigger rule', () => {
     assertEqual(notifResult2.notifications_created, 0, 'Should not trigger');
   });
 
@@ -420,31 +420,31 @@ async function runTests() {
   // Load the shared module
   const shared = require('../electron/ipc/shared.cjs');
 
-  test('6.1: Strong password passes', () => {
+  await test('6.1: Strong password passes', () => {
     const r = shared.validatePasswordStrength('MyStr0ng!Pass');
     assert(r.valid, 'Should be valid');
     assertEqual(r.errors.length, 0, 'No errors');
   });
 
-  test('6.2: Short password fails', () => {
+  await test('6.2: Short password fails', () => {
     const r = shared.validatePasswordStrength('Ab1!');
     assert(!r.valid, 'Should fail');
     assert(r.errors.some(e => e.includes('12 characters')), 'Should mention length');
   });
 
-  test('6.3: No uppercase fails', () => {
+  await test('6.3: No uppercase fails', () => {
     const r = shared.validatePasswordStrength('mystrongpass1!');
     assert(!r.valid, 'Should fail');
     assert(r.errors.some(e => e.includes('uppercase')), 'Should mention uppercase');
   });
 
-  test('6.4: No special character fails', () => {
+  await test('6.4: No special character fails', () => {
     const r = shared.validatePasswordStrength('MyStrongPass12');
     assert(!r.valid, 'Should fail');
     assert(r.errors.some(e => e.includes('special')), 'Should mention special char');
   });
 
-  test('6.5: Null password fails', () => {
+  await test('6.5: Null password fails', () => {
     const r = shared.validatePasswordStrength(null);
     assert(!r.valid, 'Should fail');
   });
@@ -453,34 +453,34 @@ async function runTests() {
   console.log('\nSuite 7: Entity Helpers');
   console.log('-----------------------');
 
-  test('7.1: parseJsonFields handles JSON strings', () => {
+  await test('7.1: parseJsonFields handles JSON strings', () => {
     const row = { id: '1', priority_score_breakdown: '{"total":50}', name: 'test' };
     const parsed = shared.parseJsonFields(row);
     assert(typeof parsed.priority_score_breakdown === 'object', 'Should parse JSON');
     assertEqual(parsed.priority_score_breakdown.total, 50, 'Should preserve value');
   });
 
-  test('7.2: parseJsonFields handles invalid JSON gracefully', () => {
+  await test('7.2: parseJsonFields handles invalid JSON gracefully', () => {
     const row = { id: '1', priority_score_breakdown: 'not-json' };
     const parsed = shared.parseJsonFields(row);
     assertEqual(parsed.priority_score_breakdown, 'not-json', 'Should keep string');
   });
 
-  test('7.3: parseJsonFields handles null', () => {
+  await test('7.3: parseJsonFields handles null', () => {
     assertEqual(shared.parseJsonFields(null), null, 'Should return null');
   });
 
-  test('7.4: isValidOrderColumn rejects unknown columns', () => {
+  await test('7.4: isValidOrderColumn rejects unknown columns', () => {
     assert(!shared.isValidOrderColumn('patients', 'DROP TABLE'), 'Should reject injection');
     assert(!shared.isValidOrderColumn('unknown_table', 'id'), 'Should reject unknown table');
   });
 
-  test('7.5: isValidOrderColumn accepts valid columns', () => {
+  await test('7.5: isValidOrderColumn accepts valid columns', () => {
     assert(shared.isValidOrderColumn('patients', 'first_name'), 'Should accept first_name');
     assert(shared.isValidOrderColumn('patients', 'priority_score'), 'Should accept priority_score');
   });
 
-  test('7.6: sanitizeForSQLite converts types correctly', () => {
+  await test('7.6: sanitizeForSQLite converts types correctly', () => {
     const data = { active: true, tags: ['a', 'b'], meta: { k: 'v' }, undef: undefined, name: 'test' };
     shared.sanitizeForSQLite(data);
     assertEqual(data.active, 1, 'Boolean -> 1');
@@ -494,27 +494,27 @@ async function runTests() {
   console.log('\nSuite 8: Priority Calculation Edge Cases');
   console.log('----------------------------------------');
 
-  test('8.1: MELD score at minimum boundary (6) is valid', async () => {
+  await test('8.1: MELD score at minimum boundary (6) is valid', async () => {
     const p = seedPatient({ organ_needed: 'liver', meld_score: 6 });
     const r = await functions.calculatePriorityAdvanced({ patient_id: p.id }, mockContext());
     assert(r.success, 'Should succeed with MELD 6');
     assertInRange(r.priority_score, 0, 100, 'Score range with minimum MELD');
   });
 
-  test('8.2: MELD score at maximum boundary (40) is valid', async () => {
+  await test('8.2: MELD score at maximum boundary (40) is valid', async () => {
     const p = seedPatient({ organ_needed: 'liver', meld_score: 40 });
     const r = await functions.calculatePriorityAdvanced({ patient_id: p.id }, mockContext());
     assert(r.success, 'Should succeed with MELD 40');
   });
 
-  test('8.3: Missing organ-specific scores handled gracefully', async () => {
+  await test('8.3: Missing organ-specific scores handled gracefully', async () => {
     const p = seedPatient({ organ_needed: 'liver', meld_score: null });
     const r = await functions.calculatePriorityAdvanced({ patient_id: p.id }, mockContext());
     assert(r.success, 'Should succeed even without MELD score');
     assertInRange(r.priority_score, 0, 100, 'Score range without MELD');
   });
 
-  test('8.4: LAS score boundaries (0 and 100)', async () => {
+  await test('8.4: LAS score boundaries (0 and 100)', async () => {
     const pMin = seedPatient({ organ_needed: 'lung', las_score: 0 });
     const rMin = await functions.calculatePriorityAdvanced({ patient_id: pMin.id }, mockContext());
     assert(rMin.success, 'Should succeed with LAS 0');
@@ -525,7 +525,7 @@ async function runTests() {
     assert(rMax.priority_score >= rMin.priority_score, 'LAS 100 should score >= LAS 0');
   });
 
-  test('8.5: Patient with no waitlist date gets lower time score', async () => {
+  await test('8.5: Patient with no waitlist date gets lower time score', async () => {
     const pNoDate = seedPatient({
       medical_urgency: 'high',
       date_added_to_waitlist: null,
@@ -542,7 +542,7 @@ async function runTests() {
       'Patient with long waitlist date should score >= patient without');
   });
 
-  test('8.6: All urgency levels produce valid scores', async () => {
+  await test('8.6: All urgency levels produce valid scores', async () => {
     const levels = ['critical', 'high', 'medium', 'low'];
     const scores = [];
     for (const urgency of levels) {
@@ -559,7 +559,7 @@ async function runTests() {
   console.log('\nSuite 9: HLA Matching Correctness');
   console.log('---------------------------------');
 
-  test('9.1: Perfect HLA match scores highest', async () => {
+  await test('9.1: Perfect HLA match scores highest', async () => {
     const donor = seedDonor({
       blood_type: 'O-',
       organ_type: 'kidney',
@@ -596,7 +596,7 @@ async function runTests() {
     }
   });
 
-  test('9.2: Missing HLA data uses default score', async () => {
+  await test('9.2: Missing HLA data uses default score', async () => {
     const donor = seedDonor({
       blood_type: 'O-',
       organ_type: 'kidney',
@@ -622,7 +622,7 @@ async function runTests() {
     }
   });
 
-  test('9.3: Incompatible blood types excluded from matches', async () => {
+  await test('9.3: Incompatible blood types excluded from matches', async () => {
     const donor = seedDonor({
       blood_type: 'AB+',
       organ_type: 'kidney',
@@ -644,7 +644,7 @@ async function runTests() {
     assert(!found, 'AB+ donor should not match O+ patient');
   });
 
-  test('9.4: Size compatibility check enforced', async () => {
+  await test('9.4: Size compatibility check enforced', async () => {
     const donor = seedDonor({
       blood_type: 'O-',
       organ_type: 'kidney',
