@@ -524,6 +524,22 @@ async function initDatabase() {
   
   // Now create indexes AFTER migration ensures org_id columns exist
   createIndexes(db);
+
+  // Enforce audit log immutability at the database layer (HIPAA requirement)
+  db.exec(`
+    CREATE TRIGGER IF NOT EXISTS audit_logs_no_update
+    BEFORE UPDATE ON audit_logs
+    BEGIN
+      SELECT RAISE(ABORT, 'Audit logs are immutable and cannot be updated (HIPAA compliance)');
+    END
+  `);
+  db.exec(`
+    CREATE TRIGGER IF NOT EXISTS audit_logs_no_delete
+    BEFORE DELETE ON audit_logs
+    BEGIN
+      SELECT RAISE(ABORT, 'Audit logs are immutable and cannot be deleted (HIPAA compliance)');
+    END
+  `);
   
   // Seed default data if needed
   await seedDefaultData(defaultOrg.id);

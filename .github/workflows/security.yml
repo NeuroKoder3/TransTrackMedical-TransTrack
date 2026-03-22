@@ -5,22 +5,84 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  schedule:
+    # Run weekly on Monday at 06:00 UTC
+    - cron: '0 6 * * 1'
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   audit:
+    name: Dependency Audit
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      
-      - run: npm install --ignore-scripts
-      
-      - run: npm audit || true
-      
-      - run: npm outdated || true
-      
-      - run: npm run lint || true
+
+      - run: npm ci --ignore-scripts
+
+      - name: Production dependency audit (fail on moderate+)
+        run: npm audit --production --audit-level=moderate
+
+      - name: Full dependency audit (informational)
+        run: npm audit || true
+
+      - name: Check for outdated dependencies
+        run: npm outdated || true
+
+  lint:
+    name: Lint & Static Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - run: npm ci --ignore-scripts
+
+      - name: Run ESLint
+        run: npm run lint
+
+  test-security:
+    name: Security Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - run: npm ci
+
+      - name: Run cross-org access tests
+        run: npm run test:security
+
+      - name: Run business logic tests
+        run: npm run test:business
+
+  lockfile-check:
+    name: Lockfile Integrity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Verify lockfile is committed
+        run: |
+          if [ ! -f package-lock.json ]; then
+            echo "::warning::package-lock.json is not committed. Dependency pinning is recommended."
+          fi
+
+      - name: Verify clean install matches lockfile
+        run: npm ci --ignore-scripts

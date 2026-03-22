@@ -22,6 +22,9 @@ const ahhqHandlers = require('./handlers/ahhq.cjs');
 const labsHandlers = require('./handlers/labs.cjs');
 const clinicalHandlers = require('./handlers/clinical.cjs');
 const operationsHandlers = require('./handlers/operations.cjs');
+const backupHandler = require('./backupHandler.cjs');
+const dataResidency = require('./dataResidency.cjs');
+const auditReportHandler = require('./auditReportHandler.cjs');
 
 function setupIPCHandlers() {
   authHandlers.register();
@@ -33,6 +36,9 @@ function setupIPCHandlers() {
   labsHandlers.register();
   clinicalHandlers.register();
   operationsHandlers.register();
+  backupHandler.register();
+  dataResidency.register();
+  auditReportHandler.register();
 }
 
 module.exports = { setupIPCHandlers };

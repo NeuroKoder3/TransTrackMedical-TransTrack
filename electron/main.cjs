@@ -83,9 +83,16 @@ function createMainWindow() {
   // Load the app
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173');
-    mainWindow.webContents.openDevTools();
+    // Only open devtools in true dev environment, NOT in packaged evaluation builds
+    if (process.env.ELECTRON_DEV === '1' && !app.isPackaged) {
+      mainWindow.webContents.openDevTools();
+    }
   } else {
     mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
+    // Ensure no devtools access in production
+    mainWindow.webContents.on('devtools-opened', () => {
+      mainWindow.webContents.closeDevTools();
+    });
   }
 
   mainWindow.once('ready-to-show', () => {
@@ -232,8 +239,8 @@ function createMenu() {
     }
   ];
 
-  // Add dev tools in development
-  if (isDev) {
+  // Only add devtools menu item in true unpackaged development
+  if (isDev && !app.isPackaged && process.env.ELECTRON_DEV === '1') {
     template[2].submenu.push(
       { type: 'separator' },
       { role: 'toggleDevTools' }
