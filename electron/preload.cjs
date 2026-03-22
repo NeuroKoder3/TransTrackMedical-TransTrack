@@ -162,6 +162,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getStatus: () => ipcRenderer.invoke('encryption:getStatus'),
     verifyIntegrity: () => ipcRenderer.invoke('encryption:verifyIntegrity'),
     isEnabled: () => ipcRenderer.invoke('encryption:isEnabled'),
+    rotateKey: (options) => ipcRenderer.invoke('encryption:rotateKey', options),
+    getKeyRotationStatus: () => ipcRenderer.invoke('encryption:getKeyRotationStatus'),
+    getKeyRotationHistory: () => ipcRenderer.invoke('encryption:getKeyRotationHistory'),
+  },
+
+  // FHIR R4 Validation
+  fhir: {
+    validate: (fhirData) => ipcRenderer.invoke('fhir:validate', fhirData),
+  },
+
+  // System Diagnostics
+  system: {
+    getMigrationStatus: () => ipcRenderer.invoke('system:getMigrationStatus'),
   },
   
   // Organization Management

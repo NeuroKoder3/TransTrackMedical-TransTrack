@@ -145,9 +145,12 @@ function listBackups() {
 }
 
 /**
- * Verify backup integrity
+ * Verify backup integrity with actual restore test.
+ * Goes beyond checksum: opens the database, runs integrity check,
+ * and verifies critical tables exist with data.
  */
-function verifyBackup(backupId) {
+function verifyBackup(backupId, options = {}) {
+  const Database = require('better-sqlite3-multiple-ciphers');
   const backups = listBackups();
   const backup = backups.find(b => b.id === backupId);
   
@@ -162,7 +165,7 @@ function verifyBackup(backupId) {
     return { valid: false, error: 'Backup file missing' };
   }
   
-  // Verify checksum
+  // Step 1: Verify checksum
   const currentChecksum = generateChecksum(backupPath);
   
   if (currentChecksum !== backup.checksum) {
@@ -174,11 +177,78 @@ function verifyBackup(backupId) {
     };
   }
   
-  return {
-    valid: true,
-    backup,
-    verifiedAt: new Date().toISOString(),
-  };
+  // Step 2: Attempt actual database open and read (restore test)
+  let testDb = null;
+  try {
+    testDb = new Database(backupPath, { readonly: true, verbose: null });
+
+    // Apply encryption if key is available
+    const keyPath = path.join(app.getPath('userData'), '.transtrack-key');
+    if (fs.existsSync(keyPath)) {
+      const encryptionKey = fs.readFileSync(keyPath, 'utf8').trim();
+      if (/^[a-fA-F0-9]{64}$/.test(encryptionKey)) {
+        testDb.pragma(`cipher = 'sqlcipher'`);
+        testDb.pragma(`legacy = 4`);
+        testDb.pragma(`key = "x'${encryptionKey}'"`);
+      }
+    }
+
+    // Step 3: SQLite integrity check
+    const integrityResult = testDb.pragma('integrity_check');
+    const isIntact = integrityResult[0]?.integrity_check === 'ok';
+    if (!isIntact) {
+      testDb.close();
+      return { valid: false, error: 'SQLite integrity check failed', details: integrityResult };
+    }
+
+    // Step 4: Verify critical tables exist
+    const tables = testDb
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+      .all()
+      .map(t => t.name);
+
+    const requiredTables = ['patients', 'users', 'audit_logs', 'organizations'];
+    const missingTables = requiredTables.filter(t => !tables.includes(t));
+    if (missingTables.length > 0) {
+      testDb.close();
+      return { valid: false, error: `Missing required tables: ${missingTables.join(', ')}` };
+    }
+
+    // Step 5: Verify data is readable (actual SELECT queries)
+    const stats = {};
+    for (const table of requiredTables) {
+      try {
+        const count = testDb.prepare(`SELECT COUNT(*) as count FROM "${table}"`).get();
+        stats[table] = count.count;
+      } catch (e) {
+        testDb.close();
+        return { valid: false, error: `Cannot read table '${table}': ${e.message}` };
+      }
+    }
+
+    testDb.close();
+    testDb = null;
+
+    return {
+      valid: true,
+      backup,
+      verifiedAt: new Date().toISOString(),
+      checksumVerified: true,
+      integrityCheckPassed: true,
+      restoreTestPassed: true,
+      stats,
+    };
+  } catch (error) {
+    if (testDb) {
+      try { testDb.close(); } catch (_) { /* ignore */ }
+    }
+    return {
+      valid: false,
+      error: `Restore test failed: ${error.message}`,
+      checksumVerified: true,
+      restoreTestPassed: false,
+    };
+  }
 }
 
 /**

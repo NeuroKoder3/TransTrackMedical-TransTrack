@@ -35,6 +35,27 @@ jobs:
       - name: Check for outdated dependencies
         run: npm outdated || true
 
+  snyk:
+    name: Snyk Vulnerability Scan
+    runs-on: ubuntu-latest
+    if: github.event_name != 'schedule'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - run: npm ci --ignore-scripts
+
+      - name: Run Snyk to check for vulnerabilities
+        uses: snyk/actions/node@master
+        continue-on-error: true
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=high
+
   lint:
     name: Lint & Static Analysis
     runs-on: ubuntu-latest
@@ -67,6 +88,24 @@ jobs:
 
       - name: Run business logic tests
         run: npm run test:business
+
+      - name: Run compliance validation tests
+        run: npm run test:compliance
+
+  load-test:
+    name: Performance Load Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - run: npm ci
+
+      - name: Run load tests
+        run: npm run test:load
 
   lockfile-check:
     name: Lockfile Integrity
