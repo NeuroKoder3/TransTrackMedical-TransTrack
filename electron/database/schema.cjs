@@ -775,9 +775,31 @@ function addOrgIdToExistingTables(db, defaultOrgId) {
   }
 }
 
+/**
+ * Enforce audit log immutability at the database level (HIPAA 164.312(b)).
+ * Application-level protection exists in shared.cjs, but HIPAA requires
+ * database-level enforcement to prevent bypass via direct SQL.
+ */
+function createAuditLogTriggers(db) {
+  db.exec(`
+    CREATE TRIGGER IF NOT EXISTS audit_logs_immutable_update 
+    BEFORE UPDATE ON audit_logs
+    BEGIN
+      SELECT RAISE(ABORT, 'HIPAA Compliance: Audit logs are immutable');
+    END;
+    
+    CREATE TRIGGER IF NOT EXISTS audit_logs_immutable_delete 
+    BEFORE DELETE ON audit_logs
+    BEGIN
+      SELECT RAISE(ABORT, 'HIPAA Compliance: Audit logs cannot be deleted');
+    END;
+  `);
+}
+
 module.exports = {
   createSchema,
   createIndexes,
+  createAuditLogTriggers,
   migrateToOrgSchema,
   addOrgIdToExistingTables,
 };

@@ -21,7 +21,8 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const { app } = require('electron');
-const { createSchema, createIndexes, addOrgIdToExistingTables } = require('./schema.cjs');
+const { createSchema, createIndexes, createAuditLogTriggers, addOrgIdToExistingTables } = require('./schema.cjs');
+const { runMigrations } = require('./migrations.cjs');
 
 let db = null;
 let encryptionEnabled = false;
@@ -524,6 +525,15 @@ async function initDatabase() {
   
   // Now create indexes AFTER migration ensures org_id columns exist
   createIndexes(db);
+
+  // Run versioned schema migrations (adds columns, indexes, etc.)
+  const migrationResult = runMigrations(db);
+  if (migrationResult.applied > 0 && process.env.NODE_ENV === 'development') {
+    console.log(`Applied ${migrationResult.applied} migration(s): ${migrationResult.migrations.join(', ')}`);
+  }
+
+  // Enforce audit log immutability at the database layer (HIPAA 164.312(b))
+  createAuditLogTriggers(db);
   
   // Seed default data if needed
   await seedDefaultData(defaultOrg.id);

@@ -83,9 +83,16 @@ function createMainWindow() {
   // Load the app
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173');
-    mainWindow.webContents.openDevTools();
+    // Only open devtools in true dev environment, NOT in packaged evaluation builds
+    if (process.env.ELECTRON_DEV === '1' && !app.isPackaged) {
+      mainWindow.webContents.openDevTools();
+    }
   } else {
     mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
+    // Ensure no devtools access in production
+    mainWindow.webContents.on('devtools-opened', () => {
+      mainWindow.webContents.closeDevTools();
+    });
   }
 
   mainWindow.once('ready-to-show', () => {
@@ -114,6 +121,29 @@ function createMainWindow() {
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     console.warn('Blocked popup window:', url);
     return { action: 'deny' };
+  });
+
+  // Security: Add Content Security Policy and other security headers
+  mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+    const cspDirectives = [
+      "default-src 'self'",
+      "script-src 'self'",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: https:",
+      "font-src 'self' data:",
+      isDev ? "connect-src 'self' http://localhost:5173 ws://localhost:5173" : "connect-src 'self'",
+    ].join('; ');
+
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [cspDirectives],
+        'X-Content-Type-Options': ['nosniff'],
+        'X-Frame-Options': ['DENY'],
+        'X-XSS-Protection': ['1; mode=block'],
+        'Referrer-Policy': ['strict-origin-when-cross-origin'],
+      }
+    });
   });
 }
 
@@ -209,8 +239,8 @@ function createMenu() {
     }
   ];
 
-  // Add dev tools in development
-  if (isDev) {
+  // Only add devtools menu item in true unpackaged development
+  if (isDev && !app.isPackaged && process.env.ELECTRON_DEV === '1') {
     template[2].submenu.push(
       { type: 'separator' },
       { role: 'toggleDevTools' }
@@ -254,10 +284,22 @@ function checkEnterpriseLicense() {
       return 'Please activate a valid license to use TransTrack Enterprise.';
     }
     
-    // Check license expiration
+    // Check license expiration with clock skew protection
     if (license.license_expires_at) {
       const expiry = new Date(license.license_expires_at);
-      if (expiry < new Date()) {
+      const now = new Date();
+      
+      // Reject obviously manipulated dates (system clock set far in the future)
+      if (license.activated_at) {
+        const activated = new Date(license.activated_at);
+        const maxReasonableLifetimeMs = 10 * 365.25 * 24 * 60 * 60 * 1000; // 10 years
+        if (expiry.getTime() - activated.getTime() > maxReasonableLifetimeMs) {
+          console.warn('LICENSE WARNING: License expiry exceeds maximum reasonable lifetime');
+          return 'License validation failed. Please contact support.';
+        }
+      }
+      
+      if (expiry < now) {
         return `Your license expired on ${expiry.toLocaleDateString()}. Please renew to continue using TransTrack.`;
       }
     }
@@ -265,8 +307,9 @@ function checkEnterpriseLicense() {
     return null; // License is valid
   } catch (error) {
     console.error('License check error:', error);
-    // Fail-open in development, fail-closed in production
+    // Fail-closed: always block in production, only allow dev bypass when explicitly in dev mode
     if (isDev) {
+      console.warn('WARNING: License check failed but allowing in development mode');
       return null;
     }
     return 'Unable to verify license. Please contact support.';

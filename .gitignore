@@ -1,6 +1,7 @@
 # Dependencies
 node_modules/
-package-lock.json
+# Note: package-lock.json SHOULD be committed for reproducible builds.
+# It was previously gitignored. Remove this entry when ready to pin dependencies.
 
 # Build outputs
 dist/
@@ -21,6 +22,7 @@ out/
 # Environment files
 .env
 .env.local
+.env.production
 .env.*.local
 
 # IDE and editor files

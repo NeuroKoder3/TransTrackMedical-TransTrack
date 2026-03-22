@@ -312,6 +312,7 @@ async function matchDonorAdvanced(params, context) {
   };
   
   const donorHLA = parseHLA(donor.hla_typing);
+  const donorHasHLA = donorHLA.A.length + donorHLA.B.length + donorHLA.DR.length > 0;
   
   for (const patient of candidates) {
     const aboCompatible = bloodCompatibility[donor.blood_type]?.includes(patient.blood_type) || false;
@@ -319,25 +320,34 @@ async function matchDonorAdvanced(params, context) {
     if (!aboCompatible) continue;
     
     const patientHLA = parseHLA(patient.hla_typing);
-    
-    const hlaMatches = {
-      A: donorHLA.A.filter(hla => patientHLA.A.includes(hla)).length,
-      B: donorHLA.B.filter(hla => patientHLA.B.includes(hla)).length,
-      DR: donorHLA.DR.filter(hla => patientHLA.DR.includes(hla)).length,
-      DQ: donorHLA.DQ.filter(hla => patientHLA.DQ.includes(hla)).length
-    };
-    
-    const totalHLAMatches = hlaMatches.A + hlaMatches.B + hlaMatches.DR;
-    const maxPossibleMatches = 6;
-    
-    let hlaScore = (totalHLAMatches / maxPossibleMatches) * 100;
-    
-    if (hlaMatches.DQ > 0) {
-      hlaScore = Math.min(100, hlaScore + (hlaMatches.DQ * 5));
+    const patientHasHLA = patientHLA.A.length + patientHLA.B.length + patientHLA.DR.length > 0;
+
+    let hlaScore;
+    const hlaMatches = { A: 0, B: 0, DR: 0, DQ: 0 };
+
+    if (!donorHasHLA || !patientHasHLA) {
+      hlaScore = 50;
+    } else {
+      hlaMatches.A = donorHLA.A.filter(hla => patientHLA.A.includes(hla)).length;
+      hlaMatches.B = donorHLA.B.filter(hla => patientHLA.B.includes(hla)).length;
+      hlaMatches.DR = donorHLA.DR.filter(hla => patientHLA.DR.includes(hla)).length;
+      hlaMatches.DQ = donorHLA.DQ.filter(hla => patientHLA.DQ.includes(hla)).length;
+
+      const totalMatches = hlaMatches.A + hlaMatches.B + hlaMatches.DR;
+      const maxPossibleMatches = 6;
+      hlaScore = (totalMatches / maxPossibleMatches) * 100;
+
+      if (hlaMatches.DQ > 0) {
+        hlaScore = Math.min(100, hlaScore + (hlaMatches.DQ * 5));
+      }
     }
+
+    const totalHLAMatches = hlaMatches.A + hlaMatches.B + hlaMatches.DR;
     
     let virtualCrossmatch = 'negative';
-    if (patient.pra_percentage > 80 || patient.cpra_percentage > 80) {
+    if (!donorHasHLA || !patientHasHLA) {
+      virtualCrossmatch = 'pending';
+    } else if (patient.pra_percentage > 80 || patient.cpra_percentage > 80) {
       if (totalHLAMatches < 4) {
         virtualCrossmatch = 'positive';
       } else {

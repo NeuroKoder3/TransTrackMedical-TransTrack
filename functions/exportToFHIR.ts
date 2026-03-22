@@ -1,6 +1,12 @@
 import { createClientFromRequest } from 'npm:@api/sdk@0.8.6';
+import { isValidUUID, sanitizeDiagnosis } from './lib/validators.ts';
+import { createLogger, generateRequestId, safeErrorResponse } from './lib/logger.ts';
+
+const logger = createLogger('exportToFHIR');
 
 Deno.serve(async (req) => {
+  const requestId = generateRequestId();
+
   try {
     const api = createClientFromRequest(req);
     
@@ -10,6 +16,13 @@ Deno.serve(async (req) => {
     }
 
     const { patient_id, resource_types } = await req.json();
+
+    if (!patient_id || !isValidUUID(patient_id)) {
+      return Response.json(
+        { error: 'Invalid or missing patient_id. Must be a valid UUID.' },
+        { status: 400 }
+      );
+    }
 
     const patient = await api.entities.Patient.get(patient_id);
     
@@ -21,7 +34,7 @@ Deno.serve(async (req) => {
       resourceType: 'Bundle',
       type: 'collection',
       timestamp: new Date().toISOString(),
-      entry: []
+      entry: [] as Record<string, unknown>[],
     };
 
     // Always include Patient resource
@@ -86,7 +99,7 @@ Deno.serve(async (req) => {
 
     // Add Observations for clinical data
     if (!resource_types || resource_types.includes('Observation')) {
-      const observations = [];
+      const observations: Record<string, unknown>[] = [];
 
       // Blood Type Observation
       if (patient.blood_type) {
@@ -252,10 +265,12 @@ Deno.serve(async (req) => {
 
     // Add Conditions
     if (!resource_types || resource_types.includes('Condition')) {
-      const conditions = [];
+      const conditions: Record<string, unknown>[] = [];
 
-      // Primary diagnosis
+      // Primary diagnosis - sanitized against injection
       if (patient.diagnosis) {
+        const sanitizedDiagnosis = sanitizeDiagnosis(patient.diagnosis);
+
         conditions.push({
           resourceType: 'Condition',
           id: `${patient.id}-diagnosis`,
@@ -289,7 +304,7 @@ Deno.serve(async (req) => {
             }
           ],
           code: {
-            text: patient.diagnosis
+            text: sanitizedDiagnosis
           },
           subject: {
             reference: `Patient/${patient.id}`
@@ -350,6 +365,7 @@ Deno.serve(async (req) => {
       resource_count: fhirBundle.entry.length
     });
   } catch (error) {
-    return Response.json({ error: error.message }, { status: 500 });
+    logger.error('FHIR export failed', error, { request_id: requestId });
+    return safeErrorResponse(requestId, 'FHIR export failed. Contact support.');
   }
 });

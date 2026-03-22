@@ -1,7 +1,12 @@
 import { createClientFromRequest } from 'npm:@api/sdk@0.8.6';
 import { jsPDF } from 'npm:jspdf@2.5.1';
+import { createLogger, generateRequestId, safeErrorResponse } from './lib/logger.ts';
+
+const logger = createLogger('exportWaitlist');
 
 Deno.serve(async (req) => {
+  const requestId = generateRequestId();
+
   try {
     const api = createClientFromRequest(req);
     
@@ -178,6 +183,7 @@ Deno.serve(async (req) => {
       });
     }
   } catch (error) {
-    return Response.json({ error: error.message }, { status: 500 });
+    logger.error('Waitlist export failed', error, { request_id: requestId });
+    return safeErrorResponse(requestId, 'Waitlist export failed. Contact support.');
   }
 });
