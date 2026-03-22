@@ -149,10 +149,13 @@ jobs:
         with:
           script: |
             const state = '${{ needs.audit.result }}' === 'success' ? 'success' : 'failure';
+            const sha = context.payload.pull_request
+              ? context.payload.pull_request.head.sha
+              : context.sha;
             await github.rest.repos.createCommitStatus({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              sha: context.sha,
+              sha,
               state,
               context: 'audit',
               description: `Dependency audit ${state}`,
