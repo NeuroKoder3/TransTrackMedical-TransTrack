@@ -296,6 +296,326 @@ function sanitizeForSQLite(entityData) {
 }
 
 // =============================================================================
+// CONCURRENCY CONTROL (Optimistic + Pessimistic Locking)
+// =============================================================================
+
+const ROW_LOCK_TIMEOUT_MS = 5 * 60 * 1000; // 5-minute lock timeout
+
+/**
+ * Optimistic concurrency check: update only if version matches.
+ * Returns the number of rows updated (0 = conflict detected).
+ */
+function updateWithVersionCheck(tableName, id, orgId, data, expectedVersion) {
+  const db = getDatabase();
+  if (!expectedVersion && expectedVersion !== 0) {
+    throw new Error('Version number required for concurrent update safety');
+  }
+
+  const entityData = sanitizeForSQLite({ ...data, version: expectedVersion + 1, updated_at: new Date().toISOString() });
+  delete entityData.id;
+  delete entityData.org_id;
+  delete entityData.created_at;
+  delete entityData.created_by;
+
+  const updates = Object.keys(entityData).map(k => `${k} = ?`).join(', ');
+  const values = [...Object.values(entityData), id, orgId, expectedVersion];
+
+  const result = db.prepare(
+    `UPDATE ${tableName} SET ${updates} WHERE id = ? AND org_id = ? AND version = ?`
+  ).run(...values);
+
+  if (result.changes === 0) {
+    const current = db.prepare(`SELECT version FROM ${tableName} WHERE id = ? AND org_id = ?`).get(id, orgId);
+    if (!current) {
+      throw new Error('Record not found or access denied');
+    }
+    throw new Error(
+      `Conflict detected: record was modified by another user (expected version ${expectedVersion}, current version ${current.version}). Please refresh and try again.`
+    );
+  }
+
+  return result.changes;
+}
+
+/**
+ * Acquire a pessimistic row lock (for critical operations like match acceptance).
+ * Returns true if lock acquired, throws if already locked by another user.
+ */
+function acquireRowLock(tableName, id, orgId, userId) {
+  const db = getDatabase();
+  const now = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + ROW_LOCK_TIMEOUT_MS).toISOString();
+
+  // Check existing lock
+  const row = db.prepare(
+    `SELECT locked_by, locked_at, lock_expires_at FROM ${tableName} WHERE id = ? AND org_id = ?`
+  ).get(id, orgId);
+
+  if (!row) {
+    throw new Error('Record not found or access denied');
+  }
+
+  if (row.locked_by && row.locked_by !== userId) {
+    const lockExpires = new Date(row.lock_expires_at);
+    if (lockExpires > new Date()) {
+      throw new Error(
+        `Record is currently being edited by another user. Lock expires at ${row.lock_expires_at}. Please try again later.`
+      );
+    }
+    // Lock expired, we can acquire
+  }
+
+  const result = db.prepare(
+    `UPDATE ${tableName} SET locked_by = ?, locked_at = ?, lock_expires_at = ? WHERE id = ? AND org_id = ? AND (locked_by IS NULL OR locked_by = ? OR lock_expires_at < ?)`
+  ).run(userId, now, expiresAt, id, orgId, userId, now);
+
+  if (result.changes === 0) {
+    throw new Error('Failed to acquire lock. Record may be locked by another user.');
+  }
+
+  return true;
+}
+
+/**
+ * Release a pessimistic row lock.
+ */
+function releaseRowLock(tableName, id, orgId, userId) {
+  const db = getDatabase();
+  db.prepare(
+    `UPDATE ${tableName} SET locked_by = NULL, locked_at = NULL, lock_expires_at = NULL WHERE id = ? AND org_id = ? AND locked_by = ?`
+  ).run(id, orgId, userId);
+  return true;
+}
+
+/**
+ * Release all expired locks (cleanup, called periodically).
+ */
+function releaseExpiredLocks() {
+  const db = getDatabase();
+  const now = new Date().toISOString();
+  const lockableTables = ['patients', 'donor_organs', 'matches'];
+  let released = 0;
+  for (const table of lockableTables) {
+    try {
+      const result = db.prepare(
+        `UPDATE ${table} SET locked_by = NULL, locked_at = NULL, lock_expires_at = NULL WHERE lock_expires_at IS NOT NULL AND lock_expires_at < ?`
+      ).run(now);
+      released += result.changes;
+    } catch (e) {
+      // Table may not have lock columns yet
+    }
+  }
+  return released;
+}
+
+// =============================================================================
+// STANDARDIZED ERROR HANDLING
+// =============================================================================
+
+/**
+ * Standardized error response structure for all IPC handlers.
+ * All errors returned to the renderer should use this format.
+ */
+const ERROR_CODES = {
+  // Authentication & Authorization
+  AUTH_REQUIRED: { code: 'AUTH_REQUIRED', status: 401, message: 'Authentication required. Please log in.' },
+  SESSION_EXPIRED: { code: 'SESSION_EXPIRED', status: 401, message: 'Session expired. Please log in again.' },
+  UNAUTHORIZED: { code: 'UNAUTHORIZED', status: 403, message: 'You do not have permission to perform this action.' },
+  ADMIN_REQUIRED: { code: 'ADMIN_REQUIRED', status: 403, message: 'Administrator access required.' },
+  ACCOUNT_LOCKED: { code: 'ACCOUNT_LOCKED', status: 423, message: 'Account temporarily locked due to too many failed attempts.' },
+  INVALID_CREDENTIALS: { code: 'INVALID_CREDENTIALS', status: 401, message: 'Invalid email or password.' },
+
+  // Data Validation
+  VALIDATION_ERROR: { code: 'VALIDATION_ERROR', status: 400, message: 'Input validation failed.' },
+  DUPLICATE_ENTRY: { code: 'DUPLICATE_ENTRY', status: 409, message: 'A record with this identifier already exists.' },
+  NOT_FOUND: { code: 'NOT_FOUND', status: 404, message: 'The requested record was not found.' },
+  IMMUTABLE_RECORD: { code: 'IMMUTABLE_RECORD', status: 403, message: 'This record cannot be modified or deleted.' },
+
+  // Concurrency
+  CONFLICT: { code: 'CONFLICT', status: 409, message: 'This record was modified by another user. Please refresh and try again.' },
+  RECORD_LOCKED: { code: 'RECORD_LOCKED', status: 423, message: 'This record is currently being edited by another user.' },
+
+  // License
+  LICENSE_LIMIT: { code: 'LICENSE_LIMIT', status: 403, message: 'License limit reached. Please upgrade to continue.' },
+  FEATURE_UNAVAILABLE: { code: 'FEATURE_UNAVAILABLE', status: 403, message: 'This feature is not available in your current license tier.' },
+  READ_ONLY_MODE: { code: 'READ_ONLY_MODE', status: 403, message: 'Application is in read-only mode. Please activate or renew your license.' },
+
+  // System
+  DATABASE_ERROR: { code: 'DATABASE_ERROR', status: 500, message: 'A database error occurred. Please try again.' },
+  INTERNAL_ERROR: { code: 'INTERNAL_ERROR', status: 500, message: 'An internal error occurred. Please try again or contact support.' },
+  BACKUP_FAILED: { code: 'BACKUP_FAILED', status: 500, message: 'Backup operation failed.' },
+  ORG_REQUIRED: { code: 'ORG_REQUIRED', status: 400, message: 'Organization context required. Please log in again.' },
+};
+
+/**
+ * Create a standardized error with code, message, and optional details.
+ */
+function createStandardError(errorCode, details = null, userMessage = null) {
+  const errorDef = ERROR_CODES[errorCode] || ERROR_CODES.INTERNAL_ERROR;
+  const err = new Error(userMessage || errorDef.message);
+  err.code = errorDef.code;
+  err.status = errorDef.status;
+  err.details = details;
+  err.timestamp = new Date().toISOString();
+  return err;
+}
+
+/**
+ * Wrap an IPC handler with standardized error handling and session validation.
+ */
+function wrapHandler(handlerFn, options = {}) {
+  const { requireAuth = true, requireAdmin = false, requireRole = null } = options;
+
+  return async (...args) => {
+    try {
+      if (requireAuth) {
+        if (!validateSession()) {
+          throw createStandardError('SESSION_EXPIRED');
+        }
+        const { currentUser } = getSessionState();
+        if (requireAdmin && currentUser.role !== 'admin') {
+          throw createStandardError('ADMIN_REQUIRED');
+        }
+        if (requireRole && !requireRole.includes(currentUser.role)) {
+          throw createStandardError('UNAUTHORIZED', { requiredRole: requireRole, actualRole: currentUser.role });
+        }
+      }
+      return await handlerFn(...args);
+    } catch (error) {
+      // If it's already a standard error, re-throw
+      if (error.code && ERROR_CODES[error.code]) {
+        throw error;
+      }
+      // Map known SQLite errors
+      if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+        throw createStandardError('DUPLICATE_ENTRY', { originalError: error.message });
+      }
+      if (error.message?.includes('Conflict detected')) {
+        throw createStandardError('CONFLICT', { originalError: error.message }, error.message);
+      }
+      if (error.message?.includes('currently being edited')) {
+        throw createStandardError('RECORD_LOCKED', { originalError: error.message }, error.message);
+      }
+      // Re-throw with original message for known application errors
+      throw error;
+    }
+  };
+}
+
+// =============================================================================
+// INPUT VALIDATION UTILITIES
+// =============================================================================
+
+const PATIENT_VALIDATION_RULES = {
+  first_name: { type: 'string', minLength: 1, maxLength: 100, required: true, label: 'First name' },
+  last_name: { type: 'string', minLength: 1, maxLength: 100, required: true, label: 'Last name' },
+  blood_type: { type: 'enum', values: ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'], label: 'Blood type' },
+  organ_needed: { type: 'enum', values: ['kidney', 'liver', 'heart', 'lung', 'pancreas', 'intestine', 'heart_lung', 'kidney_pancreas'], label: 'Organ needed' },
+  medical_urgency: { type: 'enum', values: ['critical', 'high', 'medium', 'low'], label: 'Medical urgency' },
+  waitlist_status: { type: 'enum', values: ['active', 'inactive', 'transplanted', 'removed', 'deceased', 'suspended', 'hold'], label: 'Waitlist status' },
+  weight_kg: { type: 'number', min: 0.5, max: 500, label: 'Weight (kg)' },
+  height_cm: { type: 'number', min: 20, max: 300, label: 'Height (cm)' },
+  meld_score: { type: 'number', min: 6, max: 40, label: 'MELD score' },
+  las_score: { type: 'number', min: 0, max: 100, label: 'LAS score' },
+  pra_percentage: { type: 'number', min: 0, max: 100, label: 'PRA percentage' },
+  cpra_percentage: { type: 'number', min: 0, max: 100, label: 'CPRA percentage' },
+  comorbidity_score: { type: 'number', min: 0, max: 10, label: 'Comorbidity score' },
+  compliance_score: { type: 'number', min: 0, max: 10, label: 'Compliance score' },
+  previous_transplants: { type: 'number', min: 0, max: 20, label: 'Previous transplants' },
+  email: { type: 'email', label: 'Email' },
+  phone: { type: 'string', maxLength: 30, label: 'Phone' },
+  date_of_birth: { type: 'date', label: 'Date of birth' },
+  date_added_to_waitlist: { type: 'date', label: 'Date added to waitlist' },
+};
+
+const DONOR_VALIDATION_RULES = {
+  organ_type: { type: 'enum', values: ['kidney', 'liver', 'heart', 'lung', 'pancreas', 'intestine', 'heart_lung', 'kidney_pancreas'], required: true, label: 'Organ type' },
+  blood_type: { type: 'enum', values: ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'], required: true, label: 'Blood type' },
+  donor_age: { type: 'number', min: 0, max: 120, label: 'Donor age' },
+  donor_weight_kg: { type: 'number', min: 0.5, max: 500, label: 'Donor weight (kg)' },
+  donor_height_cm: { type: 'number', min: 20, max: 300, label: 'Donor height (cm)' },
+  cold_ischemia_time_hours: { type: 'number', min: 0, max: 72, label: 'Cold ischemia time (hours)' },
+};
+
+/**
+ * Validate entity data against rules.
+ * Returns { valid: boolean, errors: string[] }
+ */
+function validateEntityData(data, rules) {
+  const errors = [];
+  if (!data || typeof data !== 'object') {
+    return { valid: false, errors: ['Invalid data: expected an object'] };
+  }
+
+  for (const [field, rule] of Object.entries(rules)) {
+    const value = data[field];
+
+    // Required check
+    if (rule.required && (value === undefined || value === null || value === '')) {
+      errors.push(`${rule.label || field} is required`);
+      continue;
+    }
+
+    // Skip validation if value is not provided and not required
+    if (value === undefined || value === null || value === '') continue;
+
+    // Type checks
+    switch (rule.type) {
+      case 'string':
+        if (typeof value !== 'string') {
+          errors.push(`${rule.label || field} must be a string`);
+        } else {
+          if (rule.minLength && value.length < rule.minLength) {
+            errors.push(`${rule.label || field} must be at least ${rule.minLength} characters`);
+          }
+          if (rule.maxLength && value.length > rule.maxLength) {
+            errors.push(`${rule.label || field} must be at most ${rule.maxLength} characters`);
+          }
+          // Check for potential SQL injection patterns
+          if (/--|[';\-]|\/\*|\*\/|xp_|exec\s|union\s+select|drop\s+table/i.test(value)) {
+            errors.push(`${rule.label || field} contains invalid characters`);
+          }
+        }
+        break;
+
+      case 'number':
+        const num = typeof value === 'string' ? parseFloat(value) : value;
+        if (isNaN(num)) {
+          errors.push(`${rule.label || field} must be a valid number`);
+        } else {
+          if (rule.min !== undefined && num < rule.min) {
+            errors.push(`${rule.label || field} must be at least ${rule.min}`);
+          }
+          if (rule.max !== undefined && num > rule.max) {
+            errors.push(`${rule.label || field} must be at most ${rule.max}`);
+          }
+        }
+        break;
+
+      case 'enum':
+        if (!rule.values.includes(value)) {
+          errors.push(`${rule.label || field} must be one of: ${rule.values.join(', ')}`);
+        }
+        break;
+
+      case 'email':
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+          errors.push(`${rule.label || field} must be a valid email address`);
+        }
+        break;
+
+      case 'date':
+        if (isNaN(Date.parse(value))) {
+          errors.push(`${rule.label || field} must be a valid date`);
+        }
+        break;
+    }
+  }
+
+  return { valid: errors.length === 0, errors };
+}
+
+// =============================================================================
 // AUDIT LOGGING
 // =============================================================================
 
@@ -342,6 +662,8 @@ module.exports = {
   ALLOWED_ORDER_COLUMNS,
   entityTableMap,
   jsonFields,
+  MAX_LOGIN_ATTEMPTS,
+  LOCKOUT_DURATION_MS,
 
   // Entity helpers
   isValidOrderColumn,
@@ -350,6 +672,23 @@ module.exports = {
   getEntityByIdAndOrg,
   listEntitiesByOrg,
   sanitizeForSQLite,
+
+  // Concurrency control
+  updateWithVersionCheck,
+  acquireRowLock,
+  releaseRowLock,
+  releaseExpiredLocks,
+  ROW_LOCK_TIMEOUT_MS,
+
+  // Standardized errors
+  ERROR_CODES,
+  createStandardError,
+  wrapHandler,
+
+  // Input validation
+  validateEntityData,
+  PATIENT_VALIDATION_RULES,
+  DONOR_VALIDATION_RULES,
 
   // Audit
   logAudit,

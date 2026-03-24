@@ -36,6 +36,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     delete: (entityName, id) => ipcRenderer.invoke('entity:delete', entityName, id),
     list: (entityName, orderBy, limit) => ipcRenderer.invoke('entity:list', entityName, orderBy, limit),
     filter: (entityName, filters, orderBy, limit) => ipcRenderer.invoke('entity:filter', entityName, filters, orderBy, limit),
+    lock: (entityName, id) => ipcRenderer.invoke('entity:lock', entityName, id),
+    unlock: (entityName, id) => ipcRenderer.invoke('entity:unlock', entityName, id),
     
     // Specific entity shortcuts
     Patient: {
@@ -44,7 +46,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
       update: (id, data) => ipcRenderer.invoke('entity:update', 'Patient', id, data),
       delete: (id) => ipcRenderer.invoke('entity:delete', 'Patient', id),
       list: (orderBy, limit) => ipcRenderer.invoke('entity:list', 'Patient', orderBy, limit),
-      filter: (filters, orderBy, limit) => ipcRenderer.invoke('entity:filter', 'Patient', filters, orderBy, limit)
+      filter: (filters, orderBy, limit) => ipcRenderer.invoke('entity:filter', 'Patient', filters, orderBy, limit),
+      lock: (id) => ipcRenderer.invoke('entity:lock', 'Patient', id),
+      unlock: (id) => ipcRenderer.invoke('entity:unlock', 'Patient', id)
     },
     DonorOrgan: {
       create: (data) => ipcRenderer.invoke('entity:create', 'DonorOrgan', data),
@@ -52,7 +56,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
       update: (id, data) => ipcRenderer.invoke('entity:update', 'DonorOrgan', id, data),
       delete: (id) => ipcRenderer.invoke('entity:delete', 'DonorOrgan', id),
       list: (orderBy, limit) => ipcRenderer.invoke('entity:list', 'DonorOrgan', orderBy, limit),
-      filter: (filters, orderBy, limit) => ipcRenderer.invoke('entity:filter', 'DonorOrgan', filters, orderBy, limit)
+      filter: (filters, orderBy, limit) => ipcRenderer.invoke('entity:filter', 'DonorOrgan', filters, orderBy, limit),
+      lock: (id) => ipcRenderer.invoke('entity:lock', 'DonorOrgan', id),
+      unlock: (id) => ipcRenderer.invoke('entity:unlock', 'DonorOrgan', id)
     },
     Match: {
       create: (data) => ipcRenderer.invoke('entity:create', 'Match', data),
@@ -60,7 +66,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
       update: (id, data) => ipcRenderer.invoke('entity:update', 'Match', id, data),
       delete: (id) => ipcRenderer.invoke('entity:delete', 'Match', id),
       list: (orderBy, limit) => ipcRenderer.invoke('entity:list', 'Match', orderBy, limit),
-      filter: (filters, orderBy, limit) => ipcRenderer.invoke('entity:filter', 'Match', filters, orderBy, limit)
+      filter: (filters, orderBy, limit) => ipcRenderer.invoke('entity:filter', 'Match', filters, orderBy, limit),
+      lock: (id) => ipcRenderer.invoke('entity:lock', 'Match', id),
+      unlock: (id) => ipcRenderer.invoke('entity:unlock', 'Match', id)
     },
     Notification: {
       create: (data) => ipcRenderer.invoke('entity:create', 'Notification', data),

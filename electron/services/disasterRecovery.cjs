@@ -87,16 +87,19 @@ async function createBackup(options = {}) {
   fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
   
   // Log backup in audit trail
+  const defaultOrg = db.prepare('SELECT id FROM organizations WHERE status = ? LIMIT 1').get('ACTIVE');
   db.prepare(`
-    INSERT INTO audit_logs (id, action, entity_type, details, user_email, user_role)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO audit_logs (id, org_id, action, entity_type, details, user_email, user_role, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     uuidv4(),
+    defaultOrg?.id || 'SYSTEM',
     'backup_created',
     'System',
     `Backup created: ${backupFileName} (${patientCount} patients, checksum: ${checksum.substring(0, 16)}...)`,
     options.createdBy || 'system',
-    'system'
+    'system',
+    new Date().toISOString()
   );
   
   // Cleanup old backups if auto-backup
@@ -276,16 +279,19 @@ async function restoreFromBackup(backupId, options = {}) {
   });
   
   // Log restore attempt
+  const defaultOrgRestore = db.prepare('SELECT id FROM organizations WHERE status = ? LIMIT 1').get('ACTIVE');
   db.prepare(`
-    INSERT INTO audit_logs (id, action, entity_type, details, user_email, user_role)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO audit_logs (id, org_id, action, entity_type, details, user_email, user_role, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     uuidv4(),
+    defaultOrgRestore?.id || 'SYSTEM',
     'restore_initiated',
     'System',
     `Restore initiated from: ${backup.fileName}`,
     options.restoredBy || 'system',
-    'system'
+    'system',
+    new Date().toISOString()
   );
   
   // Close current database

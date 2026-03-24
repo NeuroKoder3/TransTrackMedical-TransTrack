@@ -344,7 +344,9 @@ function showLicenseRequiredDialog(message) {
 // =========================================================================
 
 let licenseCheckInterval = null;
+let lockCleanupInterval = null;
 const LICENSE_CHECK_INTERVAL_MS = 60 * 60 * 1000; // Check every hour
+const LOCK_CLEANUP_INTERVAL_MS = 60 * 1000; // Clean up expired locks every 60 seconds
 const LICENSE_WARNING_DAYS = 14; // Warn when license expires in 14 days
 
 /**
@@ -429,12 +431,39 @@ function startPeriodicLicenseCheck() {
 }
 
 /**
- * Stop periodic license checks
+ * Start periodic cleanup of expired row locks.
+ * Prevents stale locks from blocking other users when a client crashes
+ * or disconnects without releasing its locks.
+ */
+function startExpiredLockCleanup() {
+  const { releaseExpiredLocks } = require('./ipc/shared.cjs');
+
+  lockCleanupInterval = setInterval(() => {
+    try {
+      const released = releaseExpiredLocks();
+      if (released > 0) {
+        console.log(`Expired lock cleanup: released ${released} stale lock(s)`);
+      }
+    } catch (e) {
+      // Non-fatal — log and continue
+      console.warn('Expired lock cleanup error:', e.message);
+    }
+  }, LOCK_CLEANUP_INTERVAL_MS);
+
+  console.log('Expired lock cleanup started (interval: 60s)');
+}
+
+/**
+ * Stop periodic license checks and lock cleanup
  */
 function stopPeriodicLicenseCheck() {
   if (licenseCheckInterval) {
     clearInterval(licenseCheckInterval);
     licenseCheckInterval = null;
+  }
+  if (lockCleanupInterval) {
+    clearInterval(lockCleanupInterval);
+    lockCleanupInterval = null;
   }
 }
 
@@ -484,6 +513,9 @@ app.whenReady().then(async () => {
     
     // Start periodic license expiration checks
     startPeriodicLicenseCheck();
+    
+    // Start periodic cleanup of expired row locks
+    startExpiredLockCleanup();
     
     // If evaluation build, log restriction info
     if (buildVersion === BUILD_VERSION.EVALUATION) {
