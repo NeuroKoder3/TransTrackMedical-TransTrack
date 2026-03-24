@@ -60,7 +60,7 @@ test.describe('TransTrack E2E', () => {
     }
   });
 
-  test('Navigation renders without errors', async () => {
+  test('Navigation renders without critical errors', async () => {
     const consoleErrors = [];
     window.on('console', msg => {
       if (msg.type() === 'error') consoleErrors.push(msg.text());
@@ -68,11 +68,17 @@ test.describe('TransTrack E2E', () => {
 
     await window.waitForTimeout(2000);
 
+    // Filter out known non-critical noise from Electron/Chromium internals
     const criticalErrors = consoleErrors.filter(
-      e => !e.includes('DevTools') && !e.includes('favicon')
+      e => !e.includes('DevTools') &&
+           !e.includes('favicon') &&
+           !e.includes('net::ERR_') && // Network errors during dev
+           !e.includes('Failed to load resource') && // Resource loading in dev
+           !e.includes('Electron Security Warning') // Security warnings in dev mode
     );
 
-    expect(criticalErrors.length).toBeLessThanOrEqual(3);
+    // Zero tolerance for real application errors
+    expect(criticalErrors.length).toBe(0);
   });
 
   test('DevTools are not accessible in non-dev mode', async () => {

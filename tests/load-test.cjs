@@ -38,6 +38,8 @@ function uuid() {
   return crypto.randomUUID();
 }
 
+const timingResults = [];
+
 function test(name, fn) {
   totalTests++;
   try {
@@ -54,6 +56,7 @@ function timeQuery(label, queryFn) {
   const start = performance.now();
   const result = queryFn();
   const elapsed = performance.now() - start;
+  timingResults.push({ label, elapsed: elapsed.toFixed(2) + 'ms', withinLimit: elapsed < LOAD_TEST_CONFIG.maxQueryTimeMs });
   return { result, elapsed, label };
 }
 
@@ -338,33 +341,44 @@ console.log('\nSuite 4: Write Performance');
 
 test('Insert 100 patients in transaction', () => {
   const insert = db.prepare("INSERT INTO patients (id, org_id, patient_id, first_name, last_name, blood_type, organ_needed, medical_urgency, waitlist_status, priority_score, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'O+', 'kidney', 'high', 'active', ?, datetime('now'), datetime('now'))");
-  const start = performance.now();
-  const tx = db.transaction(() => {
-    for (let i = 0; i < 100; i++) {
-      insert.run(uuid(), TEST_ORG_ID, `BATCH-${i}`, `Batch${i}`, `User${i}`, Math.random() * 100);
-    }
+  const { elapsed } = timeQuery('batch insert 100 patients', () => {
+    const tx = db.transaction(() => {
+      for (let i = 0; i < 100; i++) {
+        insert.run(uuid(), TEST_ORG_ID, `BATCH-${i}`, `Batch${i}`, `User${i}`, Math.random() * 100);
+      }
+    });
+    tx();
   });
-  tx();
-  const elapsed = performance.now() - start;
   assert(elapsed < LOAD_TEST_CONFIG.maxQueryTimeMs, `Insert took ${elapsed.toFixed(1)}ms`);
 });
 
 test('Insert 1000 audit log entries in transaction', () => {
   const insert = db.prepare("INSERT INTO audit_logs (id, org_id, action, entity_type, details, user_email, user_role, created_at) VALUES (?, ?, 'test', 'System', 'load test', 'test@test.com', 'admin', datetime('now'))");
-  const start = performance.now();
-  const tx = db.transaction(() => {
-    for (let i = 0; i < 1000; i++) {
-      insert.run(uuid(), TEST_ORG_ID);
-    }
+  const { elapsed } = timeQuery('batch insert 1000 audit logs', () => {
+    const tx = db.transaction(() => {
+      for (let i = 0; i < 1000; i++) {
+        insert.run(uuid(), TEST_ORG_ID);
+      }
+    });
+    tx();
   });
-  tx();
-  const elapsed = performance.now() - start;
   assert(elapsed < LOAD_TEST_CONFIG.maxQueryTimeMs, `Insert took ${elapsed.toFixed(1)}ms`);
 });
 
 // Summary
 console.log('\n=======================');
 console.log(`Load Test Results: ${passed}/${totalTests} passed, ${failed} failed`);
+
+console.log('\nPerformance Timing Report:');
+console.log('─────────────────────────────────────────────────────');
+console.log(`${'Query'.padEnd(45)} ${'Time'.padStart(10)} ${'Status'.padStart(8)}`);
+console.log('─────────────────────────────────────────────────────');
+for (const t of timingResults) {
+  const status = t.withinLimit ? '  ✓ OK' : '  ✗ SLOW';
+  console.log(`${t.label.padEnd(45)} ${t.elapsed.padStart(10)} ${status}`);
+}
+console.log('─────────────────────────────────────────────────────');
+console.log(`Max allowed: ${LOAD_TEST_CONFIG.maxQueryTimeMs}ms | Dataset: ${LOAD_TEST_CONFIG.patientCount} patients, ${LOAD_TEST_CONFIG.auditLogCount} audit logs`);
 
 cleanup();
 

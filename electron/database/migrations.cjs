@@ -52,6 +52,49 @@ const MIGRATIONS = [
       }
     },
   },
+  {
+    version: 4,
+    name: 'add_version_columns_for_concurrency_control',
+    description: 'Add version column to mutable tables for optimistic concurrency control (row-level locking)',
+    up(db) {
+      const tablesToVersion = [
+        'patients', 'donor_organs', 'matches', 'notifications',
+        'notification_rules', 'priority_weights', 'ehr_integrations',
+        'readiness_barriers', 'adult_health_history_questionnaires',
+        'lab_results', 'required_lab_types', 'users', 'settings',
+      ];
+      for (const table of tablesToVersion) {
+        try {
+          const cols = db.prepare(`PRAGMA table_info(${table})`).all().map(c => c.name);
+          if (!cols.includes('version')) {
+            db.exec(`ALTER TABLE ${table} ADD COLUMN version INTEGER NOT NULL DEFAULT 1`);
+          }
+        } catch (e) {
+          // Table may not exist yet, skip
+        }
+      }
+    },
+  },
+  {
+    version: 5,
+    name: 'add_locked_by_columns_for_row_locking',
+    description: 'Add locked_by and locked_at columns for pessimistic row-level locking on critical entities',
+    up(db) {
+      const tablesToLock = ['patients', 'donor_organs', 'matches'];
+      for (const table of tablesToLock) {
+        try {
+          const cols = db.prepare(`PRAGMA table_info(${table})`).all().map(c => c.name);
+          if (!cols.includes('locked_by')) {
+            db.exec(`ALTER TABLE ${table} ADD COLUMN locked_by TEXT`);
+            db.exec(`ALTER TABLE ${table} ADD COLUMN locked_at TEXT`);
+            db.exec(`ALTER TABLE ${table} ADD COLUMN lock_expires_at TEXT`);
+          }
+        } catch (e) {
+          // Table may not exist yet, skip
+        }
+      }
+    },
+  },
 ];
 
 /**
