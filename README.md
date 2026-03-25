@@ -295,7 +295,36 @@ For evaluation access, enterprise deployment, or technical inquiries.
 
 ## Keywords
 
-`hipaa-compliant` `fda-21-cfr-part-11` `offline-first` `pre-transplant` `waitlist-management` `transplant-center` `risk-intelligence` `patient-readiness` `clinical-informatics` `healthcare-operations` `regulatory-compliance` `ehr-integration` `fhir` `optn` `unos` `secure-desktop-app` `encrypted-database`
+### Transplant & Clinical
+`transplant` `organ-transplant` `kidney-transplant` `liver-transplant` `heart-transplant` `lung-transplant` `transplant-coordinator` `transplant-center` `transplant-operations` `pre-transplant` `organ-procurement` `organ-matching` `donor-matching` `donor-recipient-matching` `tissue-banking` `waitlist-management` `patient-readiness` `readiness-barriers` `patient-safety`
+
+### Healthcare IT & Informatics
+`healthcare-software` `medical-software` `clinical-software` `hospital-software` `healthcare-IT` `health-informatics` `clinical-informatics` `clinical-decision-support` `healthcare-analytics` `patient-management` `patient-tracking` `medical-records` `electronic-health-records` `healthcare-operations` `risk-intelligence` `operational-risk`
+
+### Compliance & Regulatory
+`HIPAA` `hipaa-compliant` `FDA-21-CFR-Part-11` `fda-compliant` `AATB` `UNOS` `OPTN` `regulatory-compliance` `healthcare-compliance` `audit-trail` `PHI-protection` `data-sovereignty`
+
+### Integration & Interoperability
+`EHR-integration` `FHIR` `FHIR-R4` `HL7` `interoperability`
+
+### Architecture & Security
+`offline-first` `desktop-application` `electron-app` `cross-platform` `encrypted-database` `data-encryption` `AES-256` `secure-desktop-app`
+
+---
+
+## About TransTrack
+
+TransTrack is a **transplant waitlist management system** designed for **organ transplant centers**, **transplant coordinators**, and **healthcare IT teams**. It provides **operational risk intelligence** to help prevent patient inactivation before kidney, liver, heart, and lung transplants.
+
+Built as an **offline-first desktop application** with **HIPAA-compliant** security and **FDA 21 CFR Part 11** readiness, TransTrack delivers **encrypted patient data management**, **FHIR R4 EHR integration**, **audit trails**, and **real-time operational monitoring** — all without requiring cloud connectivity or internet access.
+
+TransTrack is purpose-built for:
+- **Transplant coordination teams** managing complex waitlists and patient readiness
+- **Clinical informatics departments** seeking secure, interoperable healthcare software
+- **Hospital compliance and audit staff** requiring regulatory-grade documentation
+- **Healthcare IT organizations** evaluating offline-capable medical software solutions
+
+> Looking for transplant software, organ transplant waitlist tools, HIPAA-compliant healthcare applications, or FDA-validated clinical desktop software? TransTrack was built for you.
 
 ---
 
