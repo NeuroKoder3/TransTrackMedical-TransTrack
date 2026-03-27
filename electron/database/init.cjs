@@ -20,7 +20,7 @@ const Database = require('better-sqlite3-multiple-ciphers');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
-const { app } = require('electron');
+const { app, safeStorage } = require('electron');
 const { createSchema, createIndexes, createAuditLogTriggers, addOrgIdToExistingTables } = require('./schema.cjs');
 const { runMigrations } = require('./migrations.cjs');
 
@@ -54,44 +54,103 @@ function getKeyBackupPath() {
 // =========================================================================
 
 /**
- * Get or create the encryption key
- * The key is a 64-character hex string (256 bits)
- * Stored with restrictive permissions (0o600)
+ * Check whether Electron's OS-native safeStorage (DPAPI / Keychain / libsecret)
+ * is available for encrypting secrets at rest.
+ */
+function isSafeStorageAvailable() {
+  try {
+    return safeStorage && typeof safeStorage.isEncryptionAvailable === 'function'
+      && safeStorage.isEncryptionAvailable();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Write an encryption key to disk.
+ * When safeStorage is available the key is encrypted via the OS keychain
+ * before being written, so the on-disk file is an opaque binary blob.
+ * Falls back to plaintext with restrictive permissions when safeStorage
+ * is unavailable (e.g. headless Linux without a keyring daemon).
+ */
+function writeProtectedKey(filePath, plaintextKey) {
+  if (isSafeStorageAvailable()) {
+    const encrypted = safeStorage.encryptString(plaintextKey);
+    fs.writeFileSync(filePath, encrypted, { mode: 0o600 });
+  } else {
+    fs.writeFileSync(filePath, plaintextKey, { mode: 0o600 });
+  }
+}
+
+/**
+ * Read an encryption key from disk, handling both safeStorage-encrypted
+ * (binary) and legacy plaintext formats.  When a legacy plaintext key is
+ * detected and safeStorage is now available, the file is transparently
+ * migrated to the encrypted format.
+ *
+ * Returns the plaintext hex key string, or null if the file cannot be read
+ * or does not contain a valid key.
+ */
+function readProtectedKey(filePath) {
+  if (!fs.existsSync(filePath)) return null;
+
+  const raw = fs.readFileSync(filePath);
+
+  // Detect legacy plaintext format: the file is valid UTF-8 containing
+  // exactly 64 hex characters (256-bit key).
+  const asText = raw.toString('utf8').trim();
+  if (/^[a-fA-F0-9]{64}$/.test(asText)) {
+    // Migrate to safeStorage-encrypted format if possible
+    if (isSafeStorageAvailable()) {
+      writeProtectedKey(filePath, asText);
+    }
+    return asText;
+  }
+
+  // Assume safeStorage-encrypted binary blob
+  if (isSafeStorageAvailable()) {
+    try {
+      const decrypted = safeStorage.decryptString(raw);
+      if (/^[a-fA-F0-9]{64}$/.test(decrypted)) {
+        return decrypted;
+      }
+    } catch {
+      // Decryption failed — file may be corrupt or from a different OS user
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Get or create the database encryption key (64-char hex / 256-bit).
+ *
+ * Storage strategy (in priority order):
+ *   1. OS-native safeStorage (DPAPI on Windows, Keychain on macOS,
+ *      libsecret on Linux) — key is encrypted before hitting disk.
+ *   2. Plaintext file with 0o600 permissions (fallback when no keyring
+ *      daemon is available).
  */
 function getEncryptionKey() {
   const keyPath = getKeyPath();
   const keyBackupPath = getKeyBackupPath();
-  
-  // Try to read existing key
-  if (fs.existsSync(keyPath)) {
-    const key = fs.readFileSync(keyPath, 'utf8').trim();
-    
-    // Validate key format (64 hex characters = 256 bits)
-    if (/^[a-fA-F0-9]{64}$/.test(key)) {
-      return key;
-    }
-    
-    // Invalid key format, try backup
-    if (fs.existsSync(keyBackupPath)) {
-      const backupKey = fs.readFileSync(keyBackupPath, 'utf8').trim();
-      if (/^[a-fA-F0-9]{64}$/.test(backupKey)) {
-        // Restore from backup
-        fs.writeFileSync(keyPath, backupKey, { mode: 0o600 });
-        return backupKey;
-      }
-    }
+
+  // Try primary key file
+  const key = readProtectedKey(keyPath);
+  if (key) return key;
+
+  // Primary missing or corrupt — try backup
+  const backupKey = readProtectedKey(keyBackupPath);
+  if (backupKey) {
+    writeProtectedKey(keyPath, backupKey);
+    return backupKey;
   }
-  
-  // Generate new 256-bit key
-  const key = crypto.randomBytes(32).toString('hex');
-  
-  // Save key with restrictive permissions
-  fs.writeFileSync(keyPath, key, { mode: 0o600 });
-  
-  // Create backup
-  fs.writeFileSync(keyBackupPath, key, { mode: 0o600 });
-  
-  return key;
+
+  // No existing key — generate a new 256-bit key
+  const newKey = crypto.randomBytes(32).toString('hex');
+  writeProtectedKey(keyPath, newKey);
+  writeProtectedKey(keyBackupPath, newKey);
+  return newKey;
 }
 
 /**
@@ -562,7 +621,7 @@ async function seedDefaultData(defaultOrgId) {
   if (!adminExists || adminExists.count === 0) {
     const bcrypt = require('bcryptjs');
     
-    const defaultPassword = 'Admin123!';
+    const defaultPassword = 'TransTrack#Admin2026!';
     const mustChangePassword = true;
     
     // Create default admin user
@@ -588,7 +647,7 @@ async function seedDefaultData(defaultOrgId) {
     
     if (process.env.NODE_ENV === 'development') {
       console.log('');
-      console.log('Initial admin credentials: admin@transtrack.local / Admin123!');
+      console.log('Initial admin credentials: admin@transtrack.local / TransTrack#Admin2026!');
       console.log('CHANGE YOUR PASSWORD AFTER FIRST LOGIN');
       console.log('');
     }
@@ -680,6 +739,7 @@ function verifyDatabaseIntegrity() {
  * Export encryption status for compliance reporting
  */
 function getEncryptionStatus() {
+  const safeStorageActive = isSafeStorageAvailable();
   return {
     enabled: encryptionEnabled,
     algorithm: encryptionEnabled ? 'AES-256-CBC' : 'none',
@@ -687,6 +747,7 @@ function getEncryptionStatus() {
     keyIterations: encryptionEnabled ? 256000 : 0,
     hmacAlgorithm: encryptionEnabled ? 'SHA512' : 'none',
     pageSize: encryptionEnabled ? 4096 : 0,
+    keyProtection: safeStorageActive ? 'os-keychain' : 'file-permissions',
     compliant: encryptionEnabled,
     standard: encryptionEnabled ? 'HIPAA' : 'non-compliant'
   };
@@ -757,19 +818,18 @@ async function rekeyDatabase(newKey) {
     // Re-key the database
     db.pragma(`rekey = "x'${newKey}'"`);
     
-    // Save new key
     const keyPath = getKeyPath();
     const keyBackupPath = getKeyBackupPath();
     
-    // Backup old key first
-    if (fs.existsSync(keyPath)) {
-      const oldKey = fs.readFileSync(keyPath, 'utf8').trim();
-      fs.writeFileSync(keyBackupPath + '.old', oldKey, { mode: 0o600 });
+    // Preserve the old key in a separate backup before overwriting
+    const oldKey = readProtectedKey(keyPath);
+    if (oldKey) {
+      writeProtectedKey(keyBackupPath + '.old', oldKey);
     }
     
-    // Save new key
-    fs.writeFileSync(keyPath, newKey, { mode: 0o600 });
-    fs.writeFileSync(keyBackupPath, newKey, { mode: 0o600 });
+    // Persist the new key (encrypted via safeStorage when available)
+    writeProtectedKey(keyPath, newKey);
+    writeProtectedKey(keyBackupPath, newKey);
     
     // Log the rekey action
     const { v4: uuidv4 } = require('uuid');

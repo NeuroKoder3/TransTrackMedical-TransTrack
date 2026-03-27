@@ -92,7 +92,8 @@ export default function UpgradePrompt({
       enterprise: '24999',
     };
     // Open PayPal payment
-    window.open(`https://www.paypal.me/lilnicole0383/${amounts[tier]}USD`, '_blank');
+    const tierSlug = tier.toLowerCase();
+    window.open(`https://buy.stripe.com/transtrack-${tierSlug}`, '_blank');
   };
 
   return (

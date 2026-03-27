@@ -17,6 +17,7 @@ const MIGRATIONS = [
     version: 1,
     name: 'add_request_id_to_audit_logs',
     description: 'Add request_id column for end-to-end tracing',
+    rollbackSql: 'DROP INDEX IF EXISTS idx_audit_logs_request_id',
     up(db) {
       const cols = db.prepare("PRAGMA table_info(audit_logs)").all().map(c => c.name);
       if (!cols.includes('request_id')) {
@@ -29,6 +30,7 @@ const MIGRATIONS = [
     version: 2,
     name: 'add_request_id_to_access_justification',
     description: 'Add request_id to access justification logs',
+    rollbackSql: null, // SQLite cannot DROP COLUMN in older versions; safe to leave
     up(db) {
       const cols = db.prepare("PRAGMA table_info(access_justification_logs)").all().map(c => c.name);
       if (!cols.includes('request_id')) {
@@ -40,6 +42,7 @@ const MIGRATIONS = [
     version: 3,
     name: 'add_schema_version_setting',
     description: 'Record schema version in settings for external tools',
+    rollbackSql: "DELETE FROM settings WHERE key = 'schema_version' AND org_id = 'SYSTEM'",
     up(db) {
       const { v4: uuidv4 } = require('uuid');
       const existing = db.prepare(
@@ -55,7 +58,7 @@ const MIGRATIONS = [
 ];
 
 /**
- * Ensure the migrations tracking table exists.
+ * Ensure the migrations tracking table exists (with rollback SQL storage).
  */
 function ensureMigrationsTable(db) {
   db.exec(`
@@ -64,9 +67,16 @@ function ensureMigrationsTable(db) {
       name TEXT NOT NULL,
       description TEXT,
       applied_at TEXT NOT NULL DEFAULT (datetime('now')),
-      checksum TEXT
+      checksum TEXT,
+      rollback_sql TEXT
     )
   `);
+
+  // Add rollback_sql column if upgrading from older schema
+  const cols = db.prepare("PRAGMA table_info(schema_migrations)").all().map(c => c.name);
+  if (!cols.includes('rollback_sql')) {
+    db.exec('ALTER TABLE schema_migrations ADD COLUMN rollback_sql TEXT');
+  }
 }
 
 /**
@@ -97,9 +107,9 @@ function runMigrations(db) {
       migration.up(db);
 
       db.prepare(`
-        INSERT INTO schema_migrations (version, name, description, applied_at)
-        VALUES (?, ?, ?, datetime('now'))
-      `).run(migration.version, migration.name, migration.description || '');
+        INSERT INTO schema_migrations (version, name, description, applied_at, rollback_sql)
+        VALUES (?, ?, ?, datetime('now'), ?)
+      `).run(migration.version, migration.name, migration.description || '', migration.rollbackSql || null);
     });
 
     tx();
@@ -127,6 +137,40 @@ function runMigrations(db) {
 }
 
 /**
+ * Roll back the most recently applied migration.
+ * Executes the stored rollback_sql in a transaction and removes the
+ * migration record. Returns the rolled-back migration info or null if
+ * no rollback was possible.
+ */
+function rollbackLastMigration(db) {
+  ensureMigrationsTable(db);
+  const last = db.prepare(
+    'SELECT * FROM schema_migrations ORDER BY version DESC LIMIT 1'
+  ).get();
+
+  if (!last) return null;
+
+  const tx = db.transaction(() => {
+    if (last.rollback_sql) {
+      db.exec(last.rollback_sql);
+    }
+    db.prepare('DELETE FROM schema_migrations WHERE version = ?').run(last.version);
+  });
+
+  tx();
+
+  // Update schema_version setting
+  const newVersion = getCurrentVersion(db);
+  try {
+    db.prepare(
+      "UPDATE settings SET value = ?, updated_at = datetime('now') WHERE key = 'schema_version'"
+    ).run(String(newVersion));
+  } catch { /* settings row may not exist */ }
+
+  return { rolledBack: last.name, version: last.version, newVersion };
+}
+
+/**
  * Get migration status for diagnostics.
  */
 function getMigrationStatus(db) {
@@ -147,6 +191,7 @@ function getMigrationStatus(db) {
 
 module.exports = {
   runMigrations,
+  rollbackLastMigration,
   getMigrationStatus,
   getCurrentVersion,
   MIGRATIONS,

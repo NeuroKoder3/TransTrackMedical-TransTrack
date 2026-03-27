@@ -17,29 +17,33 @@ const {
   getUserCount,
 } = require('../database/init.cjs');
 const { LICENSE_TIER, LICENSE_FEATURES, hasFeature, checkDataLimit } = require('../license/tiers.cjs');
+const { checkRateLimit } = require('./rateLimiter.cjs');
 
 // =============================================================================
-// SESSION STORE
+// SESSION STORE (bound to WebContents ID for session-riding prevention)
 // =============================================================================
 
 let currentSession = null;
 let currentUser = null;
 let sessionExpiry = null;
+let boundWebContentsId = null;
 
 function getSessionState() {
   return { currentSession, currentUser, sessionExpiry };
 }
 
-function setSessionState(session, user, expiry) {
+function setSessionState(session, user, expiry, webContentsId) {
   currentSession = session;
   currentUser = user;
   sessionExpiry = expiry;
+  boundWebContentsId = webContentsId || null;
 }
 
 function clearSession() {
   currentSession = null;
   currentUser = null;
   sessionExpiry = null;
+  boundWebContentsId = null;
 }
 
 function getSessionOrgId() {
@@ -69,7 +73,7 @@ function requireFeature(featureName) {
   }
 }
 
-function validateSession() {
+function validateSession(senderWebContentsId) {
   if (!currentSession || !currentUser || !sessionExpiry) {
     return false;
   }
@@ -81,7 +85,33 @@ function validateSession() {
     clearSession();
     return false;
   }
+  if (boundWebContentsId && senderWebContentsId && senderWebContentsId !== boundWebContentsId) {
+    return false;
+  }
   return true;
+}
+
+// =============================================================================
+// HANDLER WRAPPER (session check + rate limiting + WebContents binding)
+// =============================================================================
+
+function wrapHandler(handlerFn) {
+  return async (event, ...args) => {
+    const senderId = event?.sender?.id;
+
+    if (!validateSession(senderId)) {
+      throw new Error('Session expired. Please log in again.');
+    }
+
+    const userId = currentUser?.id || 'anon';
+    const channel = event?.sender?._events?.['ipc-message']?.[0]?.name || 'unknown';
+    const rateResult = checkRateLimit(userId, channel);
+    if (!rateResult.allowed) {
+      throw new Error(rateResult.error);
+    }
+
+    return handlerFn(event, ...args);
+  };
 }
 
 // =============================================================================
@@ -331,6 +361,7 @@ module.exports = {
   requireFeature,
   validateSession,
   SESSION_DURATION_MS,
+  wrapHandler,
 
   // Security
   validatePasswordStrength,
@@ -342,6 +373,8 @@ module.exports = {
   ALLOWED_ORDER_COLUMNS,
   entityTableMap,
   jsonFields,
+  MAX_LOGIN_ATTEMPTS,
+  LOCKOUT_DURATION_MS,
 
   // Entity helpers
   isValidOrderColumn,

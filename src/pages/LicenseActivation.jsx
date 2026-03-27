@@ -164,7 +164,7 @@ export default function LicenseActivation({ onActivated }) {
 
   const handlePayPal = (tier) => {
     const amount = TIER_CONFIG[tier].price;
-    window.open(`https://www.paypal.me/lilnicole0383/${amount}USD`, '_blank');
+    window.open(`https://buy.stripe.com/transtrack-${tier.toLowerCase()}`, '_blank');
   };
 
   const handleContactSales = () => {

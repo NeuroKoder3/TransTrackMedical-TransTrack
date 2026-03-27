@@ -18,6 +18,12 @@
       "to": "assets"
     }
   ],
+  "publish": {
+    "provider": "github",
+    "owner": "TransTrackMedical",
+    "repo": "TransTrack",
+    "releaseType": "release"
+  },
   "win": {
     "target": [
       {
@@ -30,7 +36,9 @@
     "certificateFile": "${CSC_LINK}",
     "certificatePassword": "${CSC_KEY_PASSWORD}",
     "signingHashAlgorithms": ["sha256"],
-    "publisherName": "TransTrack Medical Software"
+    "publisherName": "TransTrack Medical Software",
+    "sign": true,
+    "verifyUpdateCodeSignature": true
   },
   "mac": {
     "target": [
@@ -46,8 +54,12 @@
     "entitlements": "electron/assets/entitlements.mac.plist",
     "entitlementsInherit": "electron/assets/entitlements.mac.plist",
     "artifactName": "TransTrack-Enterprise-${version}-${arch}.${ext}",
-    "type": "distribution"
+    "type": "distribution",
+    "notarize": {
+      "teamId": "${APPLE_TEAM_ID}"
+    }
   },
+  "afterSign": "scripts/notarize.cjs",
   "linux": {
     "target": ["AppImage", "deb"],
     "icon": "electron/assets/icons",
