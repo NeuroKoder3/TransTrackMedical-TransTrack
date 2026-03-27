@@ -21,6 +21,7 @@ const {
   EVALUATION_RESTRICTIONS,
   isEvaluationBuild
 } = require('./license/tiers.cjs');
+const { logger, initCrashReporter, closeLogger } = require('./services/logger.cjs');
 
 // Disable hardware acceleration for better compatibility
 app.disableHardwareAcceleration();
@@ -438,11 +439,73 @@ function stopPeriodicLicenseCheck() {
   }
 }
 
+// =========================================================================
+// AUTO-UPDATE (Enterprise builds only)
+// =========================================================================
+
+function initAutoUpdater() {
+  try {
+    const { autoUpdater } = require('electron-updater');
+
+    autoUpdater.logger = {
+      info: (msg) => logger.info(`[AutoUpdater] ${msg}`),
+      warn: (msg) => logger.warn(`[AutoUpdater] ${msg}`),
+      error: (msg) => logger.error(`[AutoUpdater] ${msg}`),
+    };
+    autoUpdater.autoDownload = false;
+    autoUpdater.autoInstallOnAppQuit = true;
+
+    autoUpdater.on('update-available', (info) => {
+      logger.info('Update available', { version: info.version });
+      if (mainWindow) {
+        mainWindow.webContents.send('update:available', {
+          version: info.version,
+          releaseDate: info.releaseDate,
+        });
+      }
+    });
+
+    autoUpdater.on('update-downloaded', (info) => {
+      logger.info('Update downloaded', { version: info.version });
+      if (mainWindow) {
+        mainWindow.webContents.send('update:downloaded', { version: info.version });
+      }
+    });
+
+    autoUpdater.on('error', (err) => {
+      logger.error('Auto-update error', { error: err.message });
+    });
+
+    ipcMain.handle('update:check', async () => {
+      const result = await autoUpdater.checkForUpdates();
+      return result?.updateInfo || null;
+    });
+
+    ipcMain.handle('update:download', async () => {
+      await autoUpdater.downloadUpdate();
+      return { success: true };
+    });
+
+    ipcMain.handle('update:install', () => {
+      autoUpdater.quitAndInstall(false, true);
+    });
+
+    // Check for updates 30s after launch, then every 4 hours
+    setTimeout(() => autoUpdater.checkForUpdates().catch(() => {}), 30000);
+    setInterval(() => autoUpdater.checkForUpdates().catch(() => {}), 4 * 60 * 60 * 1000);
+
+    logger.info('Auto-updater initialized');
+  } catch (err) {
+    logger.warn('Auto-updater not available (expected in dev)', { error: err.message });
+  }
+}
+
 // App lifecycle
 app.whenReady().then(async () => {
-  console.log('TransTrack starting...');
+  initCrashReporter();
+  logger.info('TransTrack starting...');
   const buildVersion = getCurrentBuildVersion();
-  console.log(`Build version: ${buildVersion}`);
+  logger.info(`Build version: ${buildVersion}`);
   
   // Show splash screen
   createSplashWindow();
@@ -450,7 +513,7 @@ app.whenReady().then(async () => {
   try {
     // Initialize encrypted database
     await initDatabase();
-    console.log('Database initialized');
+    logger.info('Database initialized');
     
     // =========================================================================
     // ENTERPRISE LICENSE ENFORCEMENT
@@ -474,7 +537,12 @@ app.whenReady().then(async () => {
     
     // Setup IPC handlers for renderer process communication
     setupIPCHandlers();
-    console.log('IPC handlers registered');
+    logger.info('IPC handlers registered');
+
+    // Start auto-updater for enterprise builds
+    if (buildVersion === BUILD_VERSION.ENTERPRISE && app.isPackaged) {
+      initAutoUpdater();
+    }
     
     // Create application menu
     createMenu();
@@ -494,7 +562,7 @@ app.whenReady().then(async () => {
       console.log(`  - Disabled features: ${EVALUATION_RESTRICTIONS.disabledFeatures.length}`);
     }
   } catch (error) {
-    console.error('Failed to initialize application:', error);
+    logger.fatal('Failed to initialize application', { error: error.message, stack: error.stack });
     dialog.showErrorBox('Startup Error', `Failed to initialize TransTrack: ${error.message}`);
     app.quit();
   }
@@ -513,10 +581,10 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', async () => {
-  console.log('Stopping periodic license checks...');
+  logger.info('Application shutting down...');
   stopPeriodicLicenseCheck();
-  console.log('Closing database connection...');
   await closeDatabase();
+  closeLogger();
 });
 
 // Security: Handle certificate errors

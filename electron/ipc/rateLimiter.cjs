@@ -71,8 +71,8 @@ function resetForUser(userId) {
   }
 }
 
-// Periodic cleanup of stale entries
-setInterval(() => {
+// Periodic cleanup of stale entries (unref so it doesn't block process exit)
+const cleanupTimer = setInterval(() => {
   const now = Date.now();
   const windowStart = now - WINDOW_MS;
 
@@ -85,6 +85,7 @@ setInterval(() => {
     }
   }
 }, CLEANUP_INTERVAL_MS);
+if (cleanupTimer.unref) cleanupTimer.unref();
 
 module.exports = {
   checkRateLimit,

@@ -118,9 +118,9 @@ Review the feature comparison above and select the tier that best fits your orga
 
 ### Step 2: Payment via PayPal
 
-1. Click the "Pay with PayPal" button for your chosen tier in the application
-2. Complete payment to: `lilnicole0383@gmail.com`
-3. **Important:** Include your Organization ID in the payment note
+1. Click the "Purchase" button for your chosen tier in the application
+2. Complete checkout via the secure payment portal
+3. **Important:** Include your Organization ID during checkout
 
 ### Step 3: Confirmation Email
 
@@ -307,8 +307,9 @@ To move a license to a new machine:
 - Email: `Trans_Track@outlook.com`
 - Include: Organization ID, license tier, issue description
 
-**PayPal Payments:**
-- Account: `lilnicole0383@gmail.com`
+**Payments:**
+- Billing portal: `https://buy.stripe.com/transtrack`
+- Billing email: `billing@transtrack.medical`
 
 ---
 

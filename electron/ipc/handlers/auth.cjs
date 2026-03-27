@@ -70,6 +70,8 @@ function register() {
 
       db.prepare("UPDATE users SET last_login = datetime('now'), updated_at = datetime('now') WHERE id = ?").run(user.id);
 
+      const mustChangePassword = !!user.must_change_password;
+
       const currentUser = {
         id: user.id,
         email: user.email,
@@ -78,12 +80,13 @@ function register() {
         org_id: user.org_id,
         org_name: org.name,
         license_tier: licenseTier,
+        must_change_password: mustChangePassword,
       };
 
-      shared.setSessionState(sessionId, currentUser, expiresAtDate.getTime());
+      shared.setSessionState(sessionId, currentUser, expiresAtDate.getTime(), event?.sender?.id);
       shared.logAudit('login', 'User', user.id, null, 'User logged in successfully', user.email, user.role);
 
-      return { success: true, user: currentUser };
+      return { success: true, user: currentUser, mustChangePassword };
     } catch (error) {
       const safeMessage =
         error.message.includes('locked') ||
@@ -169,7 +172,7 @@ function register() {
     if (!isValid) throw new Error('Current password is incorrect');
 
     const hashedPassword = await bcrypt.hash(newPassword, 12);
-    db.prepare("UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE id = ?").run(hashedPassword, currentUser.id);
+    db.prepare("UPDATE users SET password_hash = ?, must_change_password = 0, updated_at = datetime('now') WHERE id = ?").run(hashedPassword, currentUser.id);
 
     shared.logAudit('update', 'User', currentUser.id, null, 'Password changed', currentUser.email, currentUser.role);
     return { success: true };

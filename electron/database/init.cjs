@@ -621,7 +621,7 @@ async function seedDefaultData(defaultOrgId) {
   if (!adminExists || adminExists.count === 0) {
     const bcrypt = require('bcryptjs');
     
-    const defaultPassword = 'Admin123!';
+    const defaultPassword = 'TransTrack#Admin2026!';
     const mustChangePassword = true;
     
     // Create default admin user
@@ -647,7 +647,7 @@ async function seedDefaultData(defaultOrgId) {
     
     if (process.env.NODE_ENV === 'development') {
       console.log('');
-      console.log('Initial admin credentials: admin@transtrack.local / Admin123!');
+      console.log('Initial admin credentials: admin@transtrack.local / TransTrack#Admin2026!');
       console.log('CHANGE YOUR PASSWORD AFTER FIRST LOGIN');
       console.log('');
     }

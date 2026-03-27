@@ -21,16 +21,29 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y python3 make g++
 
       - name: Install npm dependencies
-        run: npm install
+        run: npm ci
 
       - name: Rebuild native modules for CI Node version
         run: npm rebuild better-sqlite3-multiple-ciphers
 
-      - run: npm audit --omit=dev || true
+      - name: Security audit (production dependencies)
+        run: npm audit --omit=dev --audit-level=moderate
 
-      - run: npm run lint || true
+      - name: Lint
+        run: npm run lint
 
       - name: Run tests
         run: npm test
 
-      - run: npm run build
+      - name: Build
+        run: npm run build
+
+      - name: Generate SBOM
+        run: npx @cyclonedx/cyclonedx-npm --output-file sbom.json --output-format JSON
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.json
+          retention-days: 90

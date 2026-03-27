@@ -29,6 +29,33 @@ const encryptionKeyManagement = require('../services/encryptionKeyManagement.cjs
 const { validateFHIRDataComplete } = require('../functions/validateFHIRData.cjs');
 const { getMigrationStatus } = require('../database/migrations.cjs');
 
+/**
+ * Wrap ipcMain.handle so every registered handler automatically runs through
+ * the rate limiter. The original handler still decides whether it requires
+ * an active session (auth:login obviously doesn't).
+ */
+function installRateLimitMiddleware() {
+  const { ipcMain } = require('electron');
+  const { checkRateLimit } = require('./rateLimiter.cjs');
+  const shared = require('./shared.cjs');
+
+  const originalHandle = ipcMain.handle.bind(ipcMain);
+
+  ipcMain.handle = (channel, handler) => {
+    originalHandle(channel, async (event, ...args) => {
+      const { currentUser } = shared.getSessionState();
+      const userId = currentUser?.id || 'anon';
+
+      const rateResult = checkRateLimit(userId, channel);
+      if (!rateResult.allowed) {
+        throw new Error(rateResult.error);
+      }
+
+      return handler(event, ...args);
+    });
+  };
+}
+
 function registerExtendedHandlers() {
   const { ipcMain } = require('electron');
   const shared = require('./shared.cjs');
@@ -66,6 +93,7 @@ function registerExtendedHandlers() {
 }
 
 function setupIPCHandlers() {
+  installRateLimitMiddleware();
   authHandlers.register();
   entityHandlers.register();
   adminHandlers.register();
