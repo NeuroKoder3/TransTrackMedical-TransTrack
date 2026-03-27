@@ -436,40 +436,37 @@ const EVALUATION_RESTRICTIONS = {
 // =============================================================================
 
 const PAYMENT_CONFIG = {
-  paypalEmail: 'lilnicole0383@gmail.com',
+  businessEmail: 'billing@transtrack.medical',
   contactEmail: 'Trans_Track@outlook.com',
-  
-  // PayPal payment links (pre-configured amounts)
+
   paymentLinks: {
     [LICENSE_TIER.STARTER]: {
       amount: 2499,
       description: 'TransTrack Starter License',
-      // PayPal.me link format
-      url: 'https://www.paypal.com/paypalme/transtrack/2499USD',
+      url: 'https://buy.stripe.com/transtrack-starter',
     },
     [LICENSE_TIER.PROFESSIONAL]: {
       amount: 7499,
       description: 'TransTrack Professional License',
-      url: 'https://www.paypal.com/paypalme/transtrack/7499USD',
+      url: 'https://buy.stripe.com/transtrack-professional',
     },
     [LICENSE_TIER.ENTERPRISE]: {
       amount: 24999,
       description: 'TransTrack Enterprise License',
-      url: 'https://www.paypal.com/paypalme/transtrack/24999USD',
+      url: 'https://buy.stripe.com/transtrack-enterprise',
     },
   },
-  
-  // Manual payment fallback
+
   manualPaymentInstructions: `
 To complete your purchase:
 
-1. Send payment via PayPal to: lilnicole0383@gmail.com
-2. Include your Organization ID in the payment note
-3. Email Trans_Track@outlook.com with:
-   - Payment confirmation
-   - Organization name
-   - License tier requested
-   - Number of installations needed
+1. Visit the payment link for your selected tier (above)
+2. Complete checkout with your Organization ID
+3. Your license key will be delivered to your email automatically
+
+For purchase orders, wire transfers, or other payment methods:
+  Email: billing@transtrack.medical
+  Include: Organization name, tier, and number of installations
 
 You will receive your license key within 24-48 hours.
 `,

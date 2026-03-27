@@ -87,12 +87,12 @@ All licenses include:
 
 Pay securely via PayPal:
 
-1. **Select your tier** and click the appropriate PayPal link:
-   - [Starter - $2,499](https://www.paypal.me/lilnicole0383/2499USD)
-   - [Professional - $7,499](https://www.paypal.me/lilnicole0383/7499USD)
-   - [Enterprise - $24,999](https://www.paypal.me/lilnicole0383/24999USD)
+1. **Select your tier** and click the purchase link:
+   - [Starter - $2,499](https://buy.stripe.com/transtrack-starter)
+   - [Professional - $7,499](https://buy.stripe.com/transtrack-professional)
+   - [Enterprise - $24,999](https://buy.stripe.com/transtrack-enterprise)
 
-2. **Include your Organization ID** in the payment note (found in Settings → License)
+2. **Include your Organization ID** during checkout (found in Settings → License)
 
 3. **Email confirmation** to Trans_Track@outlook.com with:
    - Payment receipt

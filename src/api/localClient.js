@@ -62,7 +62,7 @@ const mockClient = {
         { tier: 'professional', tierName: 'Professional', price: 7499, currency: 'USD' },
         { tier: 'enterprise', tierName: 'Enterprise', price: 24999, currency: 'USD' },
       ],
-      paypalEmail: 'lilnicole0383@gmail.com',
+      businessEmail: 'billing@transtrack.medical',
       contactEmail: 'Trans_Track@outlook.com',
     }),
     getPaymentInfo: async (tier) => ({

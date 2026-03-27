@@ -339,8 +339,34 @@ function detectLicenseTier(key) {
   return LICENSE_TIER.STARTER; // Default for unknown prefixes
 }
 
+// Stable HMAC secret derived from the app identity — prevents casual
+// database edits from upgrading a license tier.  A determined reverse-
+// engineer can extract this, but it raises the bar significantly above
+// "open SQLite and change the tier column".
+const LICENSE_HMAC_SECRET = 'TransTrack:LicenseIntegrity:2026:' + (() => {
+  return crypto.createHash('sha256')
+    .update('com.transtrack.medical:license-seal')
+    .digest('hex')
+    .substring(0, 32);
+})();
+
 /**
- * Validate license data integrity
+ * Compute an HMAC digest over the critical license fields.
+ * Used to detect manual tampering of the license record.
+ */
+function computeLicenseHMAC(license) {
+  const payload = [
+    license.key,
+    license.tier,
+    license.orgId,
+    license.activatedAt,
+    license.maintenanceExpiry || '',
+  ].join('|');
+  return crypto.createHmac('sha256', LICENSE_HMAC_SECRET).update(payload).digest('hex');
+}
+
+/**
+ * Validate license data integrity, including HMAC tamper check.
  */
 function validateLicenseData(license) {
   if (!license) return { valid: false, reason: 'No license data' };
@@ -360,6 +386,15 @@ function validateLicenseData(license) {
   // Check tier validity
   if (!Object.values(LICENSE_TIER).includes(license.tier)) {
     return { valid: false, reason: 'Invalid license tier' };
+  }
+
+  // HMAC integrity check — detects manual edits to the license file or DB
+  if (license.hmac) {
+    const expected = computeLicenseHMAC(license);
+    if (license.hmac !== expected) {
+      logLicenseEvent('license_tamper_detected', { tier: license.tier });
+      return { valid: false, reason: 'License integrity check failed' };
+    }
   }
   
   return { valid: true };
@@ -474,6 +509,9 @@ async function activateLicense(licenseKey, customerInfo = {}) {
       action: 'initial_activation',
     }],
   };
+
+  // Sign the license data with HMAC to prevent tampering
+  licenseData.hmac = computeLicenseHMAC(licenseData);
   
   // Save license
   writeLicenseFile(licenseData);
@@ -533,6 +571,9 @@ async function renewMaintenance(renewalKey, years = 1) {
     action: 'maintenance_renewed',
     years: years,
   });
+
+  // Re-sign after changing maintenance expiry
+  license.hmac = computeLicenseHMAC(license);
   
   writeLicenseFile(license);
   
@@ -828,7 +869,7 @@ function getPaymentInfo(tier) {
     includes: pricing.includes,
     annualMaintenance: pricing.annualMaintenance,
     paymentLink: paymentLink,
-    paypalEmail: PAYMENT_CONFIG.paypalEmail,
+    businessEmail: PAYMENT_CONFIG.businessEmail,
     contactEmail: PAYMENT_CONFIG.contactEmail,
     manualInstructions: PAYMENT_CONFIG.manualPaymentInstructions,
   };
@@ -844,7 +885,7 @@ function getAllPaymentOptions() {
       getPaymentInfo(LICENSE_TIER.PROFESSIONAL),
       getPaymentInfo(LICENSE_TIER.ENTERPRISE),
     ].filter(Boolean),
-    paypalEmail: PAYMENT_CONFIG.paypalEmail,
+    businessEmail: PAYMENT_CONFIG.businessEmail,
     contactEmail: PAYMENT_CONFIG.contactEmail,
     manualInstructions: PAYMENT_CONFIG.manualPaymentInstructions,
   };
