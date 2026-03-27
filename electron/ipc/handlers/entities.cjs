@@ -10,6 +10,34 @@ const { getDatabase, getPatientCount } = require('../../database/init.cjs');
 const { checkDataLimit } = require('../../license/tiers.cjs');
 const featureGate = require('../../license/featureGate.cjs');
 const shared = require('../shared.cjs');
+const { hasPermission, PERMISSIONS } = require('../../services/accessControl.cjs');
+
+const ENTITY_PERMISSION_MAP = {
+  Patient:       { view: PERMISSIONS.PATIENT_VIEW, create: PERMISSIONS.PATIENT_CREATE, update: PERMISSIONS.PATIENT_UPDATE, delete: PERMISSIONS.PATIENT_DELETE },
+  DonorOrgan:    { view: PERMISSIONS.DONOR_VIEW,   create: PERMISSIONS.DONOR_CREATE,   update: PERMISSIONS.DONOR_UPDATE,   delete: PERMISSIONS.DONOR_DELETE },
+  Match:         { view: PERMISSIONS.MATCH_VIEW,    create: PERMISSIONS.MATCH_CREATE,   update: PERMISSIONS.MATCH_UPDATE,   delete: null },
+  Notification:       { view: null, create: null, update: null, delete: null },
+  NotificationRule:   { view: null, create: PERMISSIONS.SETTINGS_MANAGE, update: PERMISSIONS.SETTINGS_MANAGE, delete: PERMISSIONS.SETTINGS_MANAGE },
+  PriorityWeights:    { view: null, create: PERMISSIONS.SETTINGS_MANAGE, update: PERMISSIONS.SETTINGS_MANAGE, delete: PERMISSIONS.SETTINGS_MANAGE },
+  EHRIntegration:     { view: null, create: PERMISSIONS.SYSTEM_CONFIGURE, update: PERMISSIONS.SYSTEM_CONFIGURE, delete: PERMISSIONS.SYSTEM_CONFIGURE },
+  EHRImport:          { view: null, create: PERMISSIONS.SYSTEM_CONFIGURE, update: null, delete: null },
+  EHRSyncLog:         { view: null, create: null, update: null, delete: null },
+  EHRValidationRule:  { view: null, create: PERMISSIONS.SYSTEM_CONFIGURE, update: PERMISSIONS.SYSTEM_CONFIGURE, delete: PERMISSIONS.SYSTEM_CONFIGURE },
+  AuditLog:           { view: PERMISSIONS.AUDIT_VIEW, create: null, update: null, delete: null },
+  User:               { view: PERMISSIONS.USER_MANAGE, create: PERMISSIONS.USER_MANAGE, update: PERMISSIONS.USER_MANAGE, delete: PERMISSIONS.USER_MANAGE },
+  ReadinessBarrier:   { view: PERMISSIONS.PATIENT_VIEW, create: PERMISSIONS.PATIENT_UPDATE, update: PERMISSIONS.PATIENT_UPDATE, delete: PERMISSIONS.PATIENT_DELETE },
+  AdultHealthHistoryQuestionnaire: { view: PERMISSIONS.PATIENT_VIEW, create: PERMISSIONS.PATIENT_UPDATE, update: PERMISSIONS.PATIENT_UPDATE, delete: PERMISSIONS.PATIENT_DELETE },
+};
+
+function enforcePermission(currentUser, entityName, action) {
+  const perms = ENTITY_PERMISSION_MAP[entityName];
+  if (!perms) return; // unmapped entities fall through to session-only check
+  const required = perms[action];
+  if (!required) return; // null means no specific permission needed beyond session
+  if (!hasPermission(currentUser.role, required)) {
+    throw new Error(`Unauthorized: your role (${currentUser.role}) does not have ${required} permission.`);
+  }
+}
 
 function register() {
   const db = getDatabase();
@@ -17,6 +45,7 @@ function register() {
   ipcMain.handle('entity:create', async (event, entityName, data) => {
     if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
     const { currentUser } = shared.getSessionState();
+    enforcePermission(currentUser, entityName, 'create');
 
     const tableName = shared.entityTableMap[entityName];
     if (!tableName) throw new Error(`Unknown entity: ${entityName}`);
@@ -84,6 +113,8 @@ function register() {
 
   ipcMain.handle('entity:get', async (event, entityName, id) => {
     if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
+    const { currentUser } = shared.getSessionState();
+    enforcePermission(currentUser, entityName, 'view');
     const tableName = shared.entityTableMap[entityName];
     if (!tableName) throw new Error(`Unknown entity: ${entityName}`);
     return shared.getEntityByIdAndOrg(tableName, id, shared.getSessionOrgId());
@@ -92,6 +123,7 @@ function register() {
   ipcMain.handle('entity:update', async (event, entityName, id, data) => {
     if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
     const { currentUser } = shared.getSessionState();
+    enforcePermission(currentUser, entityName, 'update');
     const tableName = shared.entityTableMap[entityName];
     if (!tableName) throw new Error(`Unknown entity: ${entityName}`);
     const orgId = shared.getSessionOrgId();
@@ -126,6 +158,7 @@ function register() {
   ipcMain.handle('entity:delete', async (event, entityName, id) => {
     if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
     const { currentUser } = shared.getSessionState();
+    enforcePermission(currentUser, entityName, 'delete');
     const tableName = shared.entityTableMap[entityName];
     if (!tableName) throw new Error(`Unknown entity: ${entityName}`);
     const orgId = shared.getSessionOrgId();
@@ -146,6 +179,8 @@ function register() {
 
   ipcMain.handle('entity:list', async (event, entityName, orderBy, limit) => {
     if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
+    const { currentUser } = shared.getSessionState();
+    enforcePermission(currentUser, entityName, 'view');
     const tableName = shared.entityTableMap[entityName];
     if (!tableName) throw new Error(`Unknown entity: ${entityName}`);
     return shared.listEntitiesByOrg(tableName, shared.getSessionOrgId(), orderBy, limit);
@@ -153,6 +188,8 @@ function register() {
 
   ipcMain.handle('entity:filter', async (event, entityName, filters, orderBy, limit) => {
     if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
+    const { currentUser } = shared.getSessionState();
+    enforcePermission(currentUser, entityName, 'view');
     const tableName = shared.entityTableMap[entityName];
     if (!tableName) throw new Error(`Unknown entity: ${entityName}`);
     const orgId = shared.getSessionOrgId();
