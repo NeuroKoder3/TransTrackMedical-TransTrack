@@ -71,17 +71,15 @@ const AuthenticatedApp = () => {
 
     if (window.electronAPI?.license) {
       try {
-        const info = await window.electronAPI.license.getInfo();
         const isValid = await window.electronAPI.license.isValid();
 
-        if (!isValid || (info.evaluationExpired && !info.isLicensed)) {
-          dispatch({ type: 'LICENSE_INVALID', payload: info });
+        if (!isValid) {
+          dispatch({ type: 'LICENSE_INVALID', payload: { isLicensed: false, evaluationExpired: true } });
         } else {
-          dispatch({ type: 'LICENSE_VALID', payload: info });
+          dispatch({ type: 'LICENSE_VALID', payload: { isLicensed: true } });
         }
       } catch (e) {
         console.error('License check failed:', e);
-        // Fail closed: do NOT grant access on error in production
         dispatch({ type: 'LICENSE_ERROR', payload: e.message || 'License verification failed' });
       }
     } else {

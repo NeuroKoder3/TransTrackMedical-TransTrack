@@ -1,4 +1,5 @@
 {
+  "buildDependenciesFromSource": true,
   "appId": "com.transtrack.evaluation",
   "productName": "TransTrack Evaluation",
   "copyright": "Copyright © 2026 TransTrack Medical Software",
@@ -26,11 +27,7 @@
       }
     ],
     "icon": "electron/assets/icon.ico",
-    "artifactName": "TransTrack-Evaluation-${version}-${arch}.${ext}",
-    "certificateFile": "${CSC_LINK}",
-    "certificatePassword": "${CSC_KEY_PASSWORD}",
-    "signingHashAlgorithms": ["sha256"],
-    "publisherName": "TransTrack Medical Software"
+    "artifactName": "TransTrack-Evaluation-${version}-${arch}.${ext}"
   },
   "mac": {
     "target": [
@@ -46,9 +43,7 @@
     "entitlements": "electron/assets/entitlements.mac.plist",
     "entitlementsInherit": "electron/assets/entitlements.mac.plist",
     "artifactName": "TransTrack-Evaluation-${version}-${arch}.${ext}",
-    "notarize": {
-      "teamId": "${APPLE_TEAM_ID}"
-    }
+    "notarize": false
   },
   "linux": {
     "target": ["AppImage", "deb"],

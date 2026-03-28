@@ -596,6 +596,9 @@ async function initDatabase() {
   
   // Seed default data if needed
   await seedDefaultData(defaultOrg.id);
+
+  // Seed demo data for evaluation builds so buyers see a populated system
+  seedDemoData(defaultOrg.id);
   
   if (process.env.NODE_ENV === 'development') {
     console.log('Encrypted database initialized successfully');
@@ -689,6 +692,106 @@ async function seedDefaultData(defaultOrgId) {
       now
     );
   }
+}
+
+// =========================================================================
+// DEMO DATA SEEDING (Evaluation builds only)
+// =========================================================================
+
+function seedDemoData(orgId) {
+  const { getCurrentBuildVersion } = require('../license/tiers.cjs');
+  if (getCurrentBuildVersion() !== 'evaluation') return;
+
+  const existing = db.prepare('SELECT COUNT(*) as count FROM patients WHERE org_id = ?').get(orgId);
+  if (existing.count > 0) return;
+
+  const { v4: uuidv4 } = require('uuid');
+  const now = new Date().toISOString();
+
+  const patients = [
+    { first: 'James', last: 'Mitchell', dob: '1958-03-14', blood: 'O+', organ: 'Kidney', urgency: 'high', status: 'active', meld: null, las: null, waitlist: '2025-06-10', hla: 'A2,A24,B7,B44,DR15,DR4', weight: 82, height: 178, diagnosis: 'End-stage renal disease (ESRD)', comorbidities: '["Type 2 Diabetes","Hypertension"]' },
+    { first: 'Sarah', last: 'Chen', dob: '1972-08-22', blood: 'A+', organ: 'Liver', urgency: 'critical', status: 'active', meld: 34, las: null, waitlist: '2025-09-01', hla: 'A1,A3,B8,B35,DR3,DR11', weight: 61, height: 163, diagnosis: 'Hepatocellular carcinoma with cirrhosis', comorbidities: '["Hepatitis C"]' },
+    { first: 'Robert', last: 'Johnson', dob: '1965-11-30', blood: 'B+', organ: 'Heart', urgency: 'critical', status: 'active', meld: null, las: null, waitlist: '2025-11-15', hla: 'A2,A11,B27,B51,DR1,DR7', weight: 90, height: 183, diagnosis: 'Dilated cardiomyopathy, NYHA Class IV', comorbidities: '["Atrial Fibrillation","Chronic Kidney Disease Stage 3"]' },
+    { first: 'Maria', last: 'Garcia', dob: '1980-05-17', blood: 'O-', organ: 'Lung', urgency: 'high', status: 'active', meld: null, las: 68.5, waitlist: '2025-07-20', hla: 'A29,A31,B44,B60,DR7,DR13', weight: 55, height: 160, diagnosis: 'Idiopathic pulmonary fibrosis', comorbidities: '["GERD"]' },
+    { first: 'William', last: 'Thompson', dob: '1970-01-08', blood: 'A-', organ: 'Kidney', urgency: 'medium', status: 'active', meld: null, las: null, waitlist: '2024-12-01', hla: 'A2,A68,B14,B57,DR4,DR13', weight: 95, height: 188, diagnosis: 'Polycystic kidney disease', comorbidities: '["Hypertension","Sleep Apnea"]' },
+    { first: 'Emily', last: 'Davis', dob: '1988-09-25', blood: 'AB+', organ: 'Liver', urgency: 'medium', status: 'active', meld: 22, las: null, waitlist: '2026-01-10', hla: 'A1,A24,B8,B51,DR3,DR4', weight: 68, height: 170, diagnosis: 'Primary sclerosing cholangitis', comorbidities: '["Ulcerative Colitis"]' },
+    { first: 'Michael', last: 'Wilson', dob: '1955-07-03', blood: 'O+', organ: 'Heart', urgency: 'high', status: 'active', meld: null, las: null, waitlist: '2025-10-05', hla: 'A3,A32,B7,B62,DR15,DR11', weight: 78, height: 175, diagnosis: 'Ischemic cardiomyopathy post-MI', comorbidities: '["Type 2 Diabetes","Peripheral Vascular Disease"]' },
+    { first: 'Jennifer', last: 'Martinez', dob: '1975-12-11', blood: 'B-', organ: 'Kidney', urgency: 'low', status: 'active', meld: null, las: null, waitlist: '2025-03-15', hla: 'A11,A26,B35,B38,DR1,DR8', weight: 70, height: 165, diagnosis: 'Lupus nephritis Stage V', comorbidities: '["Systemic Lupus Erythematosus"]' },
+    { first: 'David', last: 'Anderson', dob: '1962-04-19', blood: 'A+', organ: 'Lung', urgency: 'medium', status: 'active', meld: null, las: 45.2, waitlist: '2025-08-28', hla: 'A2,A30,B13,B44,DR7,DR15', weight: 73, height: 172, diagnosis: 'Chronic obstructive pulmonary disease', comorbidities: '["Osteoporosis","Depression"]' },
+    { first: 'Lisa', last: 'Taylor', dob: '1983-06-28', blood: 'O+', organ: 'Liver', urgency: 'high', status: 'active', meld: 28, las: null, waitlist: '2025-12-20', hla: 'A1,A2,B57,B58,DR4,DR7', weight: 58, height: 158, diagnosis: 'Alcoholic liver disease with acute-on-chronic failure', comorbidities: '["Malnutrition","Coagulopathy"]' },
+    { first: 'Thomas', last: 'Brown', dob: '1968-10-02', blood: 'AB-', organ: 'Kidney', urgency: 'medium', status: 'inactive', meld: null, las: null, waitlist: '2025-04-10', hla: 'A24,A33,B14,B27,DR1,DR11', weight: 88, height: 180, diagnosis: 'IgA nephropathy', comorbidities: '["Hypertension"]' },
+    { first: 'Patricia', last: 'Lee', dob: '1990-02-14', blood: 'A+', organ: 'Heart', urgency: 'medium', status: 'active', meld: null, las: null, waitlist: '2026-02-01', hla: 'A3,A11,B7,B35,DR3,DR15', weight: 62, height: 167, diagnosis: 'Restrictive cardiomyopathy', comorbidities: '["Amyloidosis"]' },
+  ];
+
+  const insertPatient = db.prepare(`
+    INSERT INTO patients (id, org_id, patient_id, first_name, last_name, date_of_birth, blood_type, organ_needed, medical_urgency, waitlist_status, date_added_to_waitlist, hla_typing, meld_score, las_score, weight_kg, height_cm, diagnosis, comorbidities, psychological_clearance, compliance_score, created_at, updated_at, created_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, 'system')
+  `);
+
+  for (let i = 0; i < patients.length; i++) {
+    const p = patients[i];
+    insertPatient.run(
+      uuidv4(), orgId, `PT-${String(1001 + i).padStart(4, '0')}`,
+      p.first, p.last, p.dob, p.blood, p.organ, p.urgency, p.status,
+      p.waitlist, p.hla, p.meld, p.las, p.weight, p.height,
+      p.diagnosis, p.comorbidities, 85 + Math.floor(Math.random() * 15),
+      now, now
+    );
+  }
+
+  const donors = [
+    { organ: 'Kidney', blood: 'O+', hla: 'A2,A24,B7,B35,DR15,DR7', age: 34, weight: 80, height: 176, cause: 'Motor vehicle accident', condition: 'Excellent', quality: 'Standard', hospital: 'Memorial General Hospital' },
+    { organ: 'Liver', blood: 'A+', hla: 'A1,A3,B8,B44,DR3,DR4', age: 28, weight: 65, height: 168, cause: 'Cerebrovascular accident', condition: 'Good', quality: 'Standard', hospital: 'University Medical Center' },
+    { organ: 'Heart', blood: 'O+', hla: 'A2,A3,B7,B51,DR1,DR15', age: 22, weight: 75, height: 180, cause: 'Traumatic brain injury', condition: 'Excellent', quality: 'Optimal', hospital: 'St. Francis Trauma Center' },
+  ];
+
+  const insertDonor = db.prepare(`
+    INSERT INTO donor_organs (id, org_id, donor_id, organ_type, blood_type, hla_typing, donor_age, donor_weight_kg, donor_height_cm, cause_of_death, organ_condition, organ_quality, organ_status, status, recovery_hospital, recovery_date, created_at, updated_at, created_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'available', 'available', ?, ?, ?, ?, 'system')
+  `);
+
+  for (let i = 0; i < donors.length; i++) {
+    const d = donors[i];
+    insertDonor.run(
+      uuidv4(), orgId, `DN-${String(2001 + i).padStart(4, '0')}`,
+      d.organ, d.blood, d.hla, d.age, d.weight, d.height,
+      d.cause, d.condition, d.quality, d.hospital,
+      '2026-03-' + String(20 + i).padStart(2, '0'),
+      now, now
+    );
+  }
+
+  const adminUser = db.prepare('SELECT id FROM users WHERE org_id = ? AND role = ? LIMIT 1').get(orgId, 'admin');
+  const adminId = adminUser?.id || 'system';
+
+  const barriers = [
+    { patient: 0, type: 'INSURANCE_CLEARANCE', notes: 'Pending pre-authorization for transplant', status: 'in_progress', risk: 'moderate', role: 'financial' },
+    { patient: 2, type: 'PENDING_TESTING', notes: 'Cardiac catheterization required before listing', status: 'open', risk: 'high', role: 'coordinator' },
+    { patient: 3, type: 'CAREGIVER_SUPPORT', notes: 'Caregiver plan needs finalization', status: 'in_progress', risk: 'low', role: 'social_work' },
+    { patient: 6, type: 'PENDING_TESTING', notes: 'Requires 30-day antibiotic course', status: 'open', risk: 'high', role: 'coordinator' },
+    { patient: 9, type: 'PSYCHOSOCIAL_FOLLOWUP', notes: '6-month sobriety verification per protocol', status: 'in_progress', risk: 'high', role: 'social_work' },
+  ];
+
+  const insertBarrier = db.prepare(`
+    INSERT INTO readiness_barriers (id, org_id, patient_id, barrier_type, status, risk_level, owning_role, notes, created_by, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  const patientIds = db.prepare('SELECT id FROM patients WHERE org_id = ? ORDER BY created_at').all(orgId);
+  for (const b of barriers) {
+    if (patientIds[b.patient]) {
+      insertBarrier.run(
+        uuidv4(), orgId, patientIds[b.patient].id,
+        b.type, b.status, b.risk, b.role, b.notes, adminId, now, now
+      );
+    }
+  }
+
+  const auditId = uuidv4();
+  db.prepare(`
+    INSERT INTO audit_logs (id, org_id, action, entity_type, details, user_email, user_role, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(auditId, orgId, 'demo_data_loaded', 'System', 'Demo data seeded for evaluation', 'system', 'system', now);
 }
 
 // =========================================================================
