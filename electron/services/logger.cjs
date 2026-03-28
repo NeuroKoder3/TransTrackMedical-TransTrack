@@ -81,7 +81,7 @@ function write(level, message, meta) {
   // Mirror to console in dev
   if (!app.isPackaged) {
     const consoleFn = level === 'error' ? console.error : level === 'warn' ? console.warn : console.log;
-    consoleFn(`[${level.toUpperCase()}] ${message}`, Object.keys(meta).length ? meta : '');
+    consoleFn(`[${level.toUpperCase()}] ${message}`, meta && Object.keys(meta).length ? meta : '');
   }
 }
 

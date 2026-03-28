@@ -11,11 +11,17 @@
 
 'use strict';
 
-const { notarize } = require('@electron/notarize');
-
 exports.default = async function notarizing(context) {
   const { electronPlatformName, appOutDir } = context;
   if (electronPlatformName !== 'darwin') return;
+
+  let notarize;
+  try {
+    notarize = require('@electron/notarize').notarize;
+  } catch {
+    console.warn('Skipping notarization: @electron/notarize not installed');
+    return;
+  }
 
   const appleId = process.env.APPLE_ID;
   const appleIdPassword = process.env.APPLE_APP_PASSWORD;
