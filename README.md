@@ -243,8 +243,8 @@ npm run build:electron
 ## Quick Start (Evaluation)
 
 1. Launch **TransTrack**
-2. Login: `admin@transtrac.local` / `Admin123!`
-3. Change your password (Settings → Security)
+2. Login: `admin@transtrack.local` / `TransTrack#Admin2026!`
+3. Change your password on first login (you will be prompted automatically)
 4. Explore features using sample/test data
 5. Contact us: [Trans_Track@outlook.com](mailto:Trans_Track@outlook.com)
 

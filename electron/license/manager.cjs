@@ -404,6 +404,14 @@ function validateLicenseData(license) {
  * Check if license is valid for current use
  */
 function isLicenseValid() {
+  // Owner bypass — only available in unpackaged development builds
+  if (!app.isPackaged) {
+    const ownerFlagPath = path.join(app.getPath('userData'), '.transtrack-owner');
+    if (fs.existsSync(ownerFlagPath)) {
+      return true;
+    }
+  }
+
   // Evaluation build has different rules
   if (isEvaluationBuild()) {
     return !isEvaluationExpired() || isInEvaluationGracePeriod();
@@ -602,6 +610,26 @@ function getLicenseInfo() {
     const isEvalBuild = isEvaluationBuild();
     const license = readLicenseFile();
     const orgInfo = getOrganizationInfo();
+
+    // Owner bypass — only available in unpackaged development builds
+    if (!app.isPackaged) {
+      const ownerFlagPath = path.join(app.getPath('userData'), '.transtrack-owner');
+      if (fs.existsSync(ownerFlagPath)) {
+        return {
+          buildVersion: BUILD_VERSION.ENTERPRISE,
+          isLicensed: true,
+          isEvaluation: false,
+          tier: LICENSE_TIER.ENTERPRISE,
+          tierName: 'Enterprise (Owner)',
+          orgId: orgInfo.id,
+          orgName: orgInfo.name || 'Owner',
+          limits: getTierLimits(LICENSE_TIER.ENTERPRISE),
+          features: getEnabledFeatures(LICENSE_TIER.ENTERPRISE),
+          canActivate: false,
+          canUpgrade: false,
+        };
+      }
+    }
     
     // Evaluation build
     if (isEvalBuild) {

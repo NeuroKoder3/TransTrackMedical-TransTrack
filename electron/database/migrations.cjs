@@ -42,16 +42,19 @@ const MIGRATIONS = [
     version: 3,
     name: 'add_schema_version_setting',
     description: 'Record schema version in settings for external tools',
-    rollbackSql: "DELETE FROM settings WHERE key = 'schema_version' AND org_id = 'SYSTEM'",
+    rollbackSql: "DELETE FROM settings WHERE key = 'schema_version'",
     up(db) {
       const { v4: uuidv4 } = require('uuid');
       const existing = db.prepare(
         "SELECT id FROM settings WHERE key = 'schema_version' LIMIT 1"
       ).get();
       if (!existing) {
-        db.prepare(
-          "INSERT INTO settings (id, org_id, key, value, updated_at) VALUES (?, 'SYSTEM', 'schema_version', '3', datetime('now'))"
-        ).run(uuidv4());
+        const org = db.prepare("SELECT id FROM organizations LIMIT 1").get();
+        if (org) {
+          db.prepare(
+            "INSERT INTO settings (id, org_id, key, value, updated_at) VALUES (?, ?, 'schema_version', '3', datetime('now'))"
+          ).run(uuidv4(), org.id);
+        }
       }
     },
   },

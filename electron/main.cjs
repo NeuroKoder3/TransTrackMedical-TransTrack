@@ -12,6 +12,7 @@
 
 const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron');
 const path = require('path');
+const fs = require('fs');
 const { initDatabase, closeDatabase, getDefaultOrganization, getOrgLicense } = require('./database/init.cjs');
 const { setupIPCHandlers } = require('./ipc/handlers.cjs');
 const { 
@@ -266,6 +267,15 @@ function checkEnterpriseLicense() {
   // Evaluation builds don't need license check (they have evaluation restrictions)
   if (buildVersion === BUILD_VERSION.EVALUATION) {
     return null; // OK, evaluation restrictions apply elsewhere
+  }
+
+  // Owner bypass — only available in unpackaged development builds
+  if (!app.isPackaged) {
+    const ownerFlagPath = path.join(app.getPath('userData'), '.transtrack-owner');
+    if (fs.existsSync(ownerFlagPath)) {
+      logger.info('Owner bypass active — skipping license check (dev build)');
+      return null;
+    }
   }
   
   // Enterprise build - require valid license
