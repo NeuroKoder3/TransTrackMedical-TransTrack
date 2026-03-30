@@ -64,7 +64,8 @@
     "test:compliance": "node tests/compliance.test.cjs",
     "test:load": "node tests/load-test.cjs",
     "test:e2e": "npx playwright test",
-    "test:all": "npm run test && npm run test:load",
+    "test:components": "npx vitest run",
+    "test:all": "npm run test && npm run test:load && npm run test:components",
     "lint": "eslint . --quiet",
     "lint:fix": "eslint . --fix",
     "audit": "npm audit --production",
@@ -149,6 +150,9 @@
   },
   "devDependencies": {
     "@eslint/js": "9.39.2",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@types/node": "25.5.0",
     "@types/react": "18.3.27",
     "@types/react-dom": "18.3.7",
@@ -164,17 +168,13 @@
     "eslint-plugin-react-refresh": "0.5.2",
     "eslint-plugin-unused-imports": "4.3.0",
     "globals": "17.4.0",
+    "jsdom": "^29.0.1",
     "postcss": "8.5.8",
     "tailwindcss": "3.4.19",
     "typescript": "5.9.3",
     "vite": "6.4.1",
+    "vitest": "^4.1.2",
     "wait-on": "9.0.4"
-  },
-  "overrides": {
-    "picomatch": "^4.0.4"
-  },
-  "overrides": {
-    "picomatch": "^4.0.4"
   },
   "overrides": {
     "picomatch": "^4.0.4"

@@ -28,4 +28,11 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
   },
+  test: {
+    globals: true,
+    environment: 'jsdom',
+    setupFiles: ['./tests/setup-react.js'],
+    include: ['tests/components/**/*.test.{js,jsx}'],
+    css: true,
+  },
 });
