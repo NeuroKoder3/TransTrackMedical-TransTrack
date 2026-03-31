@@ -11,6 +11,7 @@ const { checkDataLimit } = require('../../license/tiers.cjs');
 const featureGate = require('../../license/featureGate.cjs');
 const shared = require('../shared.cjs');
 const { hasPermission, PERMISSIONS } = require('../../services/accessControl.cjs');
+const { logger } = require('../../services/logger.cjs');
 
 const ENTITY_PERMISSION_MAP = {
   Patient:       { view: PERMISSIONS.PATIENT_VIEW, create: PERMISSIONS.PATIENT_CREATE, update: PERMISSIONS.PATIENT_UPDATE, delete: PERMISSIONS.PATIENT_DELETE },
@@ -73,10 +74,10 @@ function register() {
       const { app } = require('electron');
       const failOpen = !app.isPackaged && process.env.NODE_ENV === 'development' && process.env.LICENSE_FAIL_OPEN === 'true';
       if (!failOpen) {
-        console.error('License check error:', licenseError.message);
+        logger.error('License check error', { error: licenseError.message });
         throw licenseError;
       }
-      console.warn('License check warning (dev mode):', licenseError.message);
+      logger.warn('License check warning (dev mode)', { error: licenseError.message });
       if (licenseError.message.includes('limit reached') || licenseError.message.includes('read-only mode')) {
         throw licenseError;
       }

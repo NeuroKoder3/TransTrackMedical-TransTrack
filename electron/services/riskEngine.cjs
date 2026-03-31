@@ -16,6 +16,7 @@ const { getDatabase } = require('../database/init.cjs');
 const readinessBarriers = require('./readinessBarriers.cjs');
 const ahhqService = require('./ahhqService.cjs');
 const labsService = require('./labsService.cjs');
+const { logger } = require('./logger.cjs');
 
 // Risk thresholds (configurable)
 const RISK_THRESHOLDS = {
@@ -196,7 +197,7 @@ function assessPatientOperationalRisk(patient) {
     }
   } catch (e) {
     // Silently continue if barriers table doesn't exist yet
-    console.log('Could not assess readiness barriers:', e.message);
+    logger.warn('Could not assess readiness barriers', { error: e.message });
   }
   
   // 6. Adult Health History Questionnaire (aHHQ) Status Risk
@@ -236,7 +237,7 @@ function assessPatientOperationalRisk(patient) {
     }
   } catch (e) {
     // Silently continue if aHHQ table doesn't exist yet
-    console.log('Could not assess aHHQ status:', e.message);
+    logger.warn('Could not assess aHHQ status', { error: e.message });
   }
   
   // 7. Lab Results Documentation Status (Non-Clinical)
@@ -285,7 +286,7 @@ function assessPatientOperationalRisk(patient) {
     }
   } catch (e) {
     // Silently continue if labs table doesn't exist yet
-    console.log('Could not assess lab documentation status:', e.message);
+    logger.warn('Could not assess lab documentation status', { error: e.message });
   }
   
   // Calculate overall risk level
@@ -488,7 +489,7 @@ async function generateOperationalRiskReport() {
       topBarrierPatients: barrierDashboard.topBarrierPatients,
     };
   } catch (e) {
-    console.log('Could not generate barrier analysis:', e.message);
+    logger.warn('Could not generate barrier analysis', { error: e.message });
   }
   
   // Add aHHQ analysis (Non-Clinical Documentation Tracking)
@@ -512,7 +513,7 @@ async function generateOperationalRiskReport() {
       topPatientsWithIssues: patientsWithIssues,
     };
   } catch (e) {
-    console.log('Could not generate aHHQ analysis:', e.message);
+    logger.warn('Could not generate aHHQ analysis', { error: e.message });
   }
   
   // Generate prioritized action items
@@ -602,7 +603,7 @@ async function getRiskDashboard() {
     metrics.patientsWithBarriers = barrierDashboard.patientsWithBarriers;
     metrics.totalOpenBarriers = barrierDashboard.totalOpenBarriers;
   } catch (e) {
-    console.log('Could not get barrier dashboard:', e.message);
+    logger.warn('Could not get barrier dashboard', { error: e.message });
   }
   
   // Get aHHQ dashboard for overall metrics
@@ -614,7 +615,7 @@ async function getRiskDashboard() {
     metrics.ahhqIncomplete = ahhqDashboard.incompleteCount;
     metrics.ahhqMissing = ahhqDashboard.patientsWithoutAHHQ;
   } catch (e) {
-    console.log('Could not get aHHQ dashboard:', e.message);
+    logger.warn('Could not get aHHQ dashboard', { error: e.message });
   }
   
   // Get labs dashboard for overall metrics (documentation tracking only)
@@ -629,7 +630,7 @@ async function getRiskDashboard() {
       metrics.patientsWithLabIssues = labsDashboard.patientsWithMissingLabs + labsDashboard.patientsWithExpiredLabs;
     }
   } catch (e) {
-    console.log('Could not get labs dashboard:', e.message);
+    logger.warn('Could not get labs dashboard', { error: e.message });
   }
   
   for (const patient of patients) {

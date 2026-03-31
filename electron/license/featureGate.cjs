@@ -28,6 +28,7 @@ const {
   isInEvaluationGracePeriod,
   logLicenseEvent,
 } = require('./manager.cjs');
+const { logger } = require('../services/logger.cjs');
 
 // =============================================================================
 // FEATURE GATE ERRORS
@@ -111,13 +112,13 @@ function checkApplicationState() {
     };
   } catch (error) {
     // SECURITY: Fail closed on license errors in production
-    console.error('License check error:', error.message);
+    logger.error('License check error', { error: error.message });
     
     // Only fail-open in development mode with explicit flag AND unpackaged app
     const { app } = require('electron');
     const isDevUnpackaged = !app.isPackaged && process.env.NODE_ENV === 'development' && process.env.LICENSE_FAIL_OPEN === 'true';
     if (isDevUnpackaged) {
-      console.warn('WARNING: Failing open due to LICENSE_FAIL_OPEN flag (dev only)');
+      logger.warn('Failing open due to LICENSE_FAIL_OPEN flag (dev only)');
       return {
         usable: true,
         info: null,
@@ -250,12 +251,12 @@ function canWithinLimit(limitType, currentCount) {
     };
   } catch (error) {
     // SECURITY: Fail closed on limit check errors
-    console.error('Limit check error:', error.message);
+    logger.error('Limit check error', { error: error.message });
     
     const { app } = require('electron');
     const isDevUnpackaged = !app.isPackaged && process.env.NODE_ENV === 'development' && process.env.LICENSE_FAIL_OPEN === 'true';
     if (isDevUnpackaged) {
-      console.warn('WARNING: Failing open on limit check due to LICENSE_FAIL_OPEN flag (dev only)');
+      logger.warn('Failing open on limit check due to LICENSE_FAIL_OPEN flag (dev only)');
       return {
         allowed: true,
         current: currentCount,
@@ -377,7 +378,7 @@ function isReadOnlyMode() {
     return false;
   } catch (error) {
     // If state check fails, default to not read-only (fail-open for development)
-    console.warn('Read-only mode check error, defaulting to writable:', error.message);
+    logger.warn('Read-only mode check error, defaulting to writable', { error: error.message });
     return false;
   }
 }

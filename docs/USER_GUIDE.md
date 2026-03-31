@@ -19,9 +19,9 @@ When you first launch TransTrack, you'll be prompted to log in:
 
 - **Default Administrator Account**:
   - Email: `admin@transtrack.local`
-  - Password: `admin123`
+  - Password: `TransTrack#Admin2026!`
 
-> **Important**: Change the default password immediately after first login!
+> **Important**: You will be prompted to change the default password on first login. Choose a strong password that meets the system's requirements (12+ characters, uppercase, lowercase, number, special character).
 
 ---
 
