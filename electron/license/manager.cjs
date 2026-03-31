@@ -20,6 +20,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { app } = require('electron');
+const { logger } = require('../services/logger.cjs');
 
 const {
   BUILD_VERSION,
@@ -210,7 +211,7 @@ function getEvaluationStartDate() {
         fs.writeFileSync(evalPath, startDate);
         logLicenseEvent('evaluation_started', { startDate });
       } catch (writeError) {
-        console.warn('Could not write evaluation start file:', writeError.message);
+        logger.warn('Could not write evaluation start file', { error: writeError.message });
       }
       return new Date(startDate);
     }
@@ -220,13 +221,13 @@ function getEvaluationStartDate() {
     
     // Validate the parsed date
     if (isNaN(parsedDate.getTime())) {
-      console.warn('Invalid evaluation start date in file, using current date');
+      logger.warn('Invalid evaluation start date in file, using current date');
       return new Date();
     }
     
     return parsedDate;
   } catch (error) {
-    console.warn('Error reading evaluation start date, using current date:', error.message);
+    logger.warn('Error reading evaluation start date, using current date', { error: error.message });
     return new Date();
   }
 }
@@ -284,7 +285,7 @@ function readLicenseFile() {
   try {
     return JSON.parse(fs.readFileSync(licensePath, 'utf8'));
   } catch (e) {
-    console.error('Error reading license file:', e.message);
+    logger.error('Error reading license file', { error: e.message });
     return null;
   }
 }
@@ -707,7 +708,7 @@ function getLicenseInfo() {
     };
   } catch (error) {
     // If license info fails, return safe defaults for evaluation mode
-    console.warn('Error getting license info, defaulting to evaluation:', error.message);
+    logger.warn('Error getting license info, defaulting to evaluation', { error: error.message });
     return {
       buildVersion: BUILD_VERSION.EVALUATION,
       isLicensed: false,
@@ -841,7 +842,7 @@ function logLicenseEvent(event, details = {}) {
   try {
     fs.appendFileSync(auditPath, line);
   } catch (e) {
-    console.error('Failed to write license audit log:', e.message);
+    logger.error('Failed to write license audit log', { error: e.message });
   }
 }
 
@@ -868,7 +869,7 @@ function getLicenseAuditHistory(limit = 100) {
     
     return entries.slice(-limit).reverse();
   } catch (e) {
-    console.error('Failed to read license audit log:', e.message);
+    logger.error('Failed to read license audit log', { error: e.message });
     return [];
   }
 }

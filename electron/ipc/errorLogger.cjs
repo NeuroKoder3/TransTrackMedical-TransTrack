@@ -112,7 +112,9 @@ function createLogger(context) {
         ...redactSensitive(data || {}),
       };
       writeLog(entry);
-      console.warn(`[${context}] ${message}`);
+      if (!app.isPackaged) {
+        console.warn(`[${context}] ${message}`);
+      }
     },
 
     error(message, error, data) {
@@ -126,7 +128,9 @@ function createLogger(context) {
         ...redactSensitive(data || {}),
       };
       writeLog(entry);
-      console.error(`[${context}] ${message}:`, error instanceof Error ? error.message : error);
+      if (!app.isPackaged) {
+        console.error(`[${context}] ${message}:`, error instanceof Error ? error.message : error);
+      }
     },
 
     audit(action, details) {

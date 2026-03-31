@@ -11,6 +11,7 @@ const crypto = require('crypto');
 const { app } = require('electron');
 const { getDatabase, getDatabasePath } = require('../database/init.cjs');
 const { v4: uuidv4 } = require('uuid');
+const { logger } = require('./logger.cjs');
 
 // Recovery configuration
 const RECOVERY_CONFIG = {
@@ -133,7 +134,7 @@ function listBackups() {
         
         backups.push(metadata);
       } catch (e) {
-        console.error('Error reading backup metadata:', file, e);
+        logger.error('Error reading backup metadata', { file, error: e.message });
       }
     }
   }
@@ -322,7 +323,7 @@ async function cleanupOldBackups() {
         if (fs.existsSync(backupPath)) fs.unlinkSync(backupPath);
         if (fs.existsSync(metadataPath)) fs.unlinkSync(metadataPath);
       } catch (e) {
-        console.error('Error deleting old backup:', backup.fileName, e);
+        logger.error('Error deleting old backup', { fileName: backup.fileName, error: e.message });
       }
     }
     
@@ -375,7 +376,7 @@ async function exportForExternalBackup() {
     try {
       exportData.tables[table] = db.prepare(`SELECT * FROM ${table}`).all();
     } catch (e) {
-      console.error(`Error exporting table ${table}:`, e);
+      logger.error(`Error exporting table ${table}`, { error: e.message });
     }
   }
   

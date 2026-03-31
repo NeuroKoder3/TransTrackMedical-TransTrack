@@ -115,13 +115,13 @@ function createMainWindow() {
     const parsedUrl = new URL(url);
     if (parsedUrl.protocol !== 'file:' && !url.startsWith('http://localhost')) {
       event.preventDefault();
-      console.warn('Blocked navigation to:', url);
+      logger.warn('Blocked navigation to external URL', { url });
     }
   });
 
   // Security: Block new window creation
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    console.warn('Blocked popup window:', url);
+    logger.warn('Blocked popup window', { url });
     return { action: 'deny' };
   });
 
@@ -305,7 +305,7 @@ function checkEnterpriseLicense() {
         const activated = new Date(license.activated_at);
         const maxReasonableLifetimeMs = 10 * 365.25 * 24 * 60 * 60 * 1000; // 10 years
         if (expiry.getTime() - activated.getTime() > maxReasonableLifetimeMs) {
-          console.warn('LICENSE WARNING: License expiry exceeds maximum reasonable lifetime');
+          logger.warn('LICENSE WARNING: License expiry exceeds maximum reasonable lifetime');
           return 'License validation failed. Please contact support.';
         }
       }
@@ -317,10 +317,10 @@ function checkEnterpriseLicense() {
     
     return null; // License is valid
   } catch (error) {
-    console.error('License check error:', error);
+    logger.error('License check error', { error: error.message });
     // Fail-closed: always block in production, only allow dev bypass when explicitly in dev mode
     if (isDev) {
-      console.warn('WARNING: License check failed but allowing in development mode');
+      logger.warn('License check failed but allowing in development mode');
       return null;
     }
     return 'Unable to verify license. Please contact support.';
@@ -343,7 +343,7 @@ function showLicenseRequiredDialog(message) {
   
   // Only allow "Continue Anyway" in dev mode
   if (result === 1 && isDev) {
-    console.warn('WARNING: Continuing without license in development mode');
+    logger.warn('Continuing without license in development mode');
     return false; // Don't block
   }
   
@@ -384,7 +384,7 @@ function performPeriodicLicenseCheck() {
             expiredAt: license.license_expires_at,
           });
         }
-        console.warn(`LICENSE EXPIRED: License expired on ${expiry.toLocaleDateString()}`);
+        logger.warn(`LICENSE EXPIRED: License expired on ${expiry.toLocaleDateString()}`);
       } else if (daysUntilExpiry <= LICENSE_WARNING_DAYS) {
         // License expiring soon - send warning to renderer
         if (mainWindow) {
@@ -394,7 +394,7 @@ function performPeriodicLicenseCheck() {
             daysRemaining: daysUntilExpiry,
           });
         }
-        console.warn(`LICENSE WARNING: License expires in ${daysUntilExpiry} days`);
+        logger.warn(`LICENSE WARNING: License expires in ${daysUntilExpiry} days`);
       }
     }
     
@@ -410,7 +410,7 @@ function performPeriodicLicenseCheck() {
             expiredAt: license.maintenance_expires_at,
           });
         }
-        console.warn(`MAINTENANCE EXPIRED: Maintenance support expired on ${maintenanceExpiry.toLocaleDateString()}`);
+        logger.warn(`MAINTENANCE EXPIRED: Maintenance support expired on ${maintenanceExpiry.toLocaleDateString()}`);
       } else if (daysUntilMaintExpiry <= 30) {
         if (mainWindow) {
           mainWindow.webContents.send('maintenance:expiring-soon', {
@@ -419,11 +419,11 @@ function performPeriodicLicenseCheck() {
             daysRemaining: daysUntilMaintExpiry,
           });
         }
-        console.warn(`MAINTENANCE WARNING: Maintenance support expires in ${daysUntilMaintExpiry} days`);
+        logger.warn(`MAINTENANCE WARNING: Maintenance support expires in ${daysUntilMaintExpiry} days`);
       }
     }
   } catch (error) {
-    console.error('Periodic license check error:', error.message);
+    logger.error('Periodic license check error', { error: error.message });
   }
 }
 
@@ -436,7 +436,7 @@ function startPeriodicLicenseCheck() {
   
   // Periodic checks
   licenseCheckInterval = setInterval(performPeriodicLicenseCheck, LICENSE_CHECK_INTERVAL_MS);
-  console.log('Periodic license check started (interval: 1 hour)');
+  logger.info('Periodic license check started (interval: 1 hour)');
 }
 
 /**
@@ -539,7 +539,7 @@ app.whenReady().then(async () => {
       }
       
       if (showLicenseRequiredDialog(licenseError)) {
-        console.log('License required - application blocked');
+        logger.info('License required - application blocked');
         app.quit();
         return;
       }
@@ -565,11 +565,12 @@ app.whenReady().then(async () => {
     
     // If evaluation build, log restriction info
     if (buildVersion === BUILD_VERSION.EVALUATION) {
-      console.log('Running in Evaluation mode - restrictions apply:');
-      console.log(`  - Max patients: ${EVALUATION_RESTRICTIONS.maxPatients}`);
-      console.log(`  - Max users: ${EVALUATION_RESTRICTIONS.maxUsers}`);
-      console.log(`  - Evaluation period: ${EVALUATION_RESTRICTIONS.maxDays} days`);
-      console.log(`  - Disabled features: ${EVALUATION_RESTRICTIONS.disabledFeatures.length}`);
+      logger.info('Running in Evaluation mode - restrictions apply', {
+        maxPatients: EVALUATION_RESTRICTIONS.maxPatients,
+        maxUsers: EVALUATION_RESTRICTIONS.maxUsers,
+        maxDays: EVALUATION_RESTRICTIONS.maxDays,
+        disabledFeatureCount: EVALUATION_RESTRICTIONS.disabledFeatures.length,
+      });
     }
   } catch (error) {
     logger.fatal('Failed to initialize application', { error: error.message, stack: error.stack });
