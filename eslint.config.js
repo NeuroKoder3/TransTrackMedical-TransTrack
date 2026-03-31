@@ -82,6 +82,7 @@ export default [
       // Disallow bare console.log/warn/error in production code.
       // Use the structured logger (electron/services/logger.cjs) instead.
       "no-console": "warn",
+      "no-console": ["warn", { allow: [] }],
 
       // Catch variables that are declared but never read
       "no-unused-vars": [
