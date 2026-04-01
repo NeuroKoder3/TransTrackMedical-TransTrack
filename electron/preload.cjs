@@ -315,6 +315,50 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getRequiredTypes: (organType) => ipcRenderer.invoke('labs:getRequiredTypes', organType),
   },
   
+  // Outcomes Tracking (ROI & Operational Metrics)
+  outcomes: {
+    getDashboard: () => ipcRenderer.invoke('outcomes:getDashboard'),
+    saveSnapshot: (periodStart, periodEnd) => ipcRenderer.invoke('outcomes:saveSnapshot', periodStart, periodEnd),
+    getSnapshots: (limit) => ipcRenderer.invoke('outcomes:getSnapshots', limit),
+    computeCurrent: (periodStart, periodEnd) => ipcRenderer.invoke('outcomes:computeCurrent', periodStart, periodEnd),
+  },
+  
+  // Predictive Inactivation Scoring (Operational Risk Indicators)
+  // NON-CLINICAL: These predictions are operational risk indicators only
+  // and do NOT affect allocation decisions or replace clinical judgment.
+  predictions: {
+    getDashboard: () => ipcRenderer.invoke('predictions:getDashboard'),
+    runAll: () => ipcRenderer.invoke('predictions:runAll'),
+    getCurrent: () => ipcRenderer.invoke('predictions:getCurrent'),
+    getPatientHistory: (patientId, limit) => ipcRenderer.invoke('predictions:getPatientHistory', patientId, limit),
+  },
+  
+  // Automated Task Engine with Escalation
+  tasks: {
+    create: (taskData) => ipcRenderer.invoke('tasks:create', taskData),
+    update: (taskId, updates) => ipcRenderer.invoke('tasks:update', taskId, updates),
+    delete: (taskId) => ipcRenderer.invoke('tasks:delete', taskId),
+    getAll: (filters) => ipcRenderer.invoke('tasks:getAll', filters),
+    getByPatient: (patientId, includeCompleted) => ipcRenderer.invoke('tasks:getByPatient', patientId, includeCompleted),
+    getDashboard: () => ipcRenderer.invoke('tasks:getDashboard'),
+    generateAuto: () => ipcRenderer.invoke('tasks:generateAuto'),
+    processEscalations: () => ipcRenderer.invoke('tasks:processEscalations'),
+    getEscalationRules: () => ipcRenderer.invoke('tasks:getEscalationRules'),
+    saveEscalationRule: (ruleData) => ipcRenderer.invoke('tasks:saveEscalationRule', ruleData),
+    deleteEscalationRule: (ruleId) => ipcRenderer.invoke('tasks:deleteEscalationRule', ruleId),
+  },
+  
+  // SRTR/CMS Readiness Tracking
+  // NON-CLINICAL: These metrics are operational approximations and
+  // do NOT replace official SRTR reports or CMS survey data.
+  srtr: {
+    getDashboard: () => ipcRenderer.invoke('srtr:getDashboard'),
+    saveSnapshot: (periodLabel) => ipcRenderer.invoke('srtr:saveSnapshot', periodLabel),
+    getHistory: (limit) => ipcRenderer.invoke('srtr:getHistory', limit),
+    getCMSChecklist: () => ipcRenderer.invoke('srtr:getCMSChecklist'),
+    computeCurrent: () => ipcRenderer.invoke('srtr:computeCurrent'),
+  },
+  
   // Transplant Clock (Operational Activity Rhythm)
   // The Transplant Clock provides real-time operational awareness for transplant
   // coordination teams. It acts as a visual heartbeat of the program.
