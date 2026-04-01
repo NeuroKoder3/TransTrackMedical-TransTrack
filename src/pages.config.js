@@ -10,6 +10,10 @@ import EHRIntegration from './pages/EHRIntegration';
 import RiskDashboard from './pages/RiskDashboard';
 import ComplianceCenter from './pages/ComplianceCenter';
 import DisasterRecovery from './pages/DisasterRecovery';
+import OutcomesDashboard from './pages/OutcomesDashboard';
+import PredictiveRisk from './pages/PredictiveRisk';
+import TaskCenter from './pages/TaskCenter';
+import CMSReadiness from './pages/CMSReadiness';
 import __Layout from './Layout.jsx';
 
 
@@ -26,6 +30,10 @@ export const PAGES = {
     "RiskDashboard": RiskDashboard,
     "ComplianceCenter": ComplianceCenter,
     "DisasterRecovery": DisasterRecovery,
+    "OutcomesDashboard": OutcomesDashboard,
+    "PredictiveRisk": PredictiveRisk,
+    "TaskCenter": TaskCenter,
+    "CMSReadiness": CMSReadiness,
 }
 
 export const pagesConfig = {

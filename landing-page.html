@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TransTrack — Operational Intelligence for Transplant Centers</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --blue: #0288D1;
+    --blue-light: #4FC3F7;
+    --green: #7CB342;
+    --green-light: #AED581;
+    --dark: #0a0a0a;
+    --gray-50: #f8fafc;
+    --gray-100: #f1f5f9;
+    --gray-200: #e2e8f0;
+    --gray-400: #94a3b8;
+    --gray-500: #64748b;
+    --gray-700: #334155;
+    --gray-900: #0f172a;
+  }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    color: var(--gray-900);
+    background: #ffffff;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .container { max-width: 960px; margin: 0 auto; padding: 0 32px; }
+
+  /* Hero */
+  .hero {
+    background: var(--dark);
+    padding: 64px 0;
+    text-align: center;
+  }
+  .logo-mark {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 36px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    margin-bottom: 20px;
+  }
+  .logo-mark .blue { color: var(--blue-light); }
+  .logo-mark .green { color: var(--green-light); }
+  .logo-icon {
+    width: 48px; height: 48px;
+    margin-right: 8px;
+  }
+  .hero h2 {
+    color: #ffffff;
+    font-size: 20px;
+    font-weight: 400;
+    margin-bottom: 12px;
+    letter-spacing: -0.2px;
+  }
+  .hero p {
+    color: var(--gray-400);
+    font-size: 15px;
+    max-width: 640px;
+    margin: 0 auto;
+  }
+
+  /* Section */
+  section { padding: 56px 0; }
+  section + section { border-top: 1px solid var(--gray-200); }
+  h3 {
+    font-size: 22px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    letter-spacing: -0.3px;
+  }
+  .section-sub {
+    color: var(--gray-500);
+    font-size: 15px;
+    margin-bottom: 32px;
+  }
+
+  /* Screenshot Grid */
+  .screenshot-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    margin-bottom: 12px;
+  }
+  .screenshot-card {
+    border: 1px solid var(--gray-200);
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--gray-50);
+  }
+  .screenshot-card svg {
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+  .screenshot-card .caption {
+    padding: 12px 16px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--gray-700);
+    background: #ffffff;
+    border-top: 1px solid var(--gray-200);
+  }
+
+  /* Features */
+  .features-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+  .feature {
+    padding: 20px 24px;
+    background: var(--gray-50);
+    border-radius: 8px;
+    border: 1px solid var(--gray-200);
+  }
+  .feature h4 {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 6px;
+    color: var(--gray-900);
+  }
+  .feature p {
+    font-size: 13px;
+    color: var(--gray-500);
+    line-height: 1.5;
+  }
+
+  /* Compliance Bar */
+  .compliance-bar {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-top: 24px;
+  }
+  .compliance-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    border: 1px solid var(--gray-200);
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--gray-700);
+    background: #ffffff;
+  }
+  .compliance-badge .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+  }
+
+  /* Security Grid */
+  .security-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 16px;
+    margin-top: 24px;
+  }
+  .security-item {
+    padding: 20px;
+    background: var(--gray-50);
+    border-radius: 8px;
+    border: 1px solid var(--gray-200);
+  }
+  .security-item h4 {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .security-item p {
+    font-size: 12px;
+    color: var(--gray-500);
+    line-height: 1.5;
+  }
+
+  /* Contact */
+  .contact {
+    background: var(--dark);
+    padding: 48px 0;
+    text-align: center;
+  }
+  .contact h3 { color: #ffffff; margin-bottom: 8px; }
+  .contact p { color: var(--gray-400); font-size: 15px; }
+  .contact-email {
+    display: inline-block;
+    margin-top: 20px;
+    padding: 12px 32px;
+    background: var(--blue);
+    color: #ffffff;
+    text-decoration: none;
+    border-radius: 6px;
+    font-size: 15px;
+    font-weight: 500;
+  }
+
+  .footer-note {
+    text-align: center;
+    padding: 24px 0;
+    font-size: 12px;
+    color: var(--gray-400);
+  }
+
+  /* Print */
+  @media print {
+    body { font-size: 11px; }
+    .hero { padding: 32px 0; }
+    section { padding: 28px 0; }
+    .screenshot-grid { gap: 12px; }
+    .features-grid { gap: 12px; }
+    .security-grid { gap: 10px; }
+    .contact { padding: 28px 0; }
+    .contact-email { color: var(--blue); background: none; border: 1px solid var(--blue); }
+    @page { margin: 0.5in; }
+  }
+
+  @media (max-width: 700px) {
+    .screenshot-grid,
+    .features-grid { grid-template-columns: 1fr; }
+    .security-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Hero -->
+<div class="hero">
+  <div class="container">
+    <div class="logo-mark">
+      <svg class="logo-icon" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+        <rect width="512" height="512" rx="100" fill="#0a0a0a"/>
+        <path d="M256 420 C150 320 80 250 80 180 C80 120 130 80 190 80 C230 80 256 110 256 110" fill="none" stroke="url(#hb)" stroke-width="28" stroke-linecap="round"/>
+        <path d="M256 380 C180 300 130 250 130 200 C130 160 160 130 200 130 C230 130 256 155 256 155" fill="none" stroke="url(#hb)" stroke-width="20" stroke-linecap="round" opacity="0.8"/>
+        <path d="M256 420 C362 320 432 250 432 180 C432 120 382 80 322 80 C282 80 256 110 256 110" fill="none" stroke="url(#hg)" stroke-width="28" stroke-linecap="round"/>
+        <path d="M256 380 C332 300 382 250 382 200 C382 160 352 130 312 130 C282 130 256 155 256 155" fill="none" stroke="url(#hg)" stroke-width="20" stroke-linecap="round" opacity="0.8"/>
+        <defs>
+          <linearGradient id="hb" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#4FC3F7"/><stop offset="100%" stop-color="#0288D1"/></linearGradient>
+          <linearGradient id="hg" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#AED581"/><stop offset="100%" stop-color="#7CB342"/></linearGradient>
+        </defs>
+      </svg>
+      <span><span class="blue">Trans</span><span class="green">Track</span></span>
+    </div>
+    <h2>Operational Intelligence for Transplant Centers</h2>
+    <p>The only software purpose-built for transplant waitlist risk visibility, readiness coordination, and operational oversight. Offline-first. HIPAA-ready. No cloud required.</p>
+  </div>
+</div>
+
+<!-- Problem / Value -->
+<section>
+  <div class="container">
+    <h3>The Problem</h3>
+    <p class="section-sub">Transplant candidates get inactivated not because of clinical failures, but operational ones &mdash; an expired evaluation nobody tracked, a missing insurance authorization, a coordinator overwhelmed by caseload. The EHR tracks clinical data. UNOS handles allocation. But the operational coordination layer between them is managed with spreadsheets and memory.</p>
+    <h3>What TransTrack Does</h3>
+    <p class="section-sub">TransTrack sits between your EHR and national allocation systems as a dedicated operational risk and readiness platform. It continuously monitors your entire waitlist for the problems that cause delays and inactivations &mdash; and surfaces them before they become crises.</p>
+  </div>
+</section>
+
+<!-- Screenshots -->
+<section>
+  <div class="container">
+    <h3>Product Overview</h3>
+    <p class="section-sub">A fully built, production-ready desktop application.</p>
+    <div class="screenshot-grid">
+      <div class="screenshot-card">
+        <svg xmlns="http://www.w3.org/2000/svg" width="800" height="500" viewBox="0 0 800 500"><defs><linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:#f8fafc"/><stop offset="100%" style="stop-color:#e2e8f0"/></linearGradient><linearGradient id="blueGrad1" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:#4FC3F7"/><stop offset="100%" style="stop-color:#0288D1"/></linearGradient><linearGradient id="greenGrad1" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:#AED581"/><stop offset="100%" style="stop-color:#7CB342"/></linearGradient></defs><rect width="800" height="500" fill="url(#bg)"/><rect x="0" y="0" width="800" height="60" fill="#0a0a0a"/><g transform="translate(20, 8)"><rect width="44" height="44" rx="8" fill="#0a0a0a"/><path d="M22 38 C14 30 8 24 8 18 C8 13 12 9 17 9 C20 9 22 11 22 11" fill="none" stroke="url(#blueGrad1)" stroke-width="3" stroke-linecap="round"/><path d="M22 38 C30 30 36 24 36 18 C36 13 32 9 27 9 C24 9 22 11 22 11" fill="none" stroke="url(#greenGrad1)" stroke-width="3" stroke-linecap="round"/></g><text x="72" y="37" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="#4FC3F7">Trans</text><text x="117" y="37" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="#AED581">Track</text><text x="200" y="37" font-family="Arial, sans-serif" font-size="13" fill="#94a3b8">Dashboard</text><text x="300" y="37" font-family="Arial, sans-serif" font-size="13" fill="#94a3b8">Patients</text><text x="380" y="37" font-family="Arial, sans-serif" font-size="13" fill="#94a3b8">Donor Matching</text><text x="510" y="37" font-family="Arial, sans-serif" font-size="13" fill="#94a3b8">Reports</text><text x="40" y="110" font-family="Arial, sans-serif" font-size="24" font-weight="bold" fill="#0f172a">Waitlist Dashboard</text><text x="40" y="135" font-family="Arial, sans-serif" font-size="14" fill="#64748b">Real-time transplant prioritization</text><rect x="40" y="160" width="170" height="90" rx="8" fill="#ffffff" stroke="#e2e8f0"/><text x="60" y="190" font-family="Arial, sans-serif" font-size="12" fill="#64748b">Total Patients</text><text x="60" y="225" font-family="Arial, sans-serif" font-size="28" font-weight="bold" fill="#0f172a">156</text><rect x="230" y="160" width="170" height="90" rx="8" fill="#ecfdf5" stroke="#a7f3d0"/><text x="250" y="190" font-family="Arial, sans-serif" font-size="12" fill="#047857">Active on List</text><text x="250" y="225" font-family="Arial, sans-serif" font-size="28" font-weight="bold" fill="#065f46">124</text><rect x="420" y="160" width="170" height="90" rx="8" fill="#fef2f2" stroke="#fecaca"/><text x="440" y="190" font-family="Arial, sans-serif" font-size="12" fill="#dc2626">Critical Priority</text><text x="440" y="225" font-family="Arial, sans-serif" font-size="28" font-weight="bold" fill="#991b1b">18</text><rect x="610" y="160" width="150" height="90" rx="8" fill="#eff6ff" stroke="#bfdbfe"/><text x="630" y="190" font-family="Arial, sans-serif" font-size="12" fill="#2563eb">Transplanted</text><text x="630" y="225" font-family="Arial, sans-serif" font-size="28" font-weight="bold" fill="#1e40af">32</text><rect x="40" y="280" width="230" height="180" rx="8" fill="#ffffff" stroke="#e2e8f0"/><rect x="50" y="295" width="40" height="40" rx="20" fill="#0288D1"/><text x="100" y="315" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#0f172a">John Smith</text><text x="100" y="332" font-family="Arial, sans-serif" font-size="12" fill="#64748b">PT-2024-001</text><rect x="50" y="350" width="50" height="22" rx="4" fill="#fef2f2"/><text x="58" y="365" font-family="Arial, sans-serif" font-size="11" fill="#dc2626">Critical</text><rect x="110" y="350" width="35" height="22" rx="4" fill="#dbeafe"/><text x="118" y="365" font-family="Arial, sans-serif" font-size="11" fill="#2563eb">O+</text><text x="50" y="400" font-family="Arial, sans-serif" font-size="12" fill="#64748b">Kidney</text><text x="50" y="420" font-family="Arial, sans-serif" font-size="12" fill="#64748b">Priority: </text><text x="100" y="420" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#dc2626">94</text><rect x="285" y="280" width="230" height="180" rx="8" fill="#ffffff" stroke="#e2e8f0"/><rect x="295" y="295" width="40" height="40" rx="20" fill="#0288D1"/><text x="345" y="315" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#0f172a">Sarah Johnson</text><text x="345" y="332" font-family="Arial, sans-serif" font-size="12" fill="#64748b">PT-2024-002</text><rect x="295" y="350" width="40" height="22" rx="4" fill="#fef3c7"/><text x="303" y="365" font-family="Arial, sans-serif" font-size="11" fill="#d97706">High</text><rect x="345" y="350" width="35" height="22" rx="4" fill="#dbeafe"/><text x="353" y="365" font-family="Arial, sans-serif" font-size="11" fill="#2563eb">A-</text><text x="295" y="400" font-family="Arial, sans-serif" font-size="12" fill="#64748b">Liver</text><text x="295" y="420" font-family="Arial, sans-serif" font-size="12" fill="#64748b">Priority: </text><text x="345" y="420" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#f59e0b">78</text><rect x="530" y="280" width="230" height="180" rx="8" fill="#ffffff" stroke="#e2e8f0"/><rect x="540" y="295" width="40" height="40" rx="20" fill="#7CB342"/><text x="590" y="315" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#0f172a">Michael Brown</text><text x="590" y="332" font-family="Arial, sans-serif" font-size="12" fill="#64748b">PT-2024-003</text><rect x="540" y="350" width="55" height="22" rx="4" fill="#dcfce7"/><text x="548" y="365" font-family="Arial, sans-serif" font-size="11" fill="#16a34a">Medium</text><rect x="605" y="350" width="35" height="22" rx="4" fill="#dbeafe"/><text x="610" y="365" font-family="Arial, sans-serif" font-size="11" fill="#2563eb">B+</text><text x="540" y="400" font-family="Arial, sans-serif" font-size="12" fill="#64748b">Heart</text><text x="540" y="420" font-family="Arial, sans-serif" font-size="12" fill="#64748b">Priority: </text><text x="590" y="420" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#16a34a">52</text><rect x="40" y="475" width="50" height="18" rx="3" fill="#ffffff" stroke="#e2e8f0"/><text x="50" y="487" font-family="Arial, sans-serif" font-size="10" fill="#64748b">HIPAA</text><rect x="100" y="475" width="100" height="18" rx="3" fill="#ffffff" stroke="#e2e8f0"/><text x="110" y="487" font-family="Arial, sans-serif" font-size="10" fill="#64748b">FDA 21 CFR 11</text><rect x="210" y="475" width="45" height="18" rx="3" fill="#ffffff" stroke="#e2e8f0"/><text x="220" y="487" font-family="Arial, sans-serif" font-size="10" fill="#64748b">AATB</text></svg>
+        <div class="caption">Waitlist Dashboard &mdash; Real-time patient prioritization with organ-specific scoring</div>
+      </div>
+      <div class="screenshot-card">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500"><defs><linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:#f8fafc"/><stop offset="100%" style="stop-color:#e2e8f0"/></linearGradient><linearGradient id="blueGrad2" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:#4FC3F7"/><stop offset="100%" style="stop-color:#0288D1"/></linearGradient><linearGradient id="greenGrad2" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:#AED581"/><stop offset="100%" style="stop-color:#7CB342"/></linearGradient></defs><rect width="800" height="500" fill="url(#bgGrad)"/><rect x="0" y="0" width="800" height="60" fill="#0a0a0a"/><g transform="translate(20, 8)"><path d="M22 38 C14 30 8 24 8 18 C8 13 12 9 17 9 C20 9 22 11 22 11" fill="none" stroke="url(#blueGrad2)" stroke-width="3" stroke-linecap="round"/><path d="M22 38 C30 30 36 24 36 18 C36 13 32 9 27 9 C24 9 22 11 22 11" fill="none" stroke="url(#greenGrad2)" stroke-width="3" stroke-linecap="round"/></g><text x="70" y="32" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#4FC3F7">Trans</text><text x="115" y="32" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#AED581">Track</text><text x="170" y="32" font-family="Arial, sans-serif" font-size="18" fill="#ffffff"> - Operational Risk Intelligence</text><rect x="20" y="80" width="180" height="100" rx="8" fill="#fef2f2" stroke="#fecaca"/><text x="35" y="110" font-family="Arial, sans-serif" font-size="12" fill="#b91c1c">Evaluations Expiring</text><text x="35" y="150" font-family="Arial, sans-serif" font-size="36" font-weight="bold" fill="#7f1d1d">12</text><text x="35" y="170" font-family="Arial, sans-serif" font-size="10" fill="#dc2626">Within 30 days</text><rect x="215" y="80" width="180" height="100" rx="8" fill="#fff7ed" stroke="#fed7aa"/><text x="230" y="110" font-family="Arial, sans-serif" font-size="12" fill="#c2410c">Stale Documentation</text><text x="230" y="150" font-family="Arial, sans-serif" font-size="36" font-weight="bold" fill="#7c2d12">8</text><text x="230" y="170" font-family="Arial, sans-serif" font-size="10" fill="#ea580c">No updates 60+ days</text><rect x="410" y="80" width="180" height="100" rx="8" fill="#fefce8" stroke="#fef08a"/><text x="425" y="110" font-family="Arial, sans-serif" font-size="12" fill="#a16207">Incomplete Records</text><text x="425" y="150" font-family="Arial, sans-serif" font-size="36" font-weight="bold" fill="#713f12">5</text><text x="425" y="170" font-family="Arial, sans-serif" font-size="10" fill="#ca8a04">Missing critical data</text><rect x="605" y="80" width="180" height="100" rx="8" fill="#ecfeff" stroke="#a5f3fc"/><text x="620" y="110" font-family="Arial, sans-serif" font-size="12" fill="#0e7490">At-Risk Patients</text><text x="620" y="150" font-family="Arial, sans-serif" font-size="36" font-weight="bold" fill="#164e63">25</text><text x="700" y="150" font-family="Arial, sans-serif" font-size="16" fill="#0288D1">(18%)</text><text x="620" y="170" font-family="Arial, sans-serif" font-size="10" fill="#06b6d4">Of 142 active</text><rect x="20" y="200" width="120" height="35" rx="4" fill="#0288D1"/><text x="42" y="222" font-family="Arial, sans-serif" font-size="12" fill="white">At-Risk Patients</text><rect x="145" y="200" width="120" height="35" rx="4" fill="#f1f5f9"/><text x="155" y="222" font-family="Arial, sans-serif" font-size="12" fill="#64748b">Segment Analysis</text><rect x="270" y="200" width="100" height="35" rx="4" fill="#f1f5f9"/><text x="285" y="222" font-family="Arial, sans-serif" font-size="12" fill="#64748b">Action Items</text><rect x="20" y="250" width="760" height="60" rx="6" fill="white" stroke="#e2e8f0"/><text x="40" y="280" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#1e293b">John Smith</text><text x="40" y="298" font-family="Arial, sans-serif" font-size="11" fill="#64748b">MRN: PT-2024-0142</text><rect x="580" y="268" width="80" height="24" rx="4" fill="#fef2f2" stroke="#fecaca"/><text x="596" y="285" font-family="Arial, sans-serif" font-size="11" fill="#b91c1c">3 risks</text><rect x="670" y="268" width="90" height="24" rx="4" fill="#fff7ed" stroke="#fed7aa"/><text x="678" y="285" font-family="Arial, sans-serif" font-size="10" fill="#c2410c">Eval expiring</text><rect x="20" y="320" width="760" height="60" rx="6" fill="white" stroke="#e2e8f0"/><text x="40" y="350" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#1e293b">Maria Garcia</text><text x="40" y="368" font-family="Arial, sans-serif" font-size="11" fill="#64748b">MRN: PT-2024-0089</text><rect x="580" y="338" width="80" height="24" rx="4" fill="#fff7ed" stroke="#fed7aa"/><text x="596" y="355" font-family="Arial, sans-serif" font-size="11" fill="#c2410c">2 risks</text><rect x="670" y="338" width="90" height="24" rx="4" fill="#fefce8" stroke="#fef08a"/><text x="680" y="355" font-family="Arial, sans-serif" font-size="10" fill="#a16207">Stale docs</text><rect x="20" y="390" width="760" height="60" rx="6" fill="white" stroke="#e2e8f0"/><text x="40" y="420" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#1e293b">Robert Johnson</text><text x="40" y="438" font-family="Arial, sans-serif" font-size="11" fill="#64748b">MRN: PT-2024-0201</text><rect x="580" y="408" width="80" height="24" rx="4" fill="#fff7ed" stroke="#fed7aa"/><text x="596" y="425" font-family="Arial, sans-serif" font-size="11" fill="#c2410c">2 risks</text><rect x="670" y="408" width="100" height="24" rx="4" fill="#fef2f2" stroke="#fecaca"/><text x="676" y="425" font-family="Arial, sans-serif" font-size="10" fill="#b91c1c">Incomplete data</text><text x="20" y="480" font-family="Arial, sans-serif" font-size="10" fill="#94a3b8">TransTrack - Operational Risk Intelligence - Updated: Real-time</text></svg>
+        <div class="caption">Risk Dashboard &mdash; Expiring evaluations, stale documentation, and at-risk patients</div>
+      </div>
+      <div class="screenshot-card">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500"><defs><linearGradient id="bgGrad4" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:#f8fafc"/><stop offset="100%" style="stop-color:#e2e8f0"/></linearGradient><linearGradient id="blueGrad4" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:#4FC3F7"/><stop offset="100%" style="stop-color:#0288D1"/></linearGradient><linearGradient id="greenGrad4" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:#AED581"/><stop offset="100%" style="stop-color:#7CB342"/></linearGradient></defs><rect width="800" height="500" fill="url(#bgGrad4)"/><rect x="0" y="0" width="800" height="60" fill="#0a0a0a"/><g transform="translate(20, 8)"><path d="M22 38 C14 30 8 24 8 18 C8 13 12 9 17 9 C20 9 22 11 22 11" fill="none" stroke="url(#blueGrad4)" stroke-width="3" stroke-linecap="round"/><path d="M22 38 C30 30 36 24 36 18 C36 13 32 9 27 9 C24 9 22 11 22 11" fill="none" stroke="url(#greenGrad4)" stroke-width="3" stroke-linecap="round"/></g><text x="70" y="32" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#4FC3F7">Trans</text><text x="115" y="32" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#AED581">Track</text><text x="170" y="32" font-family="Arial, sans-serif" font-size="18" fill="#ffffff"> - Donor-Recipient Matching</text><rect x="20" y="80" width="350" height="180" rx="8" fill="white" stroke="#e2e8f0"/><text x="40" y="110" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#1e293b">Donor Information</text><rect x="300" y="95" width="55" height="22" rx="4" fill="#dcfce7"/><text x="310" y="110" font-family="Arial, sans-serif" font-size="10" fill="#166534">Available</text><text x="40" y="140" font-family="Arial, sans-serif" font-size="11" fill="#64748b">Donor ID</text><text x="150" y="140" font-family="Arial, sans-serif" font-size="11" font-weight="bold" fill="#1e293b">DN-2026-0089</text><text x="40" y="165" font-family="Arial, sans-serif" font-size="11" fill="#64748b">Organ</text><text x="150" y="165" font-family="Arial, sans-serif" font-size="11" font-weight="bold" fill="#1e293b">Kidney (Left)</text><text x="40" y="190" font-family="Arial, sans-serif" font-size="11" fill="#64748b">Blood Type</text><rect x="150" y="177" width="30" height="20" rx="4" fill="#fef2f2"/><text x="158" y="191" font-family="Arial, sans-serif" font-size="11" font-weight="bold" fill="#dc2626">O+</text><text x="40" y="215" font-family="Arial, sans-serif" font-size="11" fill="#64748b">HLA Typing</text><text x="150" y="215" font-family="Arial, sans-serif" font-size="10" fill="#1e293b">A2, B44, DR4, DQ8</text><text x="40" y="240" font-family="Arial, sans-serif" font-size="11" fill="#64748b">Quality Score</text><rect x="150" y="227" width="100" height="8" rx="4" fill="#e2e8f0"/><rect x="150" y="227" width="85" height="8" rx="4" fill="#7CB342"/><text x="260" y="238" font-family="Arial, sans-serif" font-size="10" fill="#166534">85%</text><rect x="390" y="80" width="390" height="400" rx="8" fill="white" stroke="#e2e8f0"/><text x="410" y="110" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#1e293b">Compatible Recipients</text><text x="410" y="128" font-family="Arial, sans-serif" font-size="11" fill="#64748b">Ranked by match score</text><rect x="410" y="145" width="350" height="70" rx="4" fill="#f0fdf4" stroke="#86efac"/><text x="430" y="170" font-family="Arial, sans-serif" font-size="13" font-weight="bold" fill="#1e293b">Sarah Williams</text><text x="430" y="188" font-family="Arial, sans-serif" font-size="10" fill="#64748b">PT-2024-0042 - Blood: O+ - Wait: 847 days</text><rect x="680" y="155" width="60" height="24" rx="4" fill="#7CB342"/><text x="695" y="171" font-family="Arial, sans-serif" font-size="12" font-weight="bold" fill="white">98%</text><text x="685" y="205" font-family="Arial, sans-serif" font-size="9" fill="#166534">Best Match</text><rect x="410" y="225" width="350" height="70" rx="4" fill="#f8fafc" stroke="#e2e8f0"/><text x="430" y="250" font-family="Arial, sans-serif" font-size="13" font-weight="bold" fill="#1e293b">Michael Chen</text><text x="430" y="268" font-family="Arial, sans-serif" font-size="10" fill="#64748b">PT-2024-0156 - Blood: O- - Wait: 612 days</text><rect x="680" y="235" width="60" height="24" rx="4" fill="#0288D1"/><text x="695" y="251" font-family="Arial, sans-serif" font-size="12" font-weight="bold" fill="white">91%</text><rect x="410" y="305" width="350" height="70" rx="4" fill="#f8fafc" stroke="#e2e8f0"/><text x="430" y="330" font-family="Arial, sans-serif" font-size="13" font-weight="bold" fill="#1e293b">Emily Rodriguez</text><text x="430" y="348" font-family="Arial, sans-serif" font-size="10" fill="#64748b">PT-2024-0203 - Blood: O+ - Wait: 423 days</text><rect x="680" y="315" width="60" height="24" rx="4" fill="#0288D1"/><text x="695" y="331" font-family="Arial, sans-serif" font-size="12" font-weight="bold" fill="white">84%</text><rect x="20" y="280" width="350" height="45" rx="8" fill="#0288D1"/><text x="130" y="308" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="white">Run Advanced Matching</text><rect x="20" y="345" width="350" height="135" rx="8" fill="white" stroke="#e2e8f0"/><text x="40" y="375" font-family="Arial, sans-serif" font-size="13" font-weight="bold" fill="#1e293b">Matching Algorithm</text><text x="40" y="400" font-family="Arial, sans-serif" font-size="10" fill="#64748b">- HLA Compatibility (40%)</text><text x="40" y="418" font-family="Arial, sans-serif" font-size="10" fill="#64748b">- Blood Type Match (25%)</text><text x="40" y="436" font-family="Arial, sans-serif" font-size="10" fill="#64748b">- Wait Time (20%)</text><text x="40" y="454" font-family="Arial, sans-serif" font-size="10" fill="#64748b">- Medical Urgency (15%)</text></svg>
+        <div class="caption">Donor Matching &mdash; HLA compatibility scoring with ranked recipient lists</div>
+      </div>
+      <div class="screenshot-card">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500"><defs><linearGradient id="bgGrad2" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:#f8fafc"/><stop offset="100%" style="stop-color:#e2e8f0"/></linearGradient><linearGradient id="blueGrad5" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:#4FC3F7"/><stop offset="100%" style="stop-color:#0288D1"/></linearGradient><linearGradient id="greenGrad5" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:#AED581"/><stop offset="100%" style="stop-color:#7CB342"/></linearGradient></defs><rect width="800" height="500" fill="url(#bgGrad2)"/><rect x="0" y="0" width="800" height="60" fill="#0a0a0a"/><g transform="translate(20, 8)"><path d="M22 38 C14 30 8 24 8 18 C8 13 12 9 17 9 C20 9 22 11 22 11" fill="none" stroke="url(#blueGrad5)" stroke-width="3" stroke-linecap="round"/><path d="M22 38 C30 30 36 24 36 18 C36 13 32 9 27 9 C24 9 22 11 22 11" fill="none" stroke="url(#greenGrad5)" stroke-width="3" stroke-linecap="round"/></g><text x="70" y="32" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#4FC3F7">Trans</text><text x="115" y="32" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#AED581">Track</text><text x="170" y="32" font-family="Arial, sans-serif" font-size="18" fill="#ffffff"> - Compliance Center</text><rect x="520" y="18" width="80" height="24" rx="12" fill="transparent" stroke="#86efac"/><text x="535" y="35" font-family="Arial, sans-serif" font-size="10" fill="#22c55e">HIPAA</text><rect x="610" y="18" width="90" height="24" rx="12" fill="transparent" stroke="#86efac"/><text x="620" y="35" font-family="Arial, sans-serif" font-size="10" fill="#22c55e">FDA 21 CFR</text><rect x="710" y="18" width="60" height="24" rx="12" fill="transparent" stroke="#86efac"/><text x="725" y="35" font-family="Arial, sans-serif" font-size="10" fill="#22c55e">AATB</text><rect x="20" y="80" width="180" height="90" rx="8" fill="white" stroke="#e2e8f0"/><text x="35" y="105" font-family="Arial, sans-serif" font-size="11" fill="#64748b">Total Patients</text><text x="35" y="140" font-family="Arial, sans-serif" font-size="32" font-weight="bold" fill="#1e293b">1,247</text><text x="35" y="158" font-family="Arial, sans-serif" font-size="10" fill="#64748b">892 active</text><rect x="215" y="80" width="180" height="90" rx="8" fill="white" stroke="#e2e8f0"/><text x="230" y="105" font-family="Arial, sans-serif" font-size="11" fill="#64748b">Audit Entries</text><text x="230" y="140" font-family="Arial, sans-serif" font-size="32" font-weight="bold" fill="#1e293b">45,892</text><text x="230" y="158" font-family="Arial, sans-serif" font-size="10" fill="#64748b">Last 30 days</text><rect x="410" y="80" width="180" height="90" rx="8" fill="white" stroke="#e2e8f0"/><text x="425" y="105" font-family="Arial, sans-serif" font-size="11" fill="#64748b">System Users</text><text x="425" y="140" font-family="Arial, sans-serif" font-size="32" font-weight="bold" fill="#1e293b">28</text><text x="425" y="158" font-family="Arial, sans-serif" font-size="10" fill="#64748b">4 administrators</text><rect x="605" y="80" width="180" height="90" rx="8" fill="white" stroke="#e2e8f0"/><text x="620" y="105" font-family="Arial, sans-serif" font-size="11" fill="#64748b">Data Completeness</text><text x="620" y="140" font-family="Arial, sans-serif" font-size="32" font-weight="bold" fill="#1e293b">94.7%</text><rect x="20" y="190" width="760" height="290" rx="8" fill="white" stroke="#e2e8f0"/><text x="40" y="220" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#1e293b">System Validation Report</text><text x="40" y="240" font-family="Arial, sans-serif" font-size="11" fill="#64748b">Formal validation status for regulatory compliance</text><text x="40" y="275" font-family="Arial, sans-serif" font-size="13" font-weight="bold" fill="#1e293b">1. System Configuration</text><rect x="40" y="290" width="720" height="35" rx="4" fill="#f8fafc"/><circle cx="60" cy="307" r="8" fill="#7CB342"/><path d="M56 307 L59 310 L65 304" stroke="white" stroke-width="2" fill="none"/><text x="80" y="312" font-family="Arial, sans-serif" font-size="12" fill="#1e293b">Database encryption</text><text x="520" y="312" font-family="Arial, sans-serif" font-size="11" fill="#64748b">SQLite with encryption enabled</text><rect x="700" y="297" width="45" height="20" rx="4" fill="#dcfce7"/><text x="710" y="311" font-family="Arial, sans-serif" font-size="10" fill="#166534">PASS</text><rect x="40" y="330" width="720" height="35" rx="4" fill="#f8fafc"/><circle cx="60" cy="347" r="8" fill="#7CB342"/><path d="M56 347 L59 350 L65 344" stroke="white" stroke-width="2" fill="none"/><text x="80" y="352" font-family="Arial, sans-serif" font-size="12" fill="#1e293b">Audit logging</text><text x="520" y="352" font-family="Arial, sans-serif" font-size="11" fill="#64748b">All data modifications logged</text><rect x="700" y="337" width="45" height="20" rx="4" fill="#dcfce7"/><text x="710" y="351" font-family="Arial, sans-serif" font-size="10" fill="#166534">PASS</text><rect x="40" y="370" width="720" height="35" rx="4" fill="#f8fafc"/><circle cx="60" cy="387" r="8" fill="#7CB342"/><path d="M56 387 L59 390 L65 384" stroke="white" stroke-width="2" fill="none"/><text x="80" y="392" font-family="Arial, sans-serif" font-size="12" fill="#1e293b">Access control</text><text x="520" y="392" font-family="Arial, sans-serif" font-size="11" fill="#64748b">Role-based access control implemented</text><rect x="700" y="377" width="45" height="20" rx="4" fill="#dcfce7"/><text x="710" y="391" font-family="Arial, sans-serif" font-size="10" fill="#166534">PASS</text><rect x="40" y="410" width="720" height="35" rx="4" fill="#f8fafc"/><circle cx="60" cy="427" r="8" fill="#7CB342"/><path d="M56 427 L59 430 L65 424" stroke="white" stroke-width="2" fill="none"/><text x="80" y="432" font-family="Arial, sans-serif" font-size="12" fill="#1e293b">Session management</text><text x="520" y="432" font-family="Arial, sans-serif" font-size="11" fill="#64748b">Secure session handling with timeout</text><rect x="700" y="417" width="45" height="20" rx="4" fill="#dcfce7"/><text x="710" y="431" font-family="Arial, sans-serif" font-size="10" fill="#166534">PASS</text><text x="40" y="465" font-family="Arial, sans-serif" font-size="10" fill="#94a3b8">All 19 validation tests passed</text></svg>
+        <div class="caption">Compliance Center &mdash; Automated validation against HIPAA, FDA 21 CFR Part 11, AATB</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Capabilities -->
+<section>
+  <div class="container">
+    <h3>Core Capabilities</h3>
+    <p class="section-sub">Purpose-built for transplant center operational workflows.</p>
+    <div class="features-grid">
+      <div class="feature">
+        <h4>Operational Risk Engine</h4>
+        <p>Continuously scores every waitlisted patient across evaluation expiry, documentation staleness, status churn, coordinator workload, and readiness barriers.</p>
+      </div>
+      <div class="feature">
+        <h4>Readiness Barrier Tracking</h4>
+        <p>Tracks non-clinical barriers (insurance, logistics, social support) that delay transplants but are invisible in clinical systems.</p>
+      </div>
+      <div class="feature">
+        <h4>Transplant Clock</h4>
+        <p>Real-time operational pulse monitor showing center health at a glance &mdash; team load, upcoming expirations, operational tempo.</p>
+      </div>
+      <div class="feature">
+        <h4>Priority Scoring</h4>
+        <p>Configurable, organ-specific priority calculation (MELD, LAS, medical urgency, time-on-list) with adjustable weights.</p>
+      </div>
+      <div class="feature">
+        <h4>Donor Matching & Simulation</h4>
+        <p>Donor organ tracking with HLA-based compatibility scoring and ranked recipient matching simulation.</p>
+      </div>
+      <div class="feature">
+        <h4>FHIR R4 EHR Integration</h4>
+        <p>Standards-based import/export with data validation, sync logging, and full integration audit trails.</p>
+      </div>
+      <div class="feature">
+        <h4>Immutable Audit Trail</h4>
+        <p>Every action logged with database-enforced immutability. Tamper-proof by design, not by policy.</p>
+      </div>
+      <div class="feature">
+        <h4>Disaster Recovery</h4>
+        <p>Automated backup and restore with encrypted archives ensuring operational continuity.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Security & Compliance -->
+<section>
+  <div class="container">
+    <h3>Security & Compliance Architecture</h3>
+    <p class="section-sub">Built for healthcare from the foundation &mdash; not bolted on after the fact.</p>
+    <div class="security-grid">
+      <div class="security-item">
+        <h4>Encrypted at Rest</h4>
+        <p>AES-256 via SQLCipher with PBKDF2-HMAC-SHA512 key derivation (256K iterations). OS-level key protection via DPAPI/Keychain.</p>
+      </div>
+      <div class="security-item">
+        <h4>Offline-First</h4>
+        <p>PHI never leaves the workstation. No cloud dependency, no network transmission in core operating mode. Simplified BAA requirements.</p>
+      </div>
+      <div class="security-item">
+        <h4>Org Isolation</h4>
+        <p>Multi-tenant architecture with enforced cross-organization data boundaries. Session-bound org context verified by automated tests.</p>
+      </div>
+      <div class="security-item">
+        <h4>RBAC + Justified Access</h4>
+        <p>Role-based access control with "break the glass" emergency access that requires documented justification.</p>
+      </div>
+      <div class="security-item">
+        <h4>Electron Hardening</h4>
+        <p>Context isolation enabled, no node integration in renderer, no remote module. Production builds disable dev tools.</p>
+      </div>
+      <div class="security-item">
+        <h4>Key Rotation</h4>
+        <p>Encryption key rotation with pre-rotation backup, PRAGMA rekey, and complete audit logging of all key operations.</p>
+      </div>
+    </div>
+    <div class="compliance-bar">
+      <div class="compliance-badge"><span class="dot"></span> HIPAA Technical Safeguards</div>
+      <div class="compliance-badge"><span class="dot"></span> FDA 21 CFR Part 11</div>
+      <div class="compliance-badge"><span class="dot"></span> AATB Standards</div>
+      <div class="compliance-badge"><span class="dot"></span> UNOS/OPTN Requirements</div>
+    </div>
+  </div>
+</section>
+
+<!-- Tech Stack -->
+<section>
+  <div class="container">
+    <h3>Technology</h3>
+    <p class="section-sub">Modern stack. No legacy debt. Ready for an engineering team to extend.</p>
+    <div class="features-grid">
+      <div class="feature">
+        <h4>Desktop Runtime</h4>
+        <p>Electron 35 with sandboxed preload, IPC isolation, and dual build pipeline (evaluation + enterprise).</p>
+      </div>
+      <div class="feature">
+        <h4>Frontend</h4>
+        <p>React 18, Vite 6, Tailwind CSS, Radix UI, Framer Motion, Recharts, React Hook Form + Zod validation.</p>
+      </div>
+      <div class="feature">
+        <h4>Database</h4>
+        <p>SQLCipher-encrypted SQLite with 22+ tables, foreign keys, indexes, and migration-ready schema.</p>
+      </div>
+      <div class="feature">
+        <h4>Quality</h4>
+        <p>86+ automated tests, CI/CD with ESLint, Snyk, CodeQL, SBOM generation, and Playwright E2E framework.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Contact -->
+<div class="contact">
+  <div class="container">
+    <h3>Get in Touch</h3>
+    <p>TransTrack is a fully built, production-ready platform available for evaluation and licensing.</p>
+    <a href="mailto:Trans_Track@outlook.com" class="contact-email">Trans_Track@outlook.com</a>
+  </div>
+</div>
+
+<div class="footer-note">
+  &copy; 2026 TransTrack Medical Software. All rights reserved. Commercial license required for use.
+</div>
+
+</body>
+</html>

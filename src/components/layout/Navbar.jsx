@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
-import { Activity, Users, FileText, Settings, LogOut, Shield, Heart, Database, AlertTriangle, HardDrive } from 'lucide-react';
+import { Activity, Users, FileText, Settings, LogOut, Shield, Heart, Database, AlertTriangle, HardDrive, BarChart3, Brain, ListTodo, ClipboardCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { api } from '@/api/apiClient';
 import NotificationBell from '../notifications/NotificationBell';
@@ -42,12 +42,16 @@ export default function Navbar({ user }) {
   // Add Risk Dashboard for coordinators and above
   if (user?.role === 'admin' || user?.role === 'coordinator' || user?.role === 'physician') {
     navItems.push(
-      { name: 'Risk Intel', page: 'RiskDashboard', icon: AlertTriangle }
+      { name: 'Risk Intel', page: 'RiskDashboard', icon: AlertTriangle },
+      { name: 'Tasks', page: 'TaskCenter', icon: ListTodo },
+      { name: 'Predictive', page: 'PredictiveRisk', icon: Brain }
     );
   }
 
   if (user?.role === 'admin') {
     navItems.push(
+      { name: 'Outcomes', page: 'OutcomesDashboard', icon: BarChart3 },
+      { name: 'CMS/SRTR', page: 'CMSReadiness', icon: ClipboardCheck },
       { name: 'EHR Integration', page: 'EHRIntegration', icon: Database },
       { name: 'Priority Config', page: 'PrioritySettings', icon: Settings },
       { name: 'Compliance', page: 'ComplianceCenter', icon: Shield },
