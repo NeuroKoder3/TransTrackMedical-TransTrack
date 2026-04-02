@@ -50,9 +50,10 @@ function RiskBadge({ level }) {
     moderate: 'bg-yellow-100 text-yellow-700 border-yellow-200',
     low: 'bg-green-100 text-green-700 border-green-200',
   };
+  const label = level ? level.charAt(0).toUpperCase() + level.slice(1) : 'Unknown';
   return (
     <Badge className={styles[level] || 'bg-slate-100 text-slate-700'}>
-      {level?.charAt(0).toUpperCase() + level?.slice(1)}
+      {label}
     </Badge>
   );
 }
@@ -61,7 +62,7 @@ export default function PredictiveRisk() {
   const queryClient = useQueryClient();
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const { data: dashboard, isLoading, refetch } = useQuery({
+  const { data: dashboard, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['predictionsDashboard'],
     queryFn: async () => {
       if (window.electronAPI?.predictions) {
@@ -77,6 +78,7 @@ export default function PredictiveRisk() {
       if (window.electronAPI?.predictions) {
         return await window.electronAPI.predictions.runAll();
       }
+      throw new Error('Predictions API not available');
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['predictionsDashboard'] }),
   });
@@ -123,6 +125,24 @@ export default function PredictiveRisk() {
             </Button>
           </div>
         </div>
+
+        {isError && (
+          <Alert className="bg-red-50 border-red-200">
+            <AlertTriangle className="h-4 w-4 text-red-600" />
+            <AlertDescription className="text-red-700 text-sm">
+              Failed to load predictions: {error?.message || 'Unknown error'}. Please try refreshing.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {runPredictionsMutation.isError && (
+          <Alert className="bg-red-50 border-red-200">
+            <AlertTriangle className="h-4 w-4 text-red-600" />
+            <AlertDescription className="text-red-700 text-sm">
+              Failed to run predictions: {runPredictionsMutation.error?.message || 'Unknown error'}
+            </AlertDescription>
+          </Alert>
+        )}
 
         <Alert className="bg-blue-50 border-blue-200">
           <Info className="h-4 w-4 text-blue-600" />
@@ -223,17 +243,17 @@ export default function PredictiveRisk() {
                               </span>
                             )}
                             <div className="flex flex-wrap justify-end gap-1 mt-1">
-                              {patient.factors.slice(0, 2).map((f, i) => (
+                              {(patient.factors || []).slice(0, 2).map((f, i) => (
                                 <Badge key={i} variant="outline" className="text-xs">{f}</Badge>
                               ))}
                             </div>
                           </div>
                           <RiskBadge level={patient.riskLevel} />
-                          <Link to={`${createPageUrl('PatientDetails')}?id=${patient.id}`}>
-                            <Button variant="ghost" size="sm">
+                          <Button variant="ghost" size="sm" asChild>
+                            <Link to={`${createPageUrl('PatientDetails')}?id=${patient.id}`}>
                               <ExternalLink className="w-4 h-4" />
-                            </Button>
-                          </Link>
+                            </Link>
+                          </Button>
                         </div>
                       </div>
                     ))}

@@ -52,7 +52,7 @@ const RISK_LEVEL = {
 /**
  * Main risk assessment for a single patient
  */
-function assessPatientOperationalRisk(patient) {
+function assessPatientOperationalRisk(patient, orgId) {
   const risks = [];
   const now = new Date();
   
@@ -162,7 +162,7 @@ function assessPatientOperationalRisk(patient) {
   // 5. Readiness Barriers Risk (Non-Clinical)
   // NOTE: These are operational workflow barriers only, NOT clinical assessments
   try {
-    const barrierSummary = readinessBarriers.getPatientBarrierSummary(patient.id);
+    const barrierSummary = readinessBarriers.getPatientBarrierSummary(patient.id, orgId || patient.org_id);
     
     if (barrierSummary.totalOpen > 0) {
       let barrierRiskLevel = RISK_LEVEL.LOW;
@@ -204,7 +204,7 @@ function assessPatientOperationalRisk(patient) {
   // NOTE: This is OPERATIONAL DOCUMENTATION tracking only, NOT clinical assessment.
   // It tracks whether required health history questionnaires are present, complete, and current.
   try {
-    const ahhqSummary = ahhqService.getPatientAHHQSummary(patient.id);
+    const ahhqSummary = ahhqService.getPatientAHHQSummary(patient.id, orgId || patient.org_id);
     
     if (ahhqSummary.needsAttention) {
       let ahhqRiskLevel = RISK_LEVEL.LOW;
@@ -410,10 +410,11 @@ function analyzeWaitlistSegment(patients, segmentName) {
 /**
  * Generate full operational risk report
  */
-async function generateOperationalRiskReport() {
+async function generateOperationalRiskReport(orgId) {
+  if (!orgId) throw new Error('Organization context required');
   const db = getDatabase();
   
-  const patients = db.prepare('SELECT * FROM patients WHERE waitlist_status = ?').all('active');
+  const patients = db.prepare('SELECT * FROM patients WHERE org_id = ? AND waitlist_status = ?').all(orgId, 'active');
   
   const report = {
     generatedAt: new Date().toISOString(),
@@ -433,7 +434,7 @@ async function generateOperationalRiskReport() {
   
   // Assess each patient
   for (const patient of patients) {
-    const assessment = assessPatientOperationalRisk(patient);
+    const assessment = assessPatientOperationalRisk(patient, orgId);
     report.patientRisks.push(assessment);
     
     // Check if patient has readiness barriers
@@ -476,7 +477,7 @@ async function generateOperationalRiskReport() {
   
   // Add barrier analysis (Non-Clinical)
   try {
-    const barrierDashboard = readinessBarriers.getBarriersDashboard();
+    const barrierDashboard = readinessBarriers.getBarriersDashboard(orgId);
     report.barrierAnalysis = {
       disclaimer: 'Readiness barriers are NON-CLINICAL operational tracking items only. They do not affect allocation decisions or replace UNOS/OPTN systems.',
       totalOpenBarriers: barrierDashboard.totalOpenBarriers,
@@ -494,8 +495,8 @@ async function generateOperationalRiskReport() {
   
   // Add aHHQ analysis (Non-Clinical Documentation Tracking)
   try {
-    const ahhqDashboard = ahhqService.getAHHQDashboard();
-    const patientsWithIssues = ahhqService.getPatientsWithAHHQIssues(10);
+    const ahhqDashboard = ahhqService.getAHHQDashboard(orgId);
+    const patientsWithIssues = ahhqService.getPatientsWithAHHQIssues(orgId, 10);
     
     report.ahhqAnalysis = {
       disclaimer: 'aHHQ tracking is NON-CLINICAL operational documentation only. It tracks whether required health history questionnaires are present, complete, and current. It does NOT store medical narratives, perform clinical interpretation, or affect allocation decisions.',
@@ -568,10 +569,11 @@ async function generateOperationalRiskReport() {
 /**
  * Get risk dashboard summary
  */
-async function getRiskDashboard() {
+async function getRiskDashboard(orgId) {
+  if (!orgId) throw new Error('Organization context required');
   const db = getDatabase();
   
-  const patients = db.prepare('SELECT * FROM patients WHERE waitlist_status = ?').all('active');
+  const patients = db.prepare('SELECT * FROM patients WHERE org_id = ? AND waitlist_status = ?').all(orgId, 'active');
   
   const now = new Date();
   
@@ -599,7 +601,7 @@ async function getRiskDashboard() {
   // Get barrier dashboard for overall metrics
   let barrierDashboard = null;
   try {
-    barrierDashboard = readinessBarriers.getBarriersDashboard();
+    barrierDashboard = readinessBarriers.getBarriersDashboard(orgId);
     metrics.patientsWithBarriers = barrierDashboard.patientsWithBarriers;
     metrics.totalOpenBarriers = barrierDashboard.totalOpenBarriers;
   } catch (e) {
@@ -609,7 +611,7 @@ async function getRiskDashboard() {
   // Get aHHQ dashboard for overall metrics
   let ahhqDashboard = null;
   try {
-    ahhqDashboard = ahhqService.getAHHQDashboard();
+    ahhqDashboard = ahhqService.getAHHQDashboard(orgId);
     metrics.ahhqExpiring = ahhqDashboard.expiringCount;
     metrics.ahhqExpired = ahhqDashboard.expiredCount;
     metrics.ahhqIncomplete = ahhqDashboard.incompleteCount;
@@ -665,7 +667,7 @@ async function getRiskDashboard() {
     
     // Check readiness barriers (non-clinical)
     try {
-      const barrierSummary = readinessBarriers.getPatientBarrierSummary(patient.id);
+      const barrierSummary = readinessBarriers.getPatientBarrierSummary(patient.id, orgId);
       if (barrierSummary.totalOpen > 0) {
         barrierCount = barrierSummary.totalOpen;
         risks.push(`${barrierCount} readiness barrier(s)`);

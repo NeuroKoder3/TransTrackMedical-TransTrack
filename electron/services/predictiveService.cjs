@@ -165,10 +165,6 @@ function runPredictions(orgId) {
     `SELECT * FROM patients WHERE org_id = ? AND waitlist_status = 'active'`
   ).all(orgId);
 
-  db.prepare(
-    `UPDATE inactivation_predictions SET is_current = 0 WHERE org_id = ? AND is_current = 1`
-  ).run(orgId);
-
   const insertStmt = db.prepare(`
     INSERT INTO inactivation_predictions 
     (id, org_id, patient_id, risk_score, risk_level, predicted_inactivation_within_days,
@@ -177,7 +173,11 @@ function runPredictions(orgId) {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
   `);
 
-  const insertAll = db.transaction(() => {
+  const replaceAll = db.transaction(() => {
+    db.prepare(
+      `UPDATE inactivation_predictions SET is_current = 0 WHERE org_id = ? AND is_current = 1`
+    ).run(orgId);
+
     for (const patient of patients) {
       const prediction = predictPatient(orgId, patient);
       insertStmt.run(
@@ -192,7 +192,7 @@ function runPredictions(orgId) {
     }
   });
 
-  insertAll();
+  replaceAll();
   logger.info('Inactivation predictions computed', { orgId, patientCount: patients.length });
   return { patientsScored: patients.length };
 }

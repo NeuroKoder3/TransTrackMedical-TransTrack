@@ -187,14 +187,20 @@ function getCMSChecklist(orgId) {
     remediation: null,
   });
 
-  const encEnabled = true;
+  let encEnabled = false;
+  try {
+    const { isEncryptionEnabled } = require('../database/init.cjs');
+    encEnabled = isEncryptionEnabled();
+  } catch {
+    encEnabled = false;
+  }
   checks.push({
     id: 'encryption',
     category: 'Data Security',
     requirement: 'PHI encrypted at rest (AES-256)',
     status: encEnabled ? 'pass' : 'fail',
     metric: encEnabled ? 'SQLCipher AES-256-CBC active' : 'Not encrypted',
-    remediation: null,
+    remediation: encEnabled ? null : 'Enable database encryption',
   });
 
   const docComplete = db.prepare(
@@ -246,13 +252,20 @@ function getCMSChecklist(orgId) {
     remediation: null,
   });
 
+  let accessControlActive = false;
+  try {
+    const userCount = db.prepare(`SELECT COUNT(*) as count FROM users WHERE org_id = ?`).get(orgId)?.count || 0;
+    accessControlActive = userCount > 0;
+  } catch {
+    accessControlActive = false;
+  }
   checks.push({
     id: 'access_control',
     category: 'Data Security',
     requirement: 'Role-based access control with justified access logging',
-    status: 'pass',
-    metric: 'RBAC + break-the-glass justification active',
-    remediation: null,
+    status: accessControlActive ? 'pass' : 'warning',
+    metric: accessControlActive ? 'RBAC + break-the-glass justification active' : 'No users configured',
+    remediation: accessControlActive ? null : 'Configure user accounts and roles',
   });
 
   const passCount = checks.filter(c => c.status === 'pass').length;

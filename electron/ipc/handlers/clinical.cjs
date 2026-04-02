@@ -13,14 +13,22 @@ function register() {
   const db = getDatabase();
 
   // ===== OPERATIONAL RISK INTELLIGENCE =====
-  ipcMain.handle('risk:getDashboard', async () => riskEngine.getRiskDashboard());
+  ipcMain.handle('risk:getDashboard', async () => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
+    return riskEngine.getRiskDashboard(shared.getSessionOrgId());
+  });
 
-  ipcMain.handle('risk:getFullReport', async () => riskEngine.generateOperationalRiskReport());
+  ipcMain.handle('risk:getFullReport', async () => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
+    return riskEngine.generateOperationalRiskReport(shared.getSessionOrgId());
+  });
 
   ipcMain.handle('risk:assessPatient', async (event, patientId) => {
-    const patient = db.prepare('SELECT * FROM patients WHERE id = ?').get(patientId);
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
+    const orgId = shared.getSessionOrgId();
+    const patient = db.prepare('SELECT * FROM patients WHERE id = ? AND org_id = ?').get(patientId, orgId);
     if (!patient) throw new Error('Patient not found');
-    return riskEngine.assessPatientOperationalRisk(patient);
+    return riskEngine.assessPatientOperationalRisk(patient, orgId);
   });
 
   // ===== TRANSPLANT CLOCK =====
@@ -56,8 +64,8 @@ function register() {
 
   // ===== BUSINESS FUNCTIONS =====
   ipcMain.handle('function:invoke', async (event, functionName, params) => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
     const { currentUser } = shared.getSessionState();
-    if (!currentUser) throw new Error('Not authenticated');
 
     const functions = require('../../functions/index.cjs');
     if (!functions[functionName]) throw new Error(`Unknown function: ${functionName}`);

@@ -29,7 +29,7 @@ export default function OutcomesDashboard() {
   const queryClient = useQueryClient();
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const { data: dashboard, isLoading, refetch } = useQuery({
+  const { data: dashboard, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['outcomesDashboard'],
     queryFn: async () => {
       if (window.electronAPI?.outcomes) {
@@ -42,6 +42,7 @@ export default function OutcomesDashboard() {
 
   const saveSnapshotMutation = useMutation({
     mutationFn: async () => {
+      if (!window.electronAPI?.outcomes) throw new Error('Outcomes API not available');
       const now = new Date();
       const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
       return await window.electronAPI.outcomes.saveSnapshot(
@@ -93,6 +94,24 @@ export default function OutcomesDashboard() {
             </Button>
           </div>
         </div>
+
+        {isError && (
+          <Alert className="bg-red-50 border-red-200">
+            <AlertTriangle className="h-4 w-4 text-red-600" />
+            <AlertDescription className="text-red-700 text-sm">
+              Failed to load outcomes data: {error?.message || 'Unknown error'}. Please try refreshing.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {saveSnapshotMutation.isError && (
+          <Alert className="bg-red-50 border-red-200">
+            <AlertTriangle className="h-4 w-4 text-red-600" />
+            <AlertDescription className="text-red-700 text-sm">
+              Failed to save snapshot: {saveSnapshotMutation.error?.message || 'Unknown error'}
+            </AlertDescription>
+          </Alert>
+        )}
 
         {saveSnapshotMutation.isSuccess && (
           <Alert className="bg-green-50 border-green-200">
@@ -230,8 +249,8 @@ export default function OutcomesDashboard() {
                     <span className="font-bold text-slate-900">{current.avg_barrier_resolution_days || 0} days</span>
                   </div>
                   <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg">
-                    <span className="text-sm text-slate-600">Preventable Inactivations Avoided</span>
-                    <span className="font-bold text-green-700">{current.preventable_inactivations_avoided || 0}</span>
+                    <span className="text-sm text-slate-600">Risk Alerts Resolved</span>
+                    <span className="font-bold text-green-700">{current.risk_alerts_with_resolution || 0}</span>
                   </div>
                 </CardContent>
               </Card>
