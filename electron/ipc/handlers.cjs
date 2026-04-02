@@ -66,6 +66,7 @@ function registerExtendedHandlers() {
 
   // Encryption key rotation
   ipcMain.handle('encryption:rotateKey', async (_event, options = {}) => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
     const { currentUser } = shared.getSessionState();
     if (!currentUser || currentUser.role !== 'admin') {
       throw new Error('Admin access required for key rotation');

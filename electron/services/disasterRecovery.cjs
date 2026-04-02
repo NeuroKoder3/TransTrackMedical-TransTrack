@@ -56,9 +56,13 @@ async function createBackup(options = {}) {
   const backupPath = path.join(backupDir, backupFileName);
   const metadataPath = path.join(backupDir, `${backupFileName}.meta.json`);
   
-  // Get database stats
-  const patientCount = db.prepare('SELECT COUNT(*) as count FROM patients').get().count;
-  const auditCount = db.prepare('SELECT COUNT(*) as count FROM audit_logs').get().count;
+  const orgId = options.orgId || 'SYSTEM';
+  const patientCount = orgId !== 'SYSTEM'
+    ? db.prepare('SELECT COUNT(*) as count FROM patients WHERE org_id = ?').get(orgId).count
+    : db.prepare('SELECT COUNT(*) as count FROM patients').get().count;
+  const auditCount = orgId !== 'SYSTEM'
+    ? db.prepare('SELECT COUNT(*) as count FROM audit_logs WHERE org_id = ?').get(orgId).count
+    : db.prepare('SELECT COUNT(*) as count FROM audit_logs').get().count;
   
   // Create backup using SQLite backup API
   await db.backup(backupPath);
@@ -89,16 +93,17 @@ async function createBackup(options = {}) {
   
   // Log backup in audit trail
   db.prepare(`
-    INSERT INTO audit_logs (id, org_id, action, entity_type, details, user_email, user_role)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO audit_logs (id, org_id, action, entity_type, details, user_email, user_role, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     uuidv4(),
-    options.orgId || 'SYSTEM',
+    orgId,
     'backup_created',
     'System',
     `Backup created: ${backupFileName} (${patientCount} patients, checksum: ${checksum.substring(0, 16)}...)`,
     options.createdBy || 'system',
-    'system'
+    'system',
+    new Date().toISOString()
   );
   
   // Cleanup old backups if auto-backup
@@ -279,8 +284,8 @@ async function restoreFromBackup(backupId, options = {}) {
   
   // Log restore attempt
   db.prepare(`
-    INSERT INTO audit_logs (id, org_id, action, entity_type, details, user_email, user_role)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO audit_logs (id, org_id, action, entity_type, details, user_email, user_role, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     uuidv4(),
     options.orgId || 'SYSTEM',
@@ -288,7 +293,8 @@ async function restoreFromBackup(backupId, options = {}) {
     'System',
     `Restore initiated from: ${backup.fileName}`,
     options.restoredBy || 'system',
-    'system'
+    'system',
+    new Date().toISOString()
   );
   
   // Close current database
