@@ -32,8 +32,26 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Run tests
+      - name: Run core tests
         run: npm test
+
+      - name: Rebuild native modules for Node.js
+        run: npm rebuild better-sqlite3-multiple-ciphers
+
+      - name: Run service tests
+        run: npm run test:services
+
+      - name: Run IPC tests
+        run: npm run test:ipc
+
+      - name: Run load tests
+        run: npm run test:load
+
+      - name: Run component tests
+        run: npm run test:components
+
+      - name: Rebuild for Electron
+        run: npx @electron/rebuild -f
 
       - name: Build
         run: npm run build

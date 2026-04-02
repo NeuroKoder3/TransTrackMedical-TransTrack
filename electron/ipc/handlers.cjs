@@ -77,20 +77,26 @@ function registerExtendedHandlers() {
   });
 
   ipcMain.handle('encryption:getKeyRotationStatus', async () => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
     return encryptionKeyManagement.getKeyRotationStatus();
   });
 
   ipcMain.handle('encryption:getKeyRotationHistory', async () => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
     return encryptionKeyManagement.getKeyRotationHistory();
   });
 
   // FHIR R4 validation
   ipcMain.handle('fhir:validate', async (_event, fhirData) => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
     return validateFHIRDataComplete(fhirData);
   });
 
   // Migration status
   ipcMain.handle('system:getMigrationStatus', async () => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
+    const { currentUser } = shared.getSessionState();
+    if (!currentUser || currentUser.role !== 'admin') throw new Error('Admin access required');
     const { getDatabase } = require('../database/init.cjs');
     return getMigrationStatus(getDatabase());
   });

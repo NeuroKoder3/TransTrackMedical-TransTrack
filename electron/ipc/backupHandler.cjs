@@ -14,6 +14,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { getDatabase, getDatabasePath, backupDatabase } = require('../database/init.cjs');
 const { createLogger } = require('./errorLogger.cjs');
+const shared = require('./shared.cjs');
 
 const log = createLogger('backup');
 
@@ -93,6 +94,12 @@ function verifyBackupIntegrity(backupPath, encryptionKey) {
 
 function register() {
   ipcMain.handle('backup:create-and-verify', async (_event, options = {}) => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
+    const { currentUser } = shared.getSessionState();
+    if (!currentUser || currentUser.role !== 'admin') {
+      throw new Error('Admin access required for backup operations');
+    }
+
     const { targetPath } = options;
 
     if (!targetPath) {

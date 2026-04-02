@@ -77,6 +77,7 @@ function getComplianceSummary(orgId) {
  * Get audit trail for compliance review
  */
 function getAuditTrailForCompliance(options = {}) {
+  if (!options.orgId) throw new Error('Organization context required');
   const db = getDatabase();
   
   let query = `
@@ -84,10 +85,10 @@ function getAuditTrailForCompliance(options = {}) {
       id, action, entity_type, entity_id, patient_name,
       details, user_email, user_role, created_at
     FROM audit_logs
-    WHERE 1=1
+    WHERE org_id = ?
   `;
   
-  const params = [];
+  const params = [options.orgId];
   
   if (options.startDate) {
     query += ' AND created_at >= ?';
@@ -178,13 +179,13 @@ function getDataCompletenessReport(orgId) {
  * Get access log report for compliance
  */
 function getAccessLogReport(options = {}) {
+  if (!options.orgId) throw new Error('Organization context required');
   const db = getDatabase();
   
-  // Check if access justification table exists
   let accessLogs = [];
   try {
-    let query = 'SELECT * FROM access_justification_logs WHERE 1=1';
-    const params = [];
+    let query = 'SELECT * FROM access_justification_logs WHERE org_id = ?';
+    const params = [options.orgId];
     
     if (options.startDate) {
       query += ' AND access_time >= ?';
@@ -204,8 +205,7 @@ function getAccessLogReport(options = {}) {
     }
     
     accessLogs = db.prepare(query).all(...params);
-  } catch (e) {
-    // Table may not exist yet
+  } catch {
     accessLogs = [];
   }
   
@@ -219,7 +219,8 @@ function getAccessLogReport(options = {}) {
 /**
  * Generate formal validation report
  */
-function generateValidationReport() {
+function generateValidationReport(orgId) {
+  if (!orgId) throw new Error('Organization context required');
   const db = getDatabase();
   
   const report = {
@@ -236,13 +237,13 @@ function generateValidationReport() {
       { check: 'Database encryption', status: 'PASS', details: 'SQLite with encryption enabled' },
       { check: 'Audit logging', status: 'PASS', details: 'All data modifications logged' },
       { check: 'Access control', status: 'PASS', details: 'Role-based access control implemented' },
-      { check: 'Session management', status: 'PASS', details: 'Secure session handling with timeout' },
+      { check: 'Session management', status: 'PASS', details: 'Secure session handling with idle timeout' },
     ],
   });
   
   // Section 2: Data Integrity
-  const patientCount = db.prepare('SELECT COUNT(*) as count FROM patients').get().count;
-  const auditCount = db.prepare('SELECT COUNT(*) as count FROM audit_logs').get().count;
+  const patientCount = db.prepare('SELECT COUNT(*) as count FROM patients WHERE org_id = ?').get(orgId).count;
+  const auditCount = db.prepare('SELECT COUNT(*) as count FROM audit_logs WHERE org_id = ?').get(orgId).count;
   
   report.sections.push({
     title: '2. Data Integrity',
@@ -285,9 +286,9 @@ function logRegulatorAccess(db, userId, userEmail, accessType, details) {
   
   const orgId = db.prepare('SELECT org_id FROM users WHERE id = ?').get(userId)?.org_id || 'SYSTEM';
   db.prepare(`
-    INSERT INTO audit_logs (id, org_id, action, entity_type, details, user_email, user_role)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(id, orgId, `regulator_${accessType}`, 'Compliance', details, userEmail, 'regulator');
+    INSERT INTO audit_logs (id, org_id, action, entity_type, details, user_email, user_role, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, orgId, `regulator_${accessType}`, 'Compliance', details, userEmail, 'regulator', new Date().toISOString());
   
   return id;
 }

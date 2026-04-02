@@ -14,7 +14,7 @@ export default function Patients() {
   const [error, setError] = useState(null);
   const queryClient = useQueryClient();
 
-  const { data: patients = [], isLoading, error: queryError } = useQuery({
+  const { data: patients = [], isLoading, isError, error: queryError } = useQuery({
     queryKey: ['patients'],
     queryFn: () => api.entities.Patient.list('-created_at', 500),
   });
@@ -93,6 +93,17 @@ export default function Patients() {
   };
 
   const isMutating = createPatientMutation.isPending || updatePatientMutation.isPending;
+
+  if (isError) {
+    return (
+      <div className="p-6">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
+          <h3 className="text-red-800 font-semibold text-lg mb-2">Failed to Load Data</h3>
+          <p className="text-red-600">Unable to load patient data. Please try again or contact support.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6">

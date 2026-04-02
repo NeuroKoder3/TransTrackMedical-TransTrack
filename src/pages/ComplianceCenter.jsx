@@ -31,7 +31,7 @@ export default function ComplianceCenter() {
     endDate: '',
   });
 
-  const { data: summary, isLoading: loadingSummary } = useQuery({
+  const { data: summary, isLoading: loadingSummary, isError } = useQuery({
     queryKey: ['complianceSummary'],
     queryFn: async () => {
       if (window.electronAPI?.compliance) {
@@ -101,6 +101,17 @@ export default function ComplianceCenter() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6 flex items-center justify-center">
         <RefreshCw className="w-8 h-8 animate-spin text-cyan-600" />
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="p-6">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
+          <h3 className="text-red-800 font-semibold text-lg mb-2">Failed to Load Data</h3>
+          <p className="text-red-600">Unable to load compliance data. Please try again or contact support.</p>
+        </div>
       </div>
     );
   }
