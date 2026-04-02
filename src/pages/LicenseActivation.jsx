@@ -91,7 +91,7 @@ export default function LicenseActivation({ onActivated }) {
   const [copied, setCopied] = useState(false);
 
   // Fetch license info
-  const { data: licenseInfo, isLoading: loadingInfo, refetch } = useQuery({
+  const { data: licenseInfo, isLoading: loadingInfo, isError, refetch } = useQuery({
     queryKey: ['licenseInfo'],
     queryFn: async () => {
       if (window.electronAPI?.license) {
@@ -188,6 +188,17 @@ export default function LicenseActivation({ onActivated }) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-cyan-50 via-slate-50 to-cyan-100 flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-cyan-600" />
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="p-6">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
+          <h3 className="text-red-800 font-semibold text-lg mb-2">Failed to Load License Information</h3>
+          <p className="text-red-600">Unable to load license data. Please try again or contact support.</p>
+        </div>
       </div>
     );
   }

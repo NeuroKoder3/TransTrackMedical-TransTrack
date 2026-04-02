@@ -82,16 +82,21 @@ function getOrgResidencyPolicy() {
 }
 
 function register() {
+  const shared = require('./shared.cjs');
+
   ipcMain.handle('residency:getPolicy', async () => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
     return getOrgResidencyPolicy();
   });
 
   ipcMain.handle('residency:validateDestination', async (_event, url) => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
     const policy = getOrgResidencyPolicy();
     return validateExportDestination(url, policy);
   });
 
   ipcMain.handle('residency:getAvailablePolicies', async () => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
     return DATA_RESIDENCY_POLICIES;
   });
 }

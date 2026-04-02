@@ -23,7 +23,7 @@ export default function DisasterRecovery() {
   const [backupDescription, setBackupDescription] = useState('');
   const queryClient = useQueryClient();
 
-  const { data: status, isLoading } = useQuery({
+  const { data: status, isLoading, isError } = useQuery({
     queryKey: ['recoveryStatus'],
     queryFn: async () => {
       if (window.electronAPI?.recovery) {
@@ -46,7 +46,7 @@ export default function DisasterRecovery() {
 
   const createBackupMutation = useMutation({
     mutationFn: async () => {
-      return await window.electronAPI.recovery.createBackup({
+      return await window.electronAPI?.recovery?.createBackup({
         type: 'manual',
         description: backupDescription || 'Manual backup',
       });
@@ -64,7 +64,7 @@ export default function DisasterRecovery() {
 
   const verifyBackupMutation = useMutation({
     mutationFn: async (backupId) => {
-      return await window.electronAPI.recovery.verifyBackup(backupId);
+      return await window.electronAPI?.recovery?.verifyBackup(backupId);
     },
     onSuccess: (data) => {
       if (data.valid) {
@@ -77,7 +77,7 @@ export default function DisasterRecovery() {
 
   const restoreBackupMutation = useMutation({
     mutationFn: async (backupId) => {
-      return await window.electronAPI.recovery.restoreBackup(backupId);
+      return await window.electronAPI?.recovery?.restoreBackup(backupId);
     },
     onSuccess: (data) => {
       toast.success('Restore completed. Please restart the application.');
@@ -100,6 +100,17 @@ export default function DisasterRecovery() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6 flex items-center justify-center">
         <RefreshCw className="w-8 h-8 animate-spin text-cyan-600" />
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="p-6">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
+          <h3 className="text-red-800 font-semibold text-lg mb-2">Failed to Load Data</h3>
+          <p className="text-red-600">Unable to load disaster recovery data. Please try again or contact support.</p>
+        </div>
       </div>
     );
   }

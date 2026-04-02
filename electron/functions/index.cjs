@@ -777,16 +777,32 @@ async function validateFHIRData(params, context) {
   };
 }
 
+async function logError(params, context) {
+  const { logAudit, currentUser } = context;
+  const { message, stack, componentStack } = params;
+  try {
+    logAudit(
+      'client_error', 'System', null, null,
+      JSON.stringify({ message, stack: (stack || '').substring(0, 500), componentStack: (componentStack || '').substring(0, 500) }),
+      currentUser?.email || 'unknown', currentUser?.role || 'unknown'
+    );
+  } catch {
+    // Best effort - don't let error logging cause more errors
+  }
+  return { logged: true };
+}
+
 module.exports = {
   calculatePriorityAdvanced,
-  calculatePriority: calculatePriorityAdvanced, // Alias
+  calculatePriority: calculatePriorityAdvanced,
   matchDonorAdvanced,
-  matchDonor: matchDonorAdvanced, // Alias
+  matchDonor: matchDonorAdvanced,
   checkNotificationRules,
   exportWaitlist,
   importFHIRData,
   validateFHIRData,
-  exportToFHIR: async (params, context) => ({ success: true, message: 'FHIR export not implemented in offline mode' }),
-  pushToEHR: async (params, context) => ({ success: true, message: 'EHR push not available in offline mode' }),
-  fhirWebhook: async (params, context) => ({ success: true, message: 'Webhooks not available in offline mode' })
+  logError,
+  exportToFHIR: async () => ({ success: true, message: 'FHIR export not implemented in offline mode' }),
+  pushToEHR: async () => ({ success: true, message: 'EHR push not available in offline mode' }),
+  fhirWebhook: async () => ({ success: true, message: 'Webhooks not available in offline mode' })
 };

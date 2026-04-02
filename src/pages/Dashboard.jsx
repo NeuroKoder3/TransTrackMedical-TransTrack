@@ -19,7 +19,7 @@ export default function Dashboard() {
 
   const [calculating, setCalculating] = useState(false);
 
-  const { data: patients = [], isLoading, refetch } = useQuery({
+  const { data: patients = [], isLoading, isError, refetch } = useQuery({
     queryKey: ['patients'],
     queryFn: () => api.entities.Patient.list('-priority_score', 500),
   });
@@ -82,6 +82,17 @@ export default function Dashboard() {
     critical: patients.filter(p => (p.priority_score || 0) >= 80).length,
     transplanted: patients.filter(p => p.waitlist_status === 'transplanted').length,
   };
+
+  if (isError) {
+    return (
+      <div className="p-6">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
+          <h3 className="text-red-800 font-semibold text-lg mb-2">Failed to Load Data</h3>
+          <p className="text-red-600">Unable to load dashboard data. Please try again or contact support.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6">

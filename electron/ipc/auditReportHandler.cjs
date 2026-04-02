@@ -13,15 +13,20 @@
 const { ipcMain } = require('electron');
 const { getDatabase, getDefaultOrganization } = require('../database/init.cjs');
 const { createLogger } = require('./errorLogger.cjs');
+const shared = require('./shared.cjs');
 
 const log = createLogger('auditReport');
 
 function register() {
   ipcMain.handle('compliance:generate-audit-report', async (_event, options = {}) => {
-    const db = getDatabase();
-    const org = getDefaultOrganization();
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
+    const { currentUser } = shared.getSessionState();
+    if (!currentUser || !['admin', 'regulator'].includes(currentUser.role)) {
+      throw new Error('Admin or regulator access required for audit reports');
+    }
 
-    if (!org) throw new Error('No organization configured');
+    const db = getDatabase();
+    const orgId = shared.getSessionOrgId();
 
     const {
       startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
@@ -31,8 +36,6 @@ function register() {
       action = null,
       limit = 10000,
     } = options;
-
-    const orgId = org.id;
 
     log.info('Generating compliance audit report', {
       org_id: orgId,
@@ -99,7 +102,7 @@ function register() {
       report_type: 'HIPAA_AUDIT_TRAIL',
       generated_at: new Date().toISOString(),
       organization_id: orgId,
-      organization_name: org.name,
+      organization_name: currentUser.org_name || orgId,
       period: { start: startDate, end: endDate },
       summary: {
         total_entries: totalCount,

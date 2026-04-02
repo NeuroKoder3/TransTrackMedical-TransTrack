@@ -33,7 +33,7 @@ jobs:
         run: npm run lint
 
       - name: Run tests
-        run: npm test
+        run: npm run test:all
 
       - name: Build
         run: npm run build

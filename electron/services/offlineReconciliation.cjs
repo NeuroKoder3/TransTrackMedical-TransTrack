@@ -47,18 +47,18 @@ const ALLOWED_TABLES = [
 
 // Allowed fields per table (whitelist to prevent SQL injection)
 const ALLOWED_FIELDS = {
-  patients: ['id', 'patient_id', 'first_name', 'last_name', 'date_of_birth', 'blood_type', 'organ_needed', 'medical_urgency', 'waitlist_status', 'date_added_to_waitlist', 'priority_score', 'priority_score_breakdown', 'hla_typing', 'pra_percentage', 'cpra_percentage', 'meld_score', 'las_score', 'functional_status', 'prognosis_rating', 'last_evaluation_date', 'comorbidity_score', 'previous_transplants', 'compliance_score', 'weight_kg', 'height_cm', 'phone', 'email', 'contact_phone', 'contact_email', 'address', 'emergency_contact_name', 'emergency_contact_phone', 'diagnosis', 'comorbidities', 'medications', 'donor_preferences', 'psychological_clearance', 'support_system_rating', 'document_urls', 'notes', 'created_at', 'updated_at', 'created_by', 'updated_by'],
-  donor_organs: ['id', 'donor_id', 'organ_type', 'blood_type', 'hla_typing', 'donor_age', 'donor_weight_kg', 'donor_height_cm', 'cause_of_death', 'cold_ischemia_time_hours', 'organ_condition', 'organ_quality', 'organ_status', 'status', 'recovery_date', 'procurement_date', 'recovery_hospital', 'location', 'expiration_date', 'notes', 'created_date', 'updated_date', 'created_by', 'updated_by'],
-  matches: ['id', 'donor_organ_id', 'patient_id', 'patient_name', 'compatibility_score', 'blood_type_compatible', 'abo_compatible', 'hla_match_score', 'hla_a_match', 'hla_b_match', 'hla_dr_match', 'hla_dq_match', 'size_compatible', 'match_status', 'priority_rank', 'virtual_crossmatch_result', 'physical_crossmatch_result', 'predicted_graft_survival', 'notes', 'created_date', 'updated_date', 'created_by'],
-  notifications: ['id', 'recipient_email', 'title', 'message', 'notification_type', 'is_read', 'related_patient_id', 'related_patient_name', 'priority_level', 'action_url', 'metadata', 'created_date', 'read_date'],
-  notification_rules: ['id', 'rule_name', 'description', 'trigger_event', 'conditions', 'notification_template', 'priority_level', 'is_active', 'created_date', 'updated_date', 'created_by'],
-  priority_weights: ['id', 'name', 'description', 'medical_urgency_weight', 'time_on_waitlist_weight', 'organ_specific_score_weight', 'evaluation_recency_weight', 'blood_type_rarity_weight', 'evaluation_decay_rate', 'is_active', 'created_date', 'updated_date', 'created_by'],
-  ehr_integrations: ['id', 'name', 'type', 'base_url', 'api_key_encrypted', 'is_active', 'last_sync_date', 'sync_frequency_minutes', 'created_date', 'updated_date', 'created_by'],
-  ehr_imports: ['id', 'integration_id', 'import_type', 'status', 'records_imported', 'records_failed', 'error_details', 'import_data', 'created_date', 'completed_date', 'created_by'],
-  ehr_sync_logs: ['id', 'integration_id', 'sync_type', 'direction', 'status', 'records_processed', 'records_failed', 'error_details', 'created_date', 'completed_date'],
-  ehr_validation_rules: ['id', 'field_name', 'rule_type', 'rule_value', 'error_message', 'is_active', 'created_date', 'updated_date', 'created_by'],
-  readiness_barriers: ['id', 'patient_id', 'barrier_type', 'status', 'risk_level', 'owning_role', 'identified_date', 'target_resolution_date', 'resolved_date', 'notes', 'created_by', 'created_at', 'updated_at', 'updated_by'],
-  adult_health_history_questionnaires: ['id', 'patient_id', 'status', 'last_completed_date', 'expiration_date', 'validity_period_days', 'identified_issues', 'owning_role', 'notes', 'created_by', 'created_at', 'updated_at', 'updated_by'],
+  patients: ['id', 'org_id', 'patient_id', 'first_name', 'last_name', 'date_of_birth', 'blood_type', 'organ_needed', 'medical_urgency', 'waitlist_status', 'date_added_to_waitlist', 'priority_score', 'priority_score_breakdown', 'hla_typing', 'pra_percentage', 'cpra_percentage', 'meld_score', 'las_score', 'functional_status', 'prognosis_rating', 'last_evaluation_date', 'comorbidity_score', 'previous_transplants', 'compliance_score', 'weight_kg', 'height_cm', 'phone', 'email', 'contact_phone', 'contact_email', 'address', 'emergency_contact_name', 'emergency_contact_phone', 'diagnosis', 'comorbidities', 'medications', 'donor_preferences', 'psychological_clearance', 'support_system_rating', 'document_urls', 'notes', 'created_at', 'updated_at', 'created_by', 'updated_by'],
+  donor_organs: ['id', 'org_id', 'donor_id', 'organ_type', 'blood_type', 'hla_typing', 'donor_age', 'donor_weight_kg', 'donor_height_cm', 'cause_of_death', 'cold_ischemia_time_hours', 'organ_condition', 'organ_quality', 'organ_status', 'status', 'recovery_date', 'procurement_date', 'recovery_hospital', 'location', 'expiration_date', 'notes', 'created_at', 'updated_at', 'created_by', 'updated_by'],
+  matches: ['id', 'org_id', 'donor_organ_id', 'patient_id', 'patient_name', 'compatibility_score', 'blood_type_compatible', 'abo_compatible', 'hla_match_score', 'hla_a_match', 'hla_b_match', 'hla_dr_match', 'hla_dq_match', 'size_compatible', 'match_status', 'priority_rank', 'virtual_crossmatch_result', 'physical_crossmatch_result', 'predicted_graft_survival', 'notes', 'created_at', 'updated_at', 'created_by'],
+  notifications: ['id', 'org_id', 'recipient_email', 'title', 'message', 'notification_type', 'is_read', 'related_patient_id', 'related_patient_name', 'priority_level', 'action_url', 'metadata', 'created_at', 'read_date'],
+  notification_rules: ['id', 'org_id', 'rule_name', 'description', 'trigger_event', 'conditions', 'notification_template', 'priority_level', 'is_active', 'created_at', 'updated_at', 'created_by'],
+  priority_weights: ['id', 'org_id', 'name', 'description', 'medical_urgency_weight', 'time_on_waitlist_weight', 'organ_specific_score_weight', 'evaluation_recency_weight', 'blood_type_rarity_weight', 'evaluation_decay_rate', 'is_active', 'created_at', 'updated_at', 'created_by'],
+  ehr_integrations: ['id', 'org_id', 'name', 'type', 'base_url', 'api_key_encrypted', 'is_active', 'last_sync_date', 'sync_frequency_minutes', 'created_at', 'updated_at', 'created_by'],
+  ehr_imports: ['id', 'org_id', 'integration_id', 'import_type', 'status', 'records_imported', 'records_failed', 'error_details', 'import_data', 'created_at', 'completed_date', 'created_by'],
+  ehr_sync_logs: ['id', 'org_id', 'integration_id', 'sync_type', 'direction', 'status', 'records_processed', 'records_failed', 'error_details', 'created_at', 'completed_date'],
+  ehr_validation_rules: ['id', 'org_id', 'field_name', 'rule_type', 'rule_value', 'error_message', 'is_active', 'created_at', 'updated_at', 'created_by'],
+  readiness_barriers: ['id', 'org_id', 'patient_id', 'barrier_type', 'status', 'risk_level', 'owning_role', 'identified_date', 'target_resolution_date', 'resolved_date', 'notes', 'created_by', 'created_at', 'updated_at', 'updated_by'],
+  adult_health_history_questionnaires: ['id', 'org_id', 'patient_id', 'status', 'last_completed_date', 'expiration_date', 'validity_period_days', 'identified_issues', 'owning_role', 'notes', 'created_by', 'created_at', 'updated_at', 'updated_by'],
 };
 
 /**
@@ -117,8 +117,8 @@ function setOperationMode(mode) {
   
   const db = getDatabase();
   db.prepare(`
-    INSERT INTO audit_logs (id, org_id, action, entity_type, details, user_email, user_role)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO audit_logs (id, org_id, action, entity_type, details, user_email, user_role, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     uuidv4(),
     'SYSTEM',
@@ -126,7 +126,8 @@ function setOperationMode(mode) {
     'System',
     `Operation mode changed: ${previousMode} -> ${mode}`,
     'system',
-    'system'
+    'system',
+    new Date().toISOString()
   );
   
   return { previousMode, currentMode: mode };
@@ -300,32 +301,37 @@ async function reconcilePendingChanges(strategy = CONFLICT_STRATEGY.LATEST_WINS)
       const validData = filterValidFields(change.table, change.data || {});
       
       // Apply the change based on type
+      const changeOrgId = change.orgId || validData.org_id;
+      if (!changeOrgId) {
+        throw new Error('Organization context required for reconciliation');
+      }
+
       switch (change.type) {
         case 'create':
           if (!validData.id) {
             throw new Error('Missing required id field');
           }
-          db.prepare(`INSERT OR IGNORE INTO ${change.table} (id) VALUES (?)`).run(validData.id);
-          // Update with full data (only valid fields)
+          validData.org_id = changeOrgId;
+          db.prepare(`INSERT OR IGNORE INTO ${change.table} (id, org_id) VALUES (?, ?)`).run(validData.id, changeOrgId);
           const createFields = Object.keys(validData).filter(k => k !== 'id');
           if (createFields.length > 0) {
             const createUpdates = createFields.map(k => `${k} = ?`).join(', ');
-            db.prepare(`UPDATE ${change.table} SET ${createUpdates} WHERE id = ?`)
-              .run(...createFields.map(k => validData[k]), validData.id);
+            db.prepare(`UPDATE ${change.table} SET ${createUpdates} WHERE id = ? AND org_id = ?`)
+              .run(...createFields.map(k => validData[k]), validData.id, changeOrgId);
           }
           break;
           
         case 'update':
-          const updateFields = Object.keys(validData).filter(k => k !== 'id');
+          const updateFields = Object.keys(validData).filter(k => k !== 'id' && k !== 'org_id');
           if (updateFields.length > 0) {
             const updates = updateFields.map(k => `${k} = ?`).join(', ');
-            db.prepare(`UPDATE ${change.table} SET ${updates} WHERE id = ?`)
-              .run(...updateFields.map(k => validData[k]), change.entityId);
+            db.prepare(`UPDATE ${change.table} SET ${updates} WHERE id = ? AND org_id = ?`)
+              .run(...updateFields.map(k => validData[k]), change.entityId, changeOrgId);
           }
           break;
           
         case 'delete':
-          db.prepare(`DELETE FROM ${change.table} WHERE id = ?`).run(change.entityId);
+          db.prepare(`DELETE FROM ${change.table} WHERE id = ? AND org_id = ?`).run(change.entityId, changeOrgId);
           break;
           
         default:
@@ -360,8 +366,8 @@ async function reconcilePendingChanges(strategy = CONFLICT_STRATEGY.LATEST_WINS)
   
   // Log reconciliation
   db.prepare(`
-    INSERT INTO audit_logs (id, org_id, action, entity_type, details, user_email, user_role)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO audit_logs (id, org_id, action, entity_type, details, user_email, user_role, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     uuidv4(),
     'SYSTEM',
@@ -369,7 +375,8 @@ async function reconcilePendingChanges(strategy = CONFLICT_STRATEGY.LATEST_WINS)
     'System',
     `Reconciliation completed: ${results.succeeded} succeeded, ${results.failed} failed`,
     'system',
-    'system'
+    'system',
+    new Date().toISOString()
   );
   
   return results;
@@ -408,8 +415,12 @@ async function importWithReconciliation(importData, options = {}) {
           continue;
         }
         
-        // Check if record exists
-        const existing = db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(validRecord.id);
+        if (!validRecord.org_id) {
+          results.errors.push(`Record missing org_id in table ${table}`);
+          results.skipped++;
+          continue;
+        }
+        const existing = db.prepare(`SELECT * FROM ${table} WHERE id = ? AND org_id = ?`).get(validRecord.id, validRecord.org_id);
         
         if (existing) {
           // Detect conflicts
@@ -435,8 +446,8 @@ async function importWithReconciliation(importData, options = {}) {
             const fields = Object.keys(validResolved).filter(k => k !== 'id');
             if (fields.length > 0) {
               const updates = fields.map(k => `${k} = ?`).join(', ');
-              db.prepare(`UPDATE ${table} SET ${updates} WHERE id = ?`)
-                .run(...fields.map(k => validResolved[k]), validRecord.id);
+              db.prepare(`UPDATE ${table} SET ${updates} WHERE id = ? AND org_id = ?`)
+                .run(...fields.map(k => validResolved[k]), validRecord.id, validRecord.org_id);
             }
             
             results.updated++;
