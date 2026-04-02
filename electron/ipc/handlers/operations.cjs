@@ -18,14 +18,14 @@ function register() {
 
   // ===== ACCESS CONTROL =====
   ipcMain.handle('access:validateRequest', async (event, permission, justification) => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
     const { currentUser } = shared.getSessionState();
-    if (!currentUser) throw new Error('Not authenticated');
     return accessControl.validateAccessRequest(currentUser.role, permission, justification);
   });
 
   ipcMain.handle('access:logJustifiedAccess', async (event, permission, entityType, entityId, justification) => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
     const { currentUser } = shared.getSessionState();
-    if (!currentUser) throw new Error('Not authenticated');
     return accessControl.logAccessWithJustification(
       db, currentUser.id, currentUser.email, currentUser.role,
       permission, entityType, entityId, justification
@@ -43,9 +43,10 @@ function register() {
 
   // ===== DISASTER RECOVERY =====
   ipcMain.handle('recovery:createBackup', async (event, options) => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
     const { currentUser } = shared.getSessionState();
-    if (!currentUser) throw new Error('Not authenticated');
-    return await disasterRecovery.createBackup({ ...options, createdBy: currentUser.email });
+    if (!currentUser || currentUser.role !== 'admin') throw new Error('Admin access required for backup');
+    return await disasterRecovery.createBackup({ ...options, createdBy: currentUser.email, orgId: shared.getSessionOrgId() });
   });
 
   ipcMain.handle('recovery:listBackups', async () => {
@@ -59,6 +60,7 @@ function register() {
   });
 
   ipcMain.handle('recovery:restoreBackup', async (event, backupId) => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
     const { currentUser } = shared.getSessionState();
     if (!currentUser || currentUser.role !== 'admin') throw new Error('Admin access required for restore');
     return await disasterRecovery.restoreFromBackup(backupId, { restoredBy: currentUser.email });
@@ -71,8 +73,8 @@ function register() {
 
   // ===== COMPLIANCE VIEW =====
   ipcMain.handle('compliance:getSummary', async () => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
     const { currentUser } = shared.getSessionState();
-    if (!currentUser) throw new Error('Not authenticated');
     complianceView.logRegulatorAccess(db, currentUser.id, currentUser.email, 'view_summary', 'Viewed compliance summary');
     return complianceView.getComplianceSummary(shared.getSessionOrgId());
   });
@@ -87,8 +89,7 @@ function register() {
   });
 
   ipcMain.handle('compliance:getDataCompleteness', async () => {
-    const { currentUser } = shared.getSessionState();
-    if (!currentUser) throw new Error('Not authenticated');
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
     return complianceView.getDataCompletenessReport(shared.getSessionOrgId());
   });
 
@@ -120,12 +121,14 @@ function register() {
   });
 
   ipcMain.handle('reconciliation:reconcile', async (event, strategy) => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
     const { currentUser } = shared.getSessionState();
     if (!currentUser || currentUser.role !== 'admin') throw new Error('Admin access required');
     return await offlineReconciliation.reconcilePendingChanges(strategy);
   });
 
   ipcMain.handle('reconciliation:setMode', async (event, mode) => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
     const { currentUser } = shared.getSessionState();
     if (!currentUser || currentUser.role !== 'admin') throw new Error('Admin access required');
     return offlineReconciliation.setOperationMode(mode);
