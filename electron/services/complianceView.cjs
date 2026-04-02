@@ -11,7 +11,8 @@ const { v4: uuidv4 } = require('uuid');
 /**
  * Generate compliance summary report
  */
-function getComplianceSummary() {
+function getComplianceSummary(orgId) {
+  if (!orgId) throw new Error('Organization context required');
   const db = getDatabase();
   
   const now = new Date();
@@ -24,8 +25,8 @@ function getComplianceSummary() {
       SUM(CASE WHEN waitlist_status = 'active' THEN 1 ELSE 0 END) as active,
       SUM(CASE WHEN waitlist_status = 'transplanted' THEN 1 ELSE 0 END) as transplanted,
       SUM(CASE WHEN waitlist_status = 'inactive' THEN 1 ELSE 0 END) as inactive
-    FROM patients
-  `).get();
+    FROM patients WHERE org_id = ?
+  `).get(orgId);
   
   // Audit log statistics
   const auditStats = db.prepare(`
@@ -34,8 +35,8 @@ function getComplianceSummary() {
       COUNT(DISTINCT user_email) as uniqueUsers,
       COUNT(DISTINCT entity_type) as entityTypes
     FROM audit_logs
-    WHERE created_at >= ?
-  `).get(thirtyDaysAgo);
+    WHERE org_id = ? AND created_at >= ?
+  `).get(orgId, thirtyDaysAgo);
   
   // User statistics
   const userStats = db.prepare(`
@@ -43,8 +44,8 @@ function getComplianceSummary() {
       COUNT(*) as total,
       SUM(CASE WHEN role = 'admin' THEN 1 ELSE 0 END) as admins,
       SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) as active
-    FROM users
-  `).get();
+    FROM users WHERE org_id = ?
+  `).get(orgId);
   
   // Match statistics
   const matchStats = db.prepare(`
@@ -52,8 +53,8 @@ function getComplianceSummary() {
       COUNT(*) as total,
       SUM(CASE WHEN match_status = 'accepted' THEN 1 ELSE 0 END) as accepted,
       SUM(CASE WHEN match_status = 'potential' THEN 1 ELSE 0 END) as potential
-    FROM matches
-  `).get();
+    FROM matches WHERE org_id = ?
+  `).get(orgId);
   
   return {
     generatedAt: now.toISOString(),
@@ -133,10 +134,11 @@ function getAuditTrailForCompliance(options = {}) {
 /**
  * Get patient data completeness report
  */
-function getDataCompletenessReport() {
+function getDataCompletenessReport(orgId) {
+  if (!orgId) throw new Error('Organization context required');
   const db = getDatabase();
   
-  const patients = db.prepare('SELECT * FROM patients').all();
+  const patients = db.prepare('SELECT * FROM patients WHERE org_id = ?').all(orgId);
   
   const requiredFields = [
     'patient_id', 'first_name', 'last_name', 'date_of_birth',
@@ -281,10 +283,11 @@ function generateValidationReport() {
 function logRegulatorAccess(db, userId, userEmail, accessType, details) {
   const id = uuidv4();
   
+  const orgId = db.prepare('SELECT org_id FROM users WHERE id = ?').get(userId)?.org_id || 'SYSTEM';
   db.prepare(`
-    INSERT INTO audit_logs (id, action, entity_type, details, user_email, user_role)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(id, `regulator_${accessType}`, 'Compliance', details, userEmail, 'regulator');
+    INSERT INTO audit_logs (id, org_id, action, entity_type, details, user_email, user_role)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(id, orgId, `regulator_${accessType}`, 'Compliance', details, userEmail, 'regulator');
   
   return id;
 }

@@ -32,8 +32,14 @@ function register() {
     );
   });
 
-  ipcMain.handle('access:getRoles', async () => accessControl.getAllRoles());
-  ipcMain.handle('access:getJustificationReasons', async () => accessControl.JUSTIFICATION_REASONS);
+  ipcMain.handle('access:getRoles', async () => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
+    return accessControl.getAllRoles();
+  });
+  ipcMain.handle('access:getJustificationReasons', async () => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
+    return accessControl.JUSTIFICATION_REASONS;
+  });
 
   // ===== DISASTER RECOVERY =====
   ipcMain.handle('recovery:createBackup', async (event, options) => {
@@ -42,9 +48,15 @@ function register() {
     return await disasterRecovery.createBackup({ ...options, createdBy: currentUser.email });
   });
 
-  ipcMain.handle('recovery:listBackups', async () => disasterRecovery.listBackups());
+  ipcMain.handle('recovery:listBackups', async () => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
+    return disasterRecovery.listBackups();
+  });
 
-  ipcMain.handle('recovery:verifyBackup', async (event, backupId) => disasterRecovery.verifyBackup(backupId));
+  ipcMain.handle('recovery:verifyBackup', async (event, backupId) => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
+    return disasterRecovery.verifyBackup(backupId);
+  });
 
   ipcMain.handle('recovery:restoreBackup', async (event, backupId) => {
     const { currentUser } = shared.getSessionState();
@@ -52,14 +64,17 @@ function register() {
     return await disasterRecovery.restoreFromBackup(backupId, { restoredBy: currentUser.email });
   });
 
-  ipcMain.handle('recovery:getStatus', async () => disasterRecovery.getRecoveryStatus());
+  ipcMain.handle('recovery:getStatus', async () => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
+    return disasterRecovery.getRecoveryStatus();
+  });
 
   // ===== COMPLIANCE VIEW =====
   ipcMain.handle('compliance:getSummary', async () => {
     const { currentUser } = shared.getSessionState();
     if (!currentUser) throw new Error('Not authenticated');
     complianceView.logRegulatorAccess(db, currentUser.id, currentUser.email, 'view_summary', 'Viewed compliance summary');
-    return complianceView.getComplianceSummary();
+    return complianceView.getComplianceSummary(shared.getSessionOrgId());
   });
 
   ipcMain.handle('compliance:getAuditTrail', async (event, options) => {
@@ -72,7 +87,7 @@ function register() {
   ipcMain.handle('compliance:getDataCompleteness', async () => {
     const { currentUser } = shared.getSessionState();
     if (!currentUser) throw new Error('Not authenticated');
-    return complianceView.getDataCompletenessReport();
+    return complianceView.getDataCompletenessReport(shared.getSessionOrgId());
   });
 
   ipcMain.handle('compliance:getValidationReport', async () => {
@@ -89,8 +104,14 @@ function register() {
   });
 
   // ===== OFFLINE RECONCILIATION =====
-  ipcMain.handle('reconciliation:getStatus', async () => offlineReconciliation.getReconciliationStatus());
-  ipcMain.handle('reconciliation:getPendingChanges', async () => offlineReconciliation.getPendingChanges());
+  ipcMain.handle('reconciliation:getStatus', async () => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
+    return offlineReconciliation.getReconciliationStatus();
+  });
+  ipcMain.handle('reconciliation:getPendingChanges', async () => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
+    return offlineReconciliation.getPendingChanges();
+  });
 
   ipcMain.handle('reconciliation:reconcile', async (event, strategy) => {
     const { currentUser } = shared.getSessionState();
@@ -104,7 +125,10 @@ function register() {
     return offlineReconciliation.setOperationMode(mode);
   });
 
-  ipcMain.handle('reconciliation:getMode', async () => offlineReconciliation.getOperationMode());
+  ipcMain.handle('reconciliation:getMode', async () => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
+    return offlineReconciliation.getOperationMode();
+  });
 
   // ===== FILE OPERATIONS =====
   ipcMain.handle('file:exportCSV', async (event, data, filename) => {
@@ -138,8 +162,12 @@ function register() {
   });
 
   ipcMain.handle('file:backupDatabase', async (event, targetPath) => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
+    const { currentUser } = shared.getSessionState();
+    if (!currentUser || currentUser.role !== 'admin') throw new Error('Admin access required for database backup');
     const { backupDatabase } = require('../../database/init.cjs');
     await backupDatabase(targetPath);
+    shared.logAudit('backup', 'System', null, null, `Database backup created`, currentUser.email, currentUser.role);
     return { success: true };
   });
 }

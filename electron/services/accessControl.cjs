@@ -168,14 +168,15 @@ function requiresJustification(permission) {
  */
 function logAccessWithJustification(db, userId, userEmail, userRole, permission, entityType, entityId, justification) {
   const id = uuidv4();
+  const orgId = db.prepare('SELECT org_id FROM users WHERE id = ?').get(userId)?.org_id || 'SYSTEM';
   
   db.prepare(`
     INSERT INTO access_justification_logs (
-      id, user_id, user_email, user_role, permission, entity_type, entity_id,
+      id, org_id, user_id, user_email, user_role, permission, entity_type, entity_id,
       justification_reason, justification_details, access_time
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
   `).run(
-    id, userId, userEmail, userRole, permission, entityType, entityId,
+    id, orgId, userId, userEmail, userRole, permission, entityType, entityId,
     justification.reason, justification.details || null
   );
   

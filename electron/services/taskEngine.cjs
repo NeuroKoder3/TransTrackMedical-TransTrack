@@ -248,29 +248,33 @@ function processEscalations(orgId) {
 
   const escalated = [];
 
-  for (const task of overdueTasks) {
-    db.prepare(`UPDATE tasks SET status = 'overdue', updated_at = ? WHERE id = ? AND org_id = ?`)
-      .run(now.toISOString(), task.id, orgId);
+  const processAll = db.transaction(() => {
+    for (const task of overdueTasks) {
+      db.prepare(`UPDATE tasks SET status = 'overdue', updated_at = ? WHERE id = ? AND org_id = ?`)
+        .run(now.toISOString(), task.id, orgId);
 
-    const rule = db.prepare(`
-      SELECT * FROM task_escalation_rules 
-      WHERE org_id = ? AND task_type = ? AND escalation_level = ? AND is_active = 1
-      ORDER BY escalation_level ASC LIMIT 1
-    `).get(orgId, task.task_type, task.escalation_level + 1);
+      const rule = db.prepare(`
+        SELECT * FROM task_escalation_rules 
+        WHERE org_id = ? AND task_type = ? AND escalation_level = ? AND is_active = 1
+        ORDER BY escalation_level ASC LIMIT 1
+      `).get(orgId, task.task_type, task.escalation_level + 1);
 
-    if (rule) {
-      const hoursSinceDue = (now - new Date(task.due_date)) / (1000 * 60 * 60);
-      if (hoursSinceDue >= rule.hours_before_escalation) {
-        db.prepare(`
-          UPDATE tasks SET escalation_level = ?, escalated_at = ?, 
-          escalated_to = ?, status = 'escalated', updated_at = ?
-          WHERE id = ? AND org_id = ?
-        `).run(rule.escalation_level, now.toISOString(), rule.escalate_to_role, now.toISOString(), task.id, orgId);
+      if (rule) {
+        const hoursSinceDue = (now - new Date(task.due_date)) / (1000 * 60 * 60);
+        if (hoursSinceDue >= rule.hours_before_escalation) {
+          db.prepare(`
+            UPDATE tasks SET escalation_level = ?, escalated_at = ?, 
+            escalated_to = ?, status = 'escalated', updated_at = ?
+            WHERE id = ? AND org_id = ?
+          `).run(rule.escalation_level, now.toISOString(), rule.escalate_to_role, now.toISOString(), task.id, orgId);
 
-        escalated.push({ taskId: task.id, level: rule.escalation_level, role: rule.escalate_to_role });
+          escalated.push({ taskId: task.id, level: rule.escalation_level, role: rule.escalate_to_role });
+        }
       }
     }
-  }
+  });
+
+  processAll();
 
   logger.info('Escalation processing complete', { orgId, overdue: overdueTasks.length, escalated: escalated.length });
   return { overdue: overdueTasks.length, escalated };
