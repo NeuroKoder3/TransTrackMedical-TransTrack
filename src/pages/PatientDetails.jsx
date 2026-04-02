@@ -23,11 +23,11 @@ export default function PatientDetails() {
   const patientId = urlParams.get('id');
   const queryClient = useQueryClient();
 
-  const { data: patient, isLoading } = useQuery({
+  const { data: patient, isLoading, isError } = useQuery({
     queryKey: ['patient', patientId],
     queryFn: async () => {
       const patients = await api.entities.Patient.list();
-      return patients.find(p => p.id === patientId);
+      return patients.find(p => p.id === patientId) ?? null;
     },
     enabled: !!patientId,
   });
@@ -49,6 +49,17 @@ export default function PatientDetails() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6 flex items-center justify-center">
         <div className="text-slate-600">Loading patient details...</div>
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="p-6">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
+          <h3 className="text-red-800 font-semibold text-lg mb-2">Failed to Load Data</h3>
+          <p className="text-red-600">Unable to load patient details. Please try again or contact support.</p>
+        </div>
       </div>
     );
   }

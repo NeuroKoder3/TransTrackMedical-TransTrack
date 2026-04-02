@@ -361,22 +361,23 @@ function getRecoveryStatus() {
 /**
  * Export data for external backup
  */
-async function exportForExternalBackup() {
+async function exportForExternalBackup(orgId) {
+  if (!orgId) throw new Error('Organization context required for data export');
   const db = getDatabase();
   
   const exportData = {
     exportedAt: new Date().toISOString(),
     version: '1.0.0',
+    organizationId: orgId,
     tables: {},
   };
   
-  // Export all tables
   const tables = ['patients', 'donor_organs', 'matches', 'notifications', 
                   'priority_weights', 'audit_logs', 'users'];
   
   for (const table of tables) {
     try {
-      exportData.tables[table] = db.prepare(`SELECT * FROM ${table}`).all();
+      exportData.tables[table] = db.prepare(`SELECT * FROM ${table} WHERE org_id = ?`).all(orgId);
     } catch (e) {
       logger.error(`Error exporting table ${table}`, { error: e.message });
     }

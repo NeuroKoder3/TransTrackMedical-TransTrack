@@ -18,7 +18,7 @@ export default function Reports() {
   const [exportFormat, setExportFormat] = useState('pdf');
   const [exporting, setExporting] = useState(false);
 
-  const { data: patients = [] } = useQuery({
+  const { data: patients = [], isError } = useQuery({
     queryKey: ['patients'],
     queryFn: () => api.entities.Patient.list('-priority_score', 1000),
   });
@@ -83,6 +83,17 @@ export default function Reports() {
 
     return true;
   });
+
+  if (isError) {
+    return (
+      <div className="p-6">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
+          <h3 className="text-red-800 font-semibold text-lg mb-2">Failed to Load Reports</h3>
+          <p className="text-red-600">Unable to load patient data for reports. Please try again or contact support.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6">

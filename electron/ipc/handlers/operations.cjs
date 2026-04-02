@@ -78,10 +78,12 @@ function register() {
   });
 
   ipcMain.handle('compliance:getAuditTrail', async (event, options) => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
     const { currentUser } = shared.getSessionState();
     if (!currentUser) throw new Error('Not authenticated');
+    const orgId = shared.getSessionOrgId();
     complianceView.logRegulatorAccess(db, currentUser.id, currentUser.email, 'view_audit', 'Viewed audit trail');
-    return complianceView.getAuditTrailForCompliance(options);
+    return complianceView.getAuditTrailForCompliance({ ...options, orgId });
   });
 
   ipcMain.handle('compliance:getDataCompleteness', async () => {
@@ -91,16 +93,20 @@ function register() {
   });
 
   ipcMain.handle('compliance:getValidationReport', async () => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
     const { currentUser } = shared.getSessionState();
     if (!currentUser) throw new Error('Not authenticated');
+    const orgId = shared.getSessionOrgId();
     complianceView.logRegulatorAccess(db, currentUser.id, currentUser.email, 'view_validation', 'Viewed validation report');
-    return complianceView.generateValidationReport();
+    return complianceView.generateValidationReport(orgId);
   });
 
   ipcMain.handle('compliance:getAccessLogs', async (event, options) => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
     const { currentUser } = shared.getSessionState();
     if (!currentUser) throw new Error('Not authenticated');
-    return complianceView.getAccessLogReport(options);
+    const orgId = shared.getSessionOrgId();
+    return complianceView.getAccessLogReport({ ...options, orgId });
   });
 
   // ===== OFFLINE RECONCILIATION =====
@@ -132,6 +138,8 @@ function register() {
 
   // ===== FILE OPERATIONS =====
   ipcMain.handle('file:exportCSV', async (event, data, filename) => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
+
     const exportCheck = featureGate.canAccessFeature(FEATURES.DATA_EXPORT);
     if (!exportCheck.allowed) {
       throw new Error('Data export is not available in your current license tier. Please upgrade to export data.');

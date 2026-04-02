@@ -71,52 +71,86 @@ function register() {
     return result;
   });
 
-  ipcMain.handle('license:isValid', async () => licenseManager.isLicenseValid());
-  ipcMain.handle('license:getTier', async () => licenseManager.getCurrentTier());
+  ipcMain.handle('license:isValid', async () => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
+    return licenseManager.isLicenseValid();
+  });
+  ipcMain.handle('license:getTier', async () => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
+    return licenseManager.getCurrentTier();
+  });
 
   ipcMain.handle('license:getLimits', async () => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
     const tier = licenseManager.getCurrentTier();
     return licenseManager.getTierLimits(tier);
   });
 
-  ipcMain.handle('license:checkLimit', async (event, limitType, currentCount) => featureGate.canWithinLimit(limitType, currentCount));
-  ipcMain.handle('license:getAppState', async () => featureGate.checkApplicationState());
-  ipcMain.handle('license:getPaymentOptions', async () => licenseManager.getAllPaymentOptions());
-  ipcMain.handle('license:getPaymentInfo', async (event, tier) => licenseManager.getPaymentInfo(tier));
-  ipcMain.handle('license:getOrganization', async () => licenseManager.getOrganizationInfo());
+  ipcMain.handle('license:checkLimit', async (event, limitType, currentCount) => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
+    return featureGate.canWithinLimit(limitType, currentCount);
+  });
+  ipcMain.handle('license:getAppState', async () => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
+    return featureGate.checkApplicationState();
+  });
+  ipcMain.handle('license:getPaymentOptions', async () => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
+    return licenseManager.getAllPaymentOptions();
+  });
+  ipcMain.handle('license:getPaymentInfo', async (event, tier) => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
+    return licenseManager.getPaymentInfo(tier);
+  });
+  ipcMain.handle('license:getOrganization', async () => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
+    return licenseManager.getOrganizationInfo();
+  });
 
   ipcMain.handle('license:updateOrganization', async (event, updates) => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
     const { currentUser } = shared.getSessionState();
-    if (!currentUser) throw new Error('Not authenticated');
-    if (currentUser.role !== 'admin') throw new Error('Admin access required');
+    if (!currentUser || currentUser.role !== 'admin') throw new Error('Admin access required');
     return licenseManager.updateOrganizationInfo(updates);
   });
 
-  ipcMain.handle('license:getMaintenanceStatus', async () => licenseManager.getMaintenanceStatus());
+  ipcMain.handle('license:getMaintenanceStatus', async () => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
+    return licenseManager.getMaintenanceStatus();
+  });
 
   ipcMain.handle('license:getAuditHistory', async (event, limit) => {
-    const { currentUser } = shared.getSessionState();
-    if (!currentUser) throw new Error('Not authenticated');
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
     return licenseManager.getLicenseAuditHistory(limit);
   });
 
-  ipcMain.handle('license:isEvaluationBuild', async () => licenseManager.isEvaluationBuild());
+  ipcMain.handle('license:isEvaluationBuild', async () => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
+    return licenseManager.isEvaluationBuild();
+  });
 
-  ipcMain.handle('license:getEvaluationStatus', async () => ({
-    isEvaluation: licenseManager.isEvaluationMode(),
-    daysRemaining: licenseManager.getEvaluationDaysRemaining(),
-    expired: licenseManager.isEvaluationExpired(),
-    inGracePeriod: licenseManager.isInEvaluationGracePeriod(),
-  }));
+  ipcMain.handle('license:getEvaluationStatus', async () => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
+    return {
+      isEvaluation: licenseManager.isEvaluationMode(),
+      daysRemaining: licenseManager.getEvaluationDaysRemaining(),
+      expired: licenseManager.isEvaluationExpired(),
+      inGracePeriod: licenseManager.isInEvaluationGracePeriod(),
+    };
+  });
 
   ipcMain.handle('license:getAllFeatures', async () => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
     return Object.values(FEATURES).map(feature => ({
       feature,
       ...featureGate.canAccessFeature(feature),
     }));
   });
 
-  ipcMain.handle('license:checkFullAccess', async (event, options) => featureGate.checkFullAccess(options));
+  ipcMain.handle('license:checkFullAccess', async (event, options) => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
+    return featureGate.checkFullAccess(options);
+  });
 }
 
 module.exports = { register };

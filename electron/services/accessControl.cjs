@@ -248,35 +248,6 @@ function getAllRoles() {
   }));
 }
 
-/**
- * Initialize access control tables
- */
-function initAccessControlTables(db) {
-  // Access justification logs
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS access_justification_logs (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
-      user_email TEXT,
-      user_role TEXT,
-      permission TEXT NOT NULL,
-      entity_type TEXT,
-      entity_id TEXT,
-      justification_reason TEXT NOT NULL,
-      justification_details TEXT,
-      access_time TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (user_id) REFERENCES users(id)
-    )
-  `);
-  
-  // Create index for efficient querying
-  db.exec(`
-    CREATE INDEX IF NOT EXISTS idx_access_logs_user ON access_justification_logs(user_id);
-    CREATE INDEX IF NOT EXISTS idx_access_logs_time ON access_justification_logs(access_time DESC);
-    CREATE INDEX IF NOT EXISTS idx_access_logs_entity ON access_justification_logs(entity_type, entity_id);
-  `);
-}
-
 module.exports = {
   PERMISSIONS,
   ROLES,
@@ -288,5 +259,4 @@ module.exports = {
   validateAccessRequest,
   getRolePermissions,
   getAllRoles,
-  initAccessControlTables,
 };

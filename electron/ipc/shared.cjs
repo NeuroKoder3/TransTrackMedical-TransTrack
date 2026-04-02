@@ -27,6 +27,9 @@ let currentSession = null;
 let currentUser = null;
 let sessionExpiry = null;
 let boundWebContentsId = null;
+let lastActivityTime = null;
+
+const IDLE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
 
 function getSessionState() {
   return { currentSession, currentUser, sessionExpiry };
@@ -37,6 +40,7 @@ function setSessionState(session, user, expiry, webContentsId) {
   currentUser = user;
   sessionExpiry = expiry;
   boundWebContentsId = webContentsId || null;
+  lastActivityTime = Date.now();
 }
 
 function clearSession() {
@@ -44,6 +48,11 @@ function clearSession() {
   currentUser = null;
   sessionExpiry = null;
   boundWebContentsId = null;
+  lastActivityTime = null;
+}
+
+function touchSession() {
+  if (currentSession) lastActivityTime = Date.now();
 }
 
 function getSessionOrgId() {
@@ -81,6 +90,10 @@ function validateSession(senderWebContentsId) {
     clearSession();
     return false;
   }
+  if (lastActivityTime && (Date.now() - lastActivityTime) > IDLE_TIMEOUT_MS) {
+    clearSession();
+    return false;
+  }
   if (!currentUser.org_id) {
     clearSession();
     return false;
@@ -88,6 +101,18 @@ function validateSession(senderWebContentsId) {
   if (boundWebContentsId && senderWebContentsId && senderWebContentsId !== boundWebContentsId) {
     return false;
   }
+  // Validate session still exists in DB
+  try {
+    const db = getDatabase();
+    const dbSession = db.prepare('SELECT id FROM sessions WHERE id = ? AND user_id = ?').get(currentSession, currentUser.id);
+    if (!dbSession) {
+      clearSession();
+      return false;
+    }
+  } catch {
+    // If DB is unavailable, allow in-memory session to continue
+  }
+  touchSession();
   return true;
 }
 
@@ -360,7 +385,9 @@ module.exports = {
   sessionHasFeature,
   requireFeature,
   validateSession,
+  touchSession,
   SESSION_DURATION_MS,
+  IDLE_TIMEOUT_MS,
   wrapHandler,
 
   // Security
