@@ -47,7 +47,7 @@ const ALLOWED_TABLES = [
 
 // Allowed fields per table (whitelist to prevent SQL injection)
 const ALLOWED_FIELDS = {
-  patients: ['id', 'patient_id', 'first_name', 'last_name', 'date_of_birth', 'blood_type', 'organ_needed', 'medical_urgency', 'waitlist_status', 'date_added_to_waitlist', 'priority_score', 'priority_score_breakdown', 'hla_typing', 'pra_percentage', 'cpra_percentage', 'meld_score', 'las_score', 'functional_status', 'prognosis_rating', 'last_evaluation_date', 'comorbidity_score', 'previous_transplants', 'compliance_score', 'weight_kg', 'height_cm', 'phone', 'email', 'contact_phone', 'contact_email', 'address', 'emergency_contact_name', 'emergency_contact_phone', 'diagnosis', 'comorbidities', 'medications', 'donor_preferences', 'psychological_clearance', 'support_system_rating', 'document_urls', 'notes', 'created_date', 'updated_date', 'created_by', 'updated_by'],
+  patients: ['id', 'patient_id', 'first_name', 'last_name', 'date_of_birth', 'blood_type', 'organ_needed', 'medical_urgency', 'waitlist_status', 'date_added_to_waitlist', 'priority_score', 'priority_score_breakdown', 'hla_typing', 'pra_percentage', 'cpra_percentage', 'meld_score', 'las_score', 'functional_status', 'prognosis_rating', 'last_evaluation_date', 'comorbidity_score', 'previous_transplants', 'compliance_score', 'weight_kg', 'height_cm', 'phone', 'email', 'contact_phone', 'contact_email', 'address', 'emergency_contact_name', 'emergency_contact_phone', 'diagnosis', 'comorbidities', 'medications', 'donor_preferences', 'psychological_clearance', 'support_system_rating', 'document_urls', 'notes', 'created_at', 'updated_at', 'created_by', 'updated_by'],
   donor_organs: ['id', 'donor_id', 'organ_type', 'blood_type', 'hla_typing', 'donor_age', 'donor_weight_kg', 'donor_height_cm', 'cause_of_death', 'cold_ischemia_time_hours', 'organ_condition', 'organ_quality', 'organ_status', 'status', 'recovery_date', 'procurement_date', 'recovery_hospital', 'location', 'expiration_date', 'notes', 'created_date', 'updated_date', 'created_by', 'updated_by'],
   matches: ['id', 'donor_organ_id', 'patient_id', 'patient_name', 'compatibility_score', 'blood_type_compatible', 'abo_compatible', 'hla_match_score', 'hla_a_match', 'hla_b_match', 'hla_dr_match', 'hla_dq_match', 'size_compatible', 'match_status', 'priority_rank', 'virtual_crossmatch_result', 'physical_crossmatch_result', 'predicted_graft_survival', 'notes', 'created_date', 'updated_date', 'created_by'],
   notifications: ['id', 'recipient_email', 'title', 'message', 'notification_type', 'is_read', 'related_patient_id', 'related_patient_name', 'priority_level', 'action_url', 'metadata', 'created_date', 'read_date'],
@@ -117,10 +117,11 @@ function setOperationMode(mode) {
   
   const db = getDatabase();
   db.prepare(`
-    INSERT INTO audit_logs (id, action, entity_type, details, user_email, user_role)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO audit_logs (id, org_id, action, entity_type, details, user_email, user_role)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `).run(
     uuidv4(),
+    'SYSTEM',
     'mode_change',
     'System',
     `Operation mode changed: ${previousMode} -> ${mode}`,
@@ -359,10 +360,11 @@ async function reconcilePendingChanges(strategy = CONFLICT_STRATEGY.LATEST_WINS)
   
   // Log reconciliation
   db.prepare(`
-    INSERT INTO audit_logs (id, action, entity_type, details, user_email, user_role)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO audit_logs (id, org_id, action, entity_type, details, user_email, user_role)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `).run(
     uuidv4(),
+    'SYSTEM',
     'reconciliation',
     'System',
     `Reconciliation completed: ${results.succeeded} succeeded, ${results.failed} failed`,

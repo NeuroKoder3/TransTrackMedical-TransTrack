@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
-  ListTodo, RefreshCw, Play, Clock, CheckCircle,
+  ListTodo, RefreshCw, Play, Clock, CheckCircle, AlertTriangle,
   ExternalLink, ArrowUpCircle, Zap, CircleDot
 } from 'lucide-react';
 import { createPageUrl, formatDate } from '@/utils';
@@ -44,7 +44,7 @@ export default function TaskCenter() {
   const [statusFilter, setStatusFilter] = useState('active');
   const [typeFilter, setTypeFilter] = useState('all');
 
-  const { data: dashboard, isLoading } = useQuery({
+  const { data: dashboard, isLoading, isError, error } = useQuery({
     queryKey: ['tasksDashboard'],
     queryFn: async () => {
       if (window.electronAPI?.tasks) {
@@ -55,7 +55,7 @@ export default function TaskCenter() {
     refetchInterval: 60000,
   });
 
-  const { data: allTasks, refetch: refetchTasks } = useQuery({
+  const { data: allTasks, isLoading: isLoadingTasks } = useQuery({
     queryKey: ['allTasks', statusFilter, typeFilter],
     queryFn: async () => {
       if (window.electronAPI?.tasks) {
@@ -78,7 +78,10 @@ export default function TaskCenter() {
   });
 
   const generateMutation = useMutation({
-    mutationFn: () => window.electronAPI.tasks.generateAuto(),
+    mutationFn: () => {
+      if (!window.electronAPI?.tasks) throw new Error('Tasks API not available');
+      return window.electronAPI.tasks.generateAuto();
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tasksDashboard'] });
       queryClient.invalidateQueries({ queryKey: ['allTasks'] });
@@ -86,7 +89,10 @@ export default function TaskCenter() {
   });
 
   const escalateMutation = useMutation({
-    mutationFn: () => window.electronAPI.tasks.processEscalations(),
+    mutationFn: () => {
+      if (!window.electronAPI?.tasks) throw new Error('Tasks API not available');
+      return window.electronAPI.tasks.processEscalations();
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tasksDashboard'] });
       queryClient.invalidateQueries({ queryKey: ['allTasks'] });
@@ -94,7 +100,10 @@ export default function TaskCenter() {
   });
 
   const updateTaskMutation = useMutation({
-    mutationFn: ({ taskId, updates }) => window.electronAPI.tasks.update(taskId, updates),
+    mutationFn: ({ taskId, updates }) => {
+      if (!window.electronAPI?.tasks) throw new Error('Tasks API not available');
+      return window.electronAPI.tasks.update(taskId, updates);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tasksDashboard'] });
       queryClient.invalidateQueries({ queryKey: ['allTasks'] });
@@ -114,6 +123,15 @@ export default function TaskCenter() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6">
       <div className="max-w-7xl mx-auto space-y-6">
+        {isError && (
+          <Alert className="bg-red-50 border-red-200">
+            <AlertTriangle className="h-4 w-4 text-red-600" />
+            <AlertDescription className="text-red-700 text-sm">
+              Failed to load task data: {error?.message || 'Unknown error'}. Please try refreshing.
+            </AlertDescription>
+          </Alert>
+        )}
+
         <div className="flex justify-between items-center">
           <div>
             <h1 className="text-3xl font-bold text-slate-900 flex items-center gap-3">
@@ -226,7 +244,11 @@ export default function TaskCenter() {
                 </div>
               </CardHeader>
               <CardContent>
-                {(allTasks || []).length > 0 ? (
+                {isLoadingTasks ? (
+                  <div className="flex justify-center py-12">
+                    <RefreshCw className="w-6 h-6 animate-spin text-cyan-600" />
+                  </div>
+                ) : (allTasks || []).length > 0 ? (
                   <div className="space-y-2">
                     {allTasks.map((task) => (
                       <div key={task.id}

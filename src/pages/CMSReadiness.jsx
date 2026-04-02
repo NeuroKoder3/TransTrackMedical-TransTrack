@@ -50,7 +50,7 @@ export default function CMSReadiness() {
   const queryClient = useQueryClient();
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const { data: dashboard, isLoading, refetch } = useQuery({
+  const { data: dashboard, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['srtrDashboard'],
     queryFn: async () => {
       if (window.electronAPI?.srtr) {
@@ -66,6 +66,7 @@ export default function CMSReadiness() {
       if (window.electronAPI?.srtr) {
         return await window.electronAPI.srtr.saveSnapshot();
       }
+      throw new Error('SRTR API not available');
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['srtrDashboard'] }),
   });
@@ -113,6 +114,24 @@ export default function CMSReadiness() {
             </Button>
           </div>
         </div>
+
+        {isError && (
+          <Alert className="bg-red-50 border-red-200">
+            <AlertTriangle className="h-4 w-4 text-red-600" />
+            <AlertDescription className="text-red-700 text-sm">
+              Failed to load CMS readiness data: {error?.message || 'Unknown error'}. Please try refreshing.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {saveSnapshotMutation.isError && (
+          <Alert className="bg-red-50 border-red-200">
+            <AlertTriangle className="h-4 w-4 text-red-600" />
+            <AlertDescription className="text-red-700 text-sm">
+              Failed to save snapshot: {saveSnapshotMutation.error?.message || 'Unknown error'}
+            </AlertDescription>
+          </Alert>
+        )}
 
         <Alert className="bg-blue-50 border-blue-200">
           <Info className="h-4 w-4 text-blue-600" />
@@ -301,7 +320,8 @@ export default function CMSReadiness() {
                   </CardHeader>
                   <CardContent>
                     {(() => {
-                      const factors = JSON.parse(metrics.cms_risk_factors || '[]');
+                      let factors = [];
+                      try { factors = JSON.parse(metrics.cms_risk_factors || '[]'); } catch { factors = []; }
                       if (factors.length === 0) {
                         return <p className="text-green-600 font-medium">No risk factors identified. Operational metrics are within CMS benchmarks.</p>;
                       }

@@ -89,10 +89,11 @@ async function createBackup(options = {}) {
   
   // Log backup in audit trail
   db.prepare(`
-    INSERT INTO audit_logs (id, action, entity_type, details, user_email, user_role)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO audit_logs (id, org_id, action, entity_type, details, user_email, user_role)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `).run(
     uuidv4(),
+    options.orgId || 'SYSTEM',
     'backup_created',
     'System',
     `Backup created: ${backupFileName} (${patientCount} patients, checksum: ${checksum.substring(0, 16)}...)`,
@@ -278,10 +279,11 @@ async function restoreFromBackup(backupId, options = {}) {
   
   // Log restore attempt
   db.prepare(`
-    INSERT INTO audit_logs (id, action, entity_type, details, user_email, user_role)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO audit_logs (id, org_id, action, entity_type, details, user_email, user_role)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `).run(
     uuidv4(),
+    options.orgId || 'SYSTEM',
     'restore_initiated',
     'System',
     `Restore initiated from: ${backup.fileName}`,
