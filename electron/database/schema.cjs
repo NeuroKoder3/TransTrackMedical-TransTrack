@@ -627,6 +627,169 @@ function createSchema(db) {
     )
   `);
 
+  // =========================================================================
+  // OUTCOMES METRICS TABLE (Org-Scoped)
+  // =========================================================================
+  // Tracks measurable operational outcomes over time to prove TransTrack ROI.
+  // Snapshots are recorded periodically and on-demand.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS outcomes_snapshots (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      snapshot_date TEXT NOT NULL DEFAULT (datetime('now')),
+      period_start TEXT NOT NULL,
+      period_end TEXT NOT NULL,
+      total_active_patients INTEGER DEFAULT 0,
+      total_inactivations INTEGER DEFAULT 0,
+      preventable_inactivations_avoided INTEGER DEFAULT 0,
+      evaluations_renewed_on_time INTEGER DEFAULT 0,
+      evaluations_lapsed INTEGER DEFAULT 0,
+      avg_barrier_resolution_days REAL DEFAULT 0,
+      barriers_resolved INTEGER DEFAULT 0,
+      barriers_opened INTEGER DEFAULT 0,
+      avg_time_to_intervention_hours REAL DEFAULT 0,
+      risk_alerts_generated INTEGER DEFAULT 0,
+      risk_alerts_acted_on INTEGER DEFAULT 0,
+      coordinator_load_std_dev REAL DEFAULT 0,
+      patients_at_risk INTEGER DEFAULT 0,
+      patients_at_risk_percentage REAL DEFAULT 0,
+      tasks_auto_generated INTEGER DEFAULT 0,
+      tasks_completed_on_time INTEGER DEFAULT 0,
+      tasks_escalated INTEGER DEFAULT 0,
+      created_by TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE
+    )
+  `);
+
+  // =========================================================================
+  // INACTIVATION PREDICTIONS TABLE (Org-Scoped)
+  // =========================================================================
+  // Stores per-patient inactivation risk predictions computed by the
+  // predictive service. Each row is a point-in-time prediction.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS inactivation_predictions (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      patient_id TEXT NOT NULL,
+      prediction_date TEXT NOT NULL DEFAULT (datetime('now')),
+      risk_score REAL NOT NULL CHECK(risk_score >= 0 AND risk_score <= 100),
+      risk_level TEXT NOT NULL DEFAULT 'low' CHECK(risk_level IN ('low', 'moderate', 'high', 'critical')),
+      predicted_inactivation_within_days INTEGER,
+      contributing_factors TEXT,
+      eval_expiry_factor REAL DEFAULT 0,
+      documentation_factor REAL DEFAULT 0,
+      barrier_factor REAL DEFAULT 0,
+      status_churn_factor REAL DEFAULT 0,
+      contact_recency_factor REAL DEFAULT 0,
+      recommendation TEXT,
+      is_current INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE,
+      FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE
+    )
+  `);
+
+  // =========================================================================
+  // TASKS TABLE (Org-Scoped)
+  // =========================================================================
+  // Auto-generated and manual tasks with escalation tracking.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS tasks (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      patient_id TEXT,
+      title TEXT NOT NULL,
+      description TEXT,
+      task_type TEXT NOT NULL CHECK(task_type IN (
+        'EVALUATION_RENEWAL',
+        'BARRIER_RESOLUTION',
+        'DOCUMENTATION_UPDATE',
+        'LAB_FOLLOWUP',
+        'AHHQ_COMPLETION',
+        'COORDINATOR_REVIEW',
+        'RISK_MITIGATION',
+        'GENERAL'
+      )),
+      source TEXT NOT NULL DEFAULT 'MANUAL' CHECK(source IN ('MANUAL', 'AUTO_RISK', 'AUTO_EVAL', 'AUTO_BARRIER', 'AUTO_LAB', 'AUTO_AHHQ')),
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'in_progress', 'completed', 'overdue', 'escalated', 'cancelled')),
+      priority TEXT NOT NULL DEFAULT 'normal' CHECK(priority IN ('low', 'normal', 'high', 'urgent')),
+      assigned_to TEXT,
+      assigned_role TEXT,
+      due_date TEXT,
+      completed_date TEXT,
+      completed_by TEXT,
+      escalation_level INTEGER DEFAULT 0,
+      escalated_at TEXT,
+      escalated_to TEXT,
+      parent_task_id TEXT,
+      trigger_entity_type TEXT,
+      trigger_entity_id TEXT,
+      resolution_notes TEXT,
+      created_by TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      updated_by TEXT,
+      FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE,
+      FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE
+    )
+  `);
+
+  // =========================================================================
+  // TASK ESCALATION RULES TABLE (Org-Scoped Configuration)
+  // =========================================================================
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS task_escalation_rules (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      task_type TEXT NOT NULL,
+      escalation_level INTEGER NOT NULL DEFAULT 1,
+      hours_before_escalation INTEGER NOT NULL DEFAULT 168,
+      escalate_to_role TEXT NOT NULL,
+      notification_message TEXT,
+      is_active INTEGER DEFAULT 1,
+      created_by TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE
+    )
+  `);
+
+  // =========================================================================
+  // SRTR METRICS TABLE (Org-Scoped)
+  // =========================================================================
+  // Tracks CMS/SRTR readiness metrics locally for trend monitoring.
+  // These are operational approximations, NOT official SRTR calculations.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS srtr_metrics (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      metric_date TEXT NOT NULL DEFAULT (datetime('now')),
+      period_label TEXT,
+      total_waitlisted INTEGER DEFAULT 0,
+      active_waitlisted INTEGER DEFAULT 0,
+      inactive_waitlisted INTEGER DEFAULT 0,
+      inactive_percentage REAL DEFAULT 0,
+      new_listings INTEGER DEFAULT 0,
+      removals_transplanted INTEGER DEFAULT 0,
+      removals_deceased INTEGER DEFAULT 0,
+      removals_other INTEGER DEFAULT 0,
+      median_wait_days INTEGER DEFAULT 0,
+      transplant_rate REAL DEFAULT 0,
+      offer_acceptance_rate REAL DEFAULT 0,
+      one_year_graft_survival_est REAL,
+      one_year_patient_survival_est REAL,
+      evaluation_completion_rate REAL DEFAULT 0,
+      documentation_completeness_rate REAL DEFAULT 0,
+      cms_survey_risk_level TEXT DEFAULT 'low' CHECK(cms_survey_risk_level IN ('low', 'moderate', 'high', 'critical')),
+      cms_risk_factors TEXT,
+      notes TEXT,
+      created_by TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE
+    )
+  `);
+
   // NOTE: Indexes are created AFTER migration in init.cjs, not here
   // This is because existing databases may not have org_id columns yet
 }
@@ -715,6 +878,37 @@ function createIndexes(db) {
     -- Required lab types indexes (org-scoped)
     CREATE INDEX IF NOT EXISTS idx_required_labs_org_id ON required_lab_types(org_id);
     CREATE INDEX IF NOT EXISTS idx_required_labs_organ ON required_lab_types(org_id, organ_type);
+    
+    -- Outcomes snapshots indexes (org-scoped)
+    CREATE INDEX IF NOT EXISTS idx_outcomes_org_id ON outcomes_snapshots(org_id);
+    CREATE INDEX IF NOT EXISTS idx_outcomes_date ON outcomes_snapshots(org_id, snapshot_date DESC);
+    CREATE INDEX IF NOT EXISTS idx_outcomes_period ON outcomes_snapshots(org_id, period_start, period_end);
+    
+    -- Inactivation predictions indexes (org-scoped)
+    CREATE INDEX IF NOT EXISTS idx_predictions_org_id ON inactivation_predictions(org_id);
+    CREATE INDEX IF NOT EXISTS idx_predictions_patient ON inactivation_predictions(org_id, patient_id);
+    CREATE INDEX IF NOT EXISTS idx_predictions_current ON inactivation_predictions(org_id, is_current, risk_level);
+    CREATE INDEX IF NOT EXISTS idx_predictions_date ON inactivation_predictions(org_id, prediction_date DESC);
+    CREATE INDEX IF NOT EXISTS idx_predictions_score ON inactivation_predictions(org_id, risk_score DESC);
+    
+    -- Tasks indexes (org-scoped)
+    CREATE INDEX IF NOT EXISTS idx_tasks_org_id ON tasks(org_id);
+    CREATE INDEX IF NOT EXISTS idx_tasks_patient ON tasks(org_id, patient_id);
+    CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(org_id, status);
+    CREATE INDEX IF NOT EXISTS idx_tasks_assigned ON tasks(org_id, assigned_to);
+    CREATE INDEX IF NOT EXISTS idx_tasks_due ON tasks(org_id, due_date);
+    CREATE INDEX IF NOT EXISTS idx_tasks_type ON tasks(org_id, task_type);
+    CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(org_id, priority, status);
+    CREATE INDEX IF NOT EXISTS idx_tasks_source ON tasks(org_id, source);
+    
+    -- Task escalation rules indexes (org-scoped)
+    CREATE INDEX IF NOT EXISTS idx_escalation_rules_org ON task_escalation_rules(org_id);
+    CREATE INDEX IF NOT EXISTS idx_escalation_rules_type ON task_escalation_rules(org_id, task_type);
+    
+    -- SRTR metrics indexes (org-scoped)
+    CREATE INDEX IF NOT EXISTS idx_srtr_org_id ON srtr_metrics(org_id);
+    CREATE INDEX IF NOT EXISTS idx_srtr_date ON srtr_metrics(org_id, metric_date DESC);
+    CREATE INDEX IF NOT EXISTS idx_srtr_risk ON srtr_metrics(org_id, cms_survey_risk_level);
   `);
 }
 
@@ -750,7 +944,8 @@ function addOrgIdToExistingTables(db, defaultOrgId) {
     'users', 'patients', 'donor_organs', 'matches', 'notifications',
     'notification_rules', 'priority_weights', 'ehr_integrations', 'ehr_imports',
     'ehr_sync_logs', 'ehr_validation_rules', 'audit_logs', 'access_justification_logs',
-    'readiness_barriers', 'adult_health_history_questionnaires', 'lab_results', 'required_lab_types'
+    'readiness_barriers', 'adult_health_history_questionnaires', 'lab_results', 'required_lab_types',
+    'outcomes_snapshots', 'inactivation_predictions', 'tasks', 'task_escalation_rules', 'srtr_metrics'
   ];
 
   for (const table of tablesToMigrate) {
