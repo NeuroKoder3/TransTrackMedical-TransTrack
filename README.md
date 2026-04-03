@@ -261,9 +261,9 @@ The **Transplant Clock** is a visual heartbeat of your transplant program, provi
 ## Technology Stack
 
 * **Frontend**: React 18, Tailwind CSS, Radix UI, Framer Motion
-* **Desktop**: Electron 29
-* **Database**: Encrypted SQLite
-* **Build**: Vite, electron-builder
+* **Desktop**: Electron 35
+* **Database**: Encrypted SQLite (SQLCipher, AES-256-CBC)
+* **Build**: Vite 6, electron-builder
 * **Languages**: TypeScript / JavaScript
 
 ---
@@ -305,10 +305,12 @@ npm run build:electron
 ## Quick Start (Evaluation)
 
 1. Launch **TransTrack**
-2. Login: `admin@transtrack.local` / `TransTrack#Admin2026!`
+2. Use the default credentials provided in your evaluation package
 3. Change your password on first login (you will be prompted automatically)
 4. Explore features using sample/test data
 5. Contact us: [Trans_Track@outlook.com](mailto:Trans_Track@outlook.com)
+
+> **Note:** Default credentials are provided separately in your evaluation onboarding materials for security purposes. Contact [Trans_Track@outlook.com](mailto:Trans_Track@outlook.com) if you need assistance.
 
 ---
 

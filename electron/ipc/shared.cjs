@@ -298,11 +298,15 @@ function parseJsonFields(row) {
   return parsed;
 }
 
-/** @deprecated Use getEntityByIdAndOrg */
-function getEntityById(tableName, id) {
-  const db = getDatabase();
-  const row = db.prepare(`SELECT * FROM ${tableName} WHERE id = ?`).get(id);
-  return row ? parseJsonFields(row) : null;
+/**
+ * @deprecated Use getEntityByIdAndOrg — this function is retained only for
+ * backward-compatibility during migration.  In production it throws to
+ * enforce org-scoped access.
+ */
+function getEntityById(/* tableName, id */) {
+  throw new Error(
+    'getEntityById is deprecated and disabled for security. Use getEntityByIdAndOrg with an explicit org_id.'
+  );
 }
 
 function getEntityByIdAndOrg(tableName, id, orgId) {

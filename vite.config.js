@@ -34,5 +34,12 @@ export default defineConfig({
     setupFiles: ['./tests/setup-react.js'],
     include: ['tests/components/**/*.test.{js,jsx}'],
     css: true,
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'text-summary', 'lcov', 'json-summary'],
+      reportsDirectory: './coverage',
+      include: ['src/**/*.{js,jsx}'],
+      exclude: ['src/components/ui/**', 'src/main.jsx'],
+    },
   },
 });

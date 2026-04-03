@@ -109,7 +109,7 @@ function register() {
     else if (data.patient_name) patientName = data.patient_name;
 
     shared.logAudit('create', entityName, id, patientName, `${entityName} created`, currentUser.email, currentUser.role);
-    return shared.getEntityById(tableName, id);
+    return shared.getEntityByIdAndOrg(tableName, id, orgId);
   });
 
   ipcMain.handle('entity:get', async (event, entityName, id) => {
