@@ -74,7 +74,7 @@ Ensure this location:
 
 ```bash
 # Clone repository
-git clone https://github.com/TransTrackMedical/TransTrack.git
+git clone https://github.com/NeuroKoder3/TransTrackMedical-TransTrack.git
 cd TransTrack
 
 # Install dependencies

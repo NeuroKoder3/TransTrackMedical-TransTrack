@@ -6,10 +6,10 @@
   "private": true,
   "author": "TransTrack Medical Software",
   "license": "Proprietary",
-  "homepage": "https://github.com/TransTrackMedical/TransTrack",
+  "homepage": "https://github.com/NeuroKoder3/TransTrackMedical-TransTrack",
   "repository": {
     "type": "git",
-    "url": "https://github.com/TransTrackMedical/TransTrack.git"
+    "url": "https://github.com/NeuroKoder3/TransTrackMedical-TransTrack.git"
   },
   "keywords": [
     "transplant",

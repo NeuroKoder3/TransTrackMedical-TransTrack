@@ -339,11 +339,11 @@ npm run build:electron
 
 ---
 
-## 📊 Repository Insights
+## Repository Highlights
 
-* 🚀 **1,100+ clones** in the last 14 days
-* 🌎 Visitors from **GitHub, Google, and transplant coordination networks**
-* 🔒 Built for **HIPAA & FDA 21 CFR Part 11 compliance**
+* Offline-first Electron desktop application for transplant operations
+* Built with React 18, Vite 6, and encrypted SQLite storage
+* Designed for HIPAA and FDA 21 CFR Part 11 readiness workflows
 * 🎥 [Watch the Demo](https://github.com/NeuroKoder3/TransTrackMedical-TransTrack/releases/download/v1.0.0/TransTrack-Wait-list.Management.Demo.mp4)
 
 ⭐ If you find TransTrack valuable, please **star this repository** to help others in the transplant community discover it.

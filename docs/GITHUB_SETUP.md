@@ -1,6 +1,6 @@
 # GitHub Repository Setup Guide
 
-This document provides instructions for publishing TransTrack to GitHub.
+This document provides instructions for maintaining the canonical TransTrack GitHub repository.
 
 ## Prerequisites
 
@@ -15,37 +15,27 @@ This document provides instructions for publishing TransTrack to GitHub.
 ```powershell
 cd c:\TransTrack
 
-# Initialize Git
-git init
+# Verify repository remote
+git remote -v
 
-# Add all files
-git add .
-
-# Create initial commit
-git commit -m "Initial commit: TransTrack v1.0.0 - HIPAA/FDA/AATB Compliant Transplant Waitlist Management System"
-
-# Create GitHub repository and push
-gh repo create TransTrackMedical/TransTrack --public --description "HIPAA/FDA/AATB Compliant Transplant Waitlist Management System - Offline Electron Desktop Application" --push --source=.
+# Push current branch to the canonical GitHub repository
+git push -u origin main
 ```
 
 ### Option 2: Manual Setup
 
-1. Create repository on GitHub:
+1. Confirm repository settings on GitHub:
    - Go to https://github.com/new
-   - Repository name: `TransTrack`
+   - Repository name: `TransTrackMedical-TransTrack`
    - Description: `HIPAA/FDA/AATB Compliant Transplant Waitlist Management System`
    - Public or Private (as needed)
-   - DO NOT initialize with README (we have one)
+   - DO NOT recreate or reinitialize the existing repository
 
-2. Push local repository:
+2. Ensure local `origin` points to the canonical repository:
 
 ```powershell
 cd c:\TransTrack
-git init
-git add .
-git commit -m "Initial commit: TransTrack v1.0.0"
-git branch -M main
-git remote add origin https://github.com/YOUR_USERNAME/TransTrack.git
+git remote set-url origin https://github.com/NeuroKoder3/TransTrackMedical-TransTrack.git
 git push -u origin main
 ```
 

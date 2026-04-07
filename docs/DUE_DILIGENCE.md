@@ -23,7 +23,7 @@ The application employs defense-in-depth security: AES-256 database encryption (
 | Layer | Technology | Purpose |
 |---|---|---|
 | Runtime | Electron 35.x | Cross-platform desktop framework |
-| Frontend | React 19, Vite 6, TailwindCSS | Modern component-based UI |
+| Frontend | React 18, Vite 6, TailwindCSS | Modern component-based UI |
 | Backend | Node.js (Electron main process) | Business logic, IPC handlers |
 | Database | SQLite via better-sqlite3-multiple-ciphers | Encrypted local storage |
 | Encryption | SQLCipher (AES-256-CBC, PBKDF2-HMAC-SHA512) | At-rest data encryption |
@@ -32,14 +32,14 @@ The application employs defense-in-depth security: AES-256 database encryption (
 
 | Metric | Value |
 |---|---|
-| Frontend source files (JSX/JS/CSS) | 116 |
-| Backend source files (CJS) | 39 |
-| Test files | 5 |
+| Frontend source files (JSX/JS/TS/TSX/CSS) | 120 |
+| Backend source files (CJS) | 47 |
+| Test/support files | 23 |
 | Database tables | 22 |
 | Total dependencies (production) | 63 |
-| Total dependencies (development) | 21 |
-| Automated tests | 87 |
-| Documentation files | 17 |
+| Total dependencies (development) | 27 |
+| Automated tests | 92 |
+| Documentation files | 18 |
 
 ### Data Flow
 

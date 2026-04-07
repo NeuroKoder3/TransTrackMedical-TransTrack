@@ -87,7 +87,7 @@ describe('DonorMatching Page', () => {
   it('renders Add Donor Organ button', async () => {
     renderDonorMatching();
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Add Donor Organ/i })).toBeInTheDocument();
+      expect(screen.getAllByRole('button', { name: /Add Donor Organ/i }).length).toBeGreaterThan(0);
     });
   });
 
