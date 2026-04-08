@@ -726,7 +726,14 @@ async function importFHIRData(params, context) {
     import_id: importId,
     records_imported: recordsImported,
     records_failed: recordsFailed,
-    errors
+    errors,
+    results: {
+      processed: recordsImported + recordsFailed,
+      created: recordsImported,
+      updated: 0,
+      failed: recordsFailed,
+      errors
+    }
   };
 }
 
@@ -792,6 +799,511 @@ async function logError(params, context) {
   return { logged: true };
 }
 
+// Export to FHIR R4 Bundle
+async function exportToFHIR(params, context) {
+  const { db, currentUser, logAudit } = context;
+  const { patient_id, resource_types } = params;
+
+  if (!patient_id) {
+    throw new Error('Missing required parameter: patient_id');
+  }
+
+  const patient = db.prepare('SELECT * FROM patients WHERE id = ?').get(patient_id);
+  if (!patient) {
+    throw new Error('Patient not found');
+  }
+
+  const fhirBundle = {
+    resourceType: 'Bundle',
+    type: 'collection',
+    timestamp: new Date().toISOString(),
+    meta: {
+      lastUpdated: new Date().toISOString(),
+      source: 'TransTrack'
+    },
+    entry: [],
+  };
+
+  // Patient resource
+  const fhirPatient = {
+    resourceType: 'Patient',
+    id: patient.id,
+    identifier: [
+      {
+        system: 'https://transtrack.app/patient-id',
+        value: patient.patient_id
+      }
+    ],
+    name: [
+      {
+        use: 'official',
+        family: patient.last_name,
+        given: [patient.first_name]
+      }
+    ],
+    telecom: [
+      ...(patient.phone ? [{ system: 'phone', value: patient.phone, use: 'home' }] : []),
+      ...(patient.email ? [{ system: 'email', value: patient.email }] : [])
+    ],
+    birthDate: patient.date_of_birth,
+    contact: patient.emergency_contact_name ? [
+      {
+        relationship: [
+          {
+            coding: [
+              {
+                system: 'http://terminology.hl7.org/CodeSystem/v2-0131',
+                code: 'C',
+                display: 'Emergency Contact'
+              }
+            ]
+          }
+        ],
+        name: { text: patient.emergency_contact_name },
+        telecom: patient.emergency_contact_phone
+          ? [{ system: 'phone', value: patient.emergency_contact_phone }]
+          : []
+      }
+    ] : []
+  };
+
+  fhirBundle.entry.push({
+    fullUrl: `Patient/${patient.id}`,
+    resource: fhirPatient
+  });
+
+  // Observation resources
+  if (!resource_types || resource_types.includes('Observation')) {
+    if (patient.blood_type) {
+      fhirBundle.entry.push({
+        fullUrl: `Observation/${patient.id}-bloodtype`,
+        resource: {
+          resourceType: 'Observation',
+          id: `${patient.id}-bloodtype`,
+          status: 'final',
+          category: [{ coding: [{ system: 'http://terminology.hl7.org/CodeSystem/observation-category', code: 'laboratory', display: 'Laboratory' }] }],
+          code: {
+            coding: [{ system: 'http://loinc.org', code: '883-9', display: 'ABO group [Type] in Blood' }],
+            text: 'Blood Type'
+          },
+          subject: { reference: `Patient/${patient.id}` },
+          effectiveDateTime: patient.last_evaluation_date || new Date().toISOString(),
+          valueCodeableConcept: {
+            coding: [{ system: 'http://snomed.info/sct', code: patient.blood_type, display: patient.blood_type }],
+            text: patient.blood_type
+          }
+        }
+      });
+    }
+
+    if (patient.meld_score) {
+      fhirBundle.entry.push({
+        fullUrl: `Observation/${patient.id}-meld`,
+        resource: {
+          resourceType: 'Observation',
+          id: `${patient.id}-meld`,
+          status: 'final',
+          category: [{ coding: [{ system: 'http://terminology.hl7.org/CodeSystem/observation-category', code: 'survey', display: 'Survey' }] }],
+          code: {
+            coding: [{ system: 'http://loinc.org', code: '88374-7', display: 'MELD score' }],
+            text: 'MELD Score'
+          },
+          subject: { reference: `Patient/${patient.id}` },
+          effectiveDateTime: patient.last_evaluation_date || new Date().toISOString(),
+          valueInteger: Math.round(patient.meld_score)
+        }
+      });
+    }
+
+    if (patient.las_score) {
+      fhirBundle.entry.push({
+        fullUrl: `Observation/${patient.id}-las`,
+        resource: {
+          resourceType: 'Observation',
+          id: `${patient.id}-las`,
+          status: 'final',
+          code: { text: 'Lung Allocation Score' },
+          subject: { reference: `Patient/${patient.id}` },
+          effectiveDateTime: patient.last_evaluation_date || new Date().toISOString(),
+          valueQuantity: { value: patient.las_score, unit: 'score' }
+        }
+      });
+    }
+
+    if (patient.priority_score !== undefined && patient.priority_score !== null) {
+      let breakdownNote = '';
+      if (patient.priority_score_breakdown) {
+        try {
+          const bd = typeof patient.priority_score_breakdown === 'string'
+            ? JSON.parse(patient.priority_score_breakdown)
+            : patient.priority_score_breakdown;
+          breakdownNote = `Breakdown: Medical Urgency=${bd.weighted_scores?.medical_urgency?.toFixed(1) || 'N/A'}, Time=${bd.weighted_scores?.time_on_waitlist?.toFixed(1) || 'N/A'}, Organ Score=${bd.weighted_scores?.organ_specific?.toFixed(1) || 'N/A'}`;
+        } catch { breakdownNote = ''; }
+      }
+
+      fhirBundle.entry.push({
+        fullUrl: `Observation/${patient.id}-priority`,
+        resource: {
+          resourceType: 'Observation',
+          id: `${patient.id}-priority`,
+          status: 'final',
+          category: [{ coding: [{ system: 'https://transtrack.app/observation-category', code: 'transplant-priority', display: 'Transplant Priority' }] }],
+          code: { text: 'Transplant Priority Score' },
+          subject: { reference: `Patient/${patient.id}` },
+          effectiveDateTime: patient.updated_at || new Date().toISOString(),
+          valueQuantity: {
+            value: patient.priority_score,
+            unit: 'score',
+            system: 'https://transtrack.app/priority-score',
+            code: 'priority-score'
+          },
+          ...(breakdownNote ? { note: [{ text: breakdownNote }] } : {})
+        }
+      });
+    }
+
+    if (patient.hla_typing) {
+      fhirBundle.entry.push({
+        fullUrl: `Observation/${patient.id}-hla`,
+        resource: {
+          resourceType: 'Observation',
+          id: `${patient.id}-hla`,
+          status: 'final',
+          code: { text: 'HLA Typing' },
+          subject: { reference: `Patient/${patient.id}` },
+          effectiveDateTime: patient.last_evaluation_date || new Date().toISOString(),
+          valueString: patient.hla_typing
+        }
+      });
+    }
+
+    if (patient.weight_kg) {
+      fhirBundle.entry.push({
+        fullUrl: `Observation/${patient.id}-weight`,
+        resource: {
+          resourceType: 'Observation',
+          id: `${patient.id}-weight`,
+          status: 'final',
+          code: {
+            coding: [{ system: 'http://loinc.org', code: '29463-7', display: 'Body weight' }],
+            text: 'Body Weight'
+          },
+          subject: { reference: `Patient/${patient.id}` },
+          valueQuantity: { value: patient.weight_kg, unit: 'kg', system: 'http://unitsofmeasure.org', code: 'kg' }
+        }
+      });
+    }
+
+    if (patient.height_cm) {
+      fhirBundle.entry.push({
+        fullUrl: `Observation/${patient.id}-height`,
+        resource: {
+          resourceType: 'Observation',
+          id: `${patient.id}-height`,
+          status: 'final',
+          code: {
+            coding: [{ system: 'http://loinc.org', code: '8302-2', display: 'Body height' }],
+            text: 'Body Height'
+          },
+          subject: { reference: `Patient/${patient.id}` },
+          valueQuantity: { value: patient.height_cm, unit: 'cm', system: 'http://unitsofmeasure.org', code: 'cm' }
+        }
+      });
+    }
+  }
+
+  // Condition resources
+  if (!resource_types || resource_types.includes('Condition')) {
+    if (patient.diagnosis) {
+      fhirBundle.entry.push({
+        fullUrl: `Condition/${patient.id}-diagnosis`,
+        resource: {
+          resourceType: 'Condition',
+          id: `${patient.id}-diagnosis`,
+          clinicalStatus: {
+            coding: [{
+              system: 'http://terminology.hl7.org/CodeSystem/condition-clinical',
+              code: patient.waitlist_status === 'transplanted' ? 'resolved' : 'active',
+              display: patient.waitlist_status === 'transplanted' ? 'Resolved' : 'Active'
+            }]
+          },
+          verificationStatus: {
+            coding: [{
+              system: 'http://terminology.hl7.org/CodeSystem/condition-ver-status',
+              code: 'confirmed',
+              display: 'Confirmed'
+            }]
+          },
+          category: [{
+            coding: [{
+              system: 'http://terminology.hl7.org/CodeSystem/condition-category',
+              code: 'encounter-diagnosis',
+              display: 'Encounter Diagnosis'
+            }]
+          }],
+          code: { text: patient.diagnosis },
+          subject: { reference: `Patient/${patient.id}` },
+          recordedDate: patient.created_at
+        }
+      });
+    }
+
+    fhirBundle.entry.push({
+      fullUrl: `Condition/${patient.id}-waitlist`,
+      resource: {
+        resourceType: 'Condition',
+        id: `${patient.id}-waitlist`,
+        clinicalStatus: {
+          coding: [{
+            system: 'http://terminology.hl7.org/CodeSystem/condition-clinical',
+            code: patient.waitlist_status === 'active' ? 'active' : 'inactive',
+            display: patient.waitlist_status === 'active' ? 'Active' : 'Inactive'
+          }]
+        },
+        category: [{
+          coding: [{
+            system: 'https://transtrack.app/condition-category',
+            code: 'transplant-waitlist',
+            display: 'Transplant Waitlist'
+          }]
+        }],
+        code: {
+          text: `${patient.organ_needed} Transplant Waitlist - ${patient.waitlist_status}`
+        },
+        subject: { reference: `Patient/${patient.id}` },
+        onsetDateTime: patient.date_added_to_waitlist,
+        note: [{
+          text: `Medical Urgency: ${patient.medical_urgency}, Priority Score: ${patient.priority_score?.toFixed(1) || 'N/A'}`
+        }]
+      }
+    });
+  }
+
+  logAudit(
+    'export',
+    'Patient',
+    patient_id,
+    `${patient.first_name} ${patient.last_name}`,
+    `FHIR R4 Bundle exported: ${fhirBundle.entry.length} resources`,
+    currentUser.email,
+    currentUser.role
+  );
+
+  return {
+    success: true,
+    data: {
+      fhir_bundle: fhirBundle,
+      resource_count: fhirBundle.entry.length
+    }
+  };
+}
+
+// Push data to external EHR system via FHIR
+async function pushToEHR(params, context) {
+  const { db, currentUser, logAudit } = context;
+  const { patient_id, integration_id, fields_to_sync } = params;
+
+  if (!patient_id) throw new Error('Missing required parameter: patient_id');
+  if (!integration_id) throw new Error('Missing required parameter: integration_id');
+
+  const patient = db.prepare('SELECT * FROM patients WHERE id = ?').get(patient_id);
+  if (!patient) throw new Error('Patient not found');
+
+  const integration = db.prepare('SELECT * FROM ehr_integrations WHERE id = ?').get(integration_id);
+  if (!integration) throw new Error('EHR integration not found');
+
+  if (!integration.enable_bidirectional_sync) {
+    throw new Error('Bidirectional sync not enabled for this integration');
+  }
+
+  const startTime = Date.now();
+  const syncedFields = [];
+  const errors = [];
+
+  // Generate FHIR bundle via exportToFHIR
+  const exportResult = await exportToFHIR({ patient_id, resource_types: ['Patient', 'Observation', 'Condition'] }, context);
+  const fhirBundle = exportResult.data.fhir_bundle;
+
+  const fieldsToSync = fields_to_sync || (
+    integration.sync_fields_to_ehr
+      ? (typeof integration.sync_fields_to_ehr === 'string' ? JSON.parse(integration.sync_fields_to_ehr) : integration.sync_fields_to_ehr)
+      : []
+  );
+
+  if (fieldsToSync.length === 0) {
+    throw new Error('No fields configured for sync');
+  }
+
+  const endpointUrl = integration.endpoint_url || integration.base_url;
+  if (!endpointUrl) {
+    throw new Error('No endpoint URL configured for this integration');
+  }
+
+  // Prepare auth headers
+  const authHeaders = {
+    'Content-Type': 'application/fhir+json',
+    'Accept': 'application/fhir+json'
+  };
+
+  if (integration.api_key_encrypted) {
+    if (integration.auth_type === 'basic_auth') {
+      authHeaders['Authorization'] = `Basic ${integration.api_key_encrypted}`;
+    } else {
+      authHeaders['Authorization'] = `Bearer ${integration.api_key_encrypted}`;
+    }
+  }
+
+  let ehrResponse;
+  try {
+    const pushResponse = await fetch(endpointUrl, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify(fhirBundle),
+      signal: AbortSignal.timeout(30000),
+    });
+
+    ehrResponse = {
+      status: pushResponse.status,
+      statusText: pushResponse.statusText,
+      body: await pushResponse.text()
+    };
+
+    if (!pushResponse.ok) {
+      errors.push(`EHR system returned ${pushResponse.status}: ${pushResponse.statusText}`);
+    } else {
+      syncedFields.push(...fieldsToSync);
+
+      // Update integration export stats
+      const totalExports = (integration.total_exports || 0) + 1;
+      db.prepare(`
+        UPDATE ehr_integrations SET total_exports = ?, last_export_date = datetime('now'), updated_at = datetime('now') WHERE id = ?
+      `).run(totalExports, integration.id);
+    }
+  } catch (fetchError) {
+    errors.push(`Network error: ${fetchError.message}`);
+    ehrResponse = { error: fetchError.message };
+  }
+
+  const syncDuration = Date.now() - startTime;
+
+  // Log to ehr_sync_logs
+  const syncLogId = uuidv4();
+  const orgId = currentUser.org_id || 'SYSTEM';
+  db.prepare(`
+    INSERT INTO ehr_sync_logs (
+      id, org_id, integration_id, sync_direction, patient_id, patient_name,
+      fhir_resource_type, fields_synced, status, error_message, ehr_response,
+      triggered_by, sync_duration_ms, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+  `).run(
+    syncLogId, orgId, integration.id, 'outbound', patient.id,
+    `${patient.first_name} ${patient.last_name}`,
+    'Bundle', JSON.stringify(syncedFields),
+    errors.length === 0 ? 'success' : 'failed',
+    errors.join('; ') || null,
+    JSON.stringify(ehrResponse), 'manual', syncDuration
+  );
+
+  logAudit(
+    'update',
+    'Patient',
+    patient.id,
+    `${patient.first_name} ${patient.last_name}`,
+    `Data pushed to EHR ${integration.integration_name || integration.name}: ${syncedFields.length} fields synced`,
+    currentUser.email,
+    currentUser.role
+  );
+
+  return {
+    success: errors.length === 0,
+    data: {
+      success: errors.length === 0,
+      synced_fields: syncedFields,
+      errors,
+      sync_log_id: syncLogId,
+      ehr_response: ehrResponse
+    }
+  };
+}
+
+// Process inbound FHIR webhook data
+async function fhirWebhook(params, context) {
+  const { db, currentUser, logAudit } = context;
+  const { payload, webhook_secret } = params;
+
+  if (!payload || !payload.resourceType) {
+    throw new Error('Invalid FHIR resource: missing resourceType');
+  }
+
+  const results = {
+    processed: 0,
+    created: 0,
+    updated: 0,
+    failed: 0,
+    errors: []
+  };
+
+  if (payload.resourceType === 'Bundle') {
+    const entries = payload.entry || [];
+
+    for (const entry of entries) {
+      if (entry.resource?.resourceType === 'Patient') {
+        results.processed++;
+
+        try {
+          const fhirPatient = entry.resource;
+          const patientIdValue = fhirPatient.identifier?.[0]?.value || `FHIR-${Date.now()}`;
+          const firstName = fhirPatient.name?.[0]?.given?.[0] || 'Unknown';
+          const lastName = fhirPatient.name?.[0]?.family || 'Unknown';
+          const dob = fhirPatient.birthDate || null;
+          const phone = fhirPatient.telecom?.find(t => t.system === 'phone')?.value || null;
+          const email = fhirPatient.telecom?.find(t => t.system === 'email')?.value || null;
+
+          const orgId = currentUser.org_id || 'SYSTEM';
+          const existing = db.prepare('SELECT * FROM patients WHERE patient_id = ? AND org_id = ?').all(patientIdValue, orgId);
+
+          if (existing.length > 0) {
+            db.prepare(`
+              UPDATE patients SET first_name = ?, last_name = ?, date_of_birth = ?,
+                phone = COALESCE(?, phone), email = COALESCE(?, email), updated_at = datetime('now')
+              WHERE id = ?
+            `).run(firstName, lastName, dob, phone, email, existing[0].id);
+            results.updated++;
+          } else {
+            const newId = uuidv4();
+            db.prepare(`
+              INSERT INTO patients (id, org_id, patient_id, first_name, last_name, date_of_birth, phone, email, created_by)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `).run(newId, orgId, patientIdValue, firstName, lastName, dob, phone, email, currentUser.email);
+            results.created++;
+          }
+        } catch (error) {
+          results.failed++;
+          results.errors.push({ patient: entry.fullUrl, error: error.message });
+        }
+      }
+    }
+  }
+
+  logAudit(
+    'import',
+    'FHIRWebhook',
+    null,
+    null,
+    `FHIR webhook processed: ${results.created} created, ${results.updated} updated, ${results.failed} failed`,
+    currentUser.email,
+    currentUser.role
+  );
+
+  return {
+    success: true,
+    data: {
+      message: 'FHIR webhook processed',
+      results
+    }
+  };
+}
+
 module.exports = {
   calculatePriorityAdvanced,
   calculatePriority: calculatePriorityAdvanced,
@@ -802,7 +1314,7 @@ module.exports = {
   importFHIRData,
   validateFHIRData,
   logError,
-  exportToFHIR: async () => ({ success: true, message: 'FHIR export not implemented in offline mode' }),
-  pushToEHR: async () => ({ success: true, message: 'EHR push not available in offline mode' }),
-  fhirWebhook: async () => ({ success: true, message: 'Webhooks not available in offline mode' })
+  exportToFHIR,
+  pushToEHR,
+  fhirWebhook
 };

@@ -40,6 +40,50 @@ const MIGRATIONS = [
   },
   {
     version: 3,
+    name: 'add_ehr_integration_columns',
+    description: 'Add EHR integration, sync log, and import columns for FHIR interoperability',
+    rollbackSql: null,
+    up(db) {
+      const addCol = (table, col, type) => {
+        const cols = db.prepare(`PRAGMA table_info(${table})`).all().map(c => c.name);
+        if (!cols.includes(col)) {
+          db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${type}`);
+        }
+      };
+
+      addCol('ehr_integrations', 'integration_name', 'TEXT');
+      addCol('ehr_integrations', 'ehr_system_type', 'TEXT');
+      addCol('ehr_integrations', 'endpoint_url', 'TEXT');
+      addCol('ehr_integrations', 'auth_type', "TEXT DEFAULT 'bearer_token'");
+      addCol('ehr_integrations', 'enable_bidirectional_sync', 'INTEGER DEFAULT 0');
+      addCol('ehr_integrations', 'sync_fields_to_ehr', 'TEXT');
+      addCol('ehr_integrations', 'auto_create_patients', 'INTEGER DEFAULT 0');
+      addCol('ehr_integrations', 'auto_update_existing', 'INTEGER DEFAULT 1');
+      addCol('ehr_integrations', 'sync_frequency', 'TEXT');
+      addCol('ehr_integrations', 'total_imports', 'INTEGER DEFAULT 0');
+      addCol('ehr_integrations', 'total_exports', 'INTEGER DEFAULT 0');
+      addCol('ehr_integrations', 'last_export_date', 'TEXT');
+
+      addCol('ehr_sync_logs', 'sync_direction', 'TEXT');
+      addCol('ehr_sync_logs', 'patient_id', 'TEXT');
+      addCol('ehr_sync_logs', 'patient_name', 'TEXT');
+      addCol('ehr_sync_logs', 'fhir_resource_type', 'TEXT');
+      addCol('ehr_sync_logs', 'fields_synced', 'TEXT');
+      addCol('ehr_sync_logs', 'error_message', 'TEXT');
+      addCol('ehr_sync_logs', 'ehr_response', 'TEXT');
+      addCol('ehr_sync_logs', 'triggered_by', 'TEXT');
+      addCol('ehr_sync_logs', 'sync_duration_ms', 'INTEGER');
+
+      addCol('ehr_imports', 'source_system', 'TEXT');
+      addCol('ehr_imports', 'records_processed', 'INTEGER DEFAULT 0');
+      addCol('ehr_imports', 'records_created', 'INTEGER DEFAULT 0');
+      addCol('ehr_imports', 'records_updated', 'INTEGER DEFAULT 0');
+      addCol('ehr_imports', 'imported_by', 'TEXT');
+      addCol('ehr_imports', 'fhir_version', 'TEXT');
+    },
+  },
+  {
+    version: 4,
     name: 'add_schema_version_setting',
     description: 'Record schema version in settings for external tools',
     rollbackSql: "DELETE FROM settings WHERE key = 'schema_version'",

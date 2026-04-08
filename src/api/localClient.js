@@ -336,7 +336,9 @@ const createElectronClient = () => {
     }),
     functions: {
       invoke: async (functionName, params) => {
-        return await api.functions.invoke(functionName, params);
+        const result = await api.functions.invoke(functionName, params);
+        if (result && result.data !== undefined) return result;
+        return { data: result };
       },
     },
     // Readiness Barriers (Non-Clinical Operational Tracking)
