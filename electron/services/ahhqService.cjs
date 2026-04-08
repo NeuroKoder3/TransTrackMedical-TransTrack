@@ -23,9 +23,7 @@
 const { getDatabase } = require('../database/init.cjs');
 const { v4: uuidv4 } = require('uuid');
 
-// =============================================================================
-// CONSTANTS
-// =============================================================================
+// Constants
 
 const AHHQ_STATUS = {
   COMPLETE: 'complete',
@@ -53,9 +51,7 @@ const AHHQ_OWNING_ROLES = {
 const DEFAULT_VALIDITY_DAYS = 365;
 const EXPIRATION_WARNING_DAYS = 30;
 
-// =============================================================================
-// ORG ISOLATION HELPERS
-// =============================================================================
+// --- org isolation ---
 
 function requireOrgId(orgId) {
   if (!orgId) {
@@ -73,9 +69,7 @@ function verifyPatientOrg(patientId, orgId) {
   return true;
 }
 
-// =============================================================================
-// HELPER FUNCTIONS
-// =============================================================================
+// Helpers
 
 function calculateExpirationDate(completedDate, validityDays = DEFAULT_VALIDITY_DAYS) {
   const date = new Date(completedDate);
@@ -111,9 +105,7 @@ function stringifyIssues(issues) {
   return JSON.stringify(issues);
 }
 
-// =============================================================================
-// CRUD OPERATIONS (Org-Scoped)
-// =============================================================================
+// --- CRUD operations ---
 
 function createAHHQ(data, userId, orgId) {
   requireOrgId(orgId);
@@ -368,9 +360,7 @@ function deleteAHHQ(id, orgId) {
   return { success: true };
 }
 
-// =============================================================================
-// PATIENT SUMMARY (Org-Scoped)
-// =============================================================================
+// Patient summary
 
 function getPatientAHHQSummary(patientId, orgId) {
   requireOrgId(orgId);
@@ -408,9 +398,7 @@ function getPatientAHHQSummary(patientId, orgId) {
   return { exists: true, status: ahhq.status, riskLevel, riskDescription, needsAttention, daysUntilExpiration: ahhq.days_until_expiration, ahhq };
 }
 
-// =============================================================================
-// DASHBOARD METRICS (Org-Scoped)
-// =============================================================================
+// Dashboard metrics
 
 function getAHHQDashboard(orgId) {
   requireOrgId(orgId);
@@ -513,9 +501,7 @@ function getPatientsWithAHHQIssues(orgId, limit = 10) {
   }));
 }
 
-// =============================================================================
-// AUDIT HISTORY (Org-Scoped)
-// =============================================================================
+// --- audit history ---
 
 function getAHHQAuditHistory(orgId, patientId = null, startDate = null, endDate = null) {
   requireOrgId(orgId);
@@ -545,10 +531,6 @@ function getAHHQAuditHistory(orgId, patientId = null, startDate = null, endDate 
   query += ` ORDER BY al.created_at DESC LIMIT 100`;
   return db.prepare(query).all(...params);
 }
-
-// =============================================================================
-// EXPORTS
-// =============================================================================
 
 module.exports = {
   AHHQ_STATUS, AHHQ_ISSUES, AHHQ_OWNING_ROLES, DEFAULT_VALIDITY_DAYS, EXPIRATION_WARNING_DAYS,

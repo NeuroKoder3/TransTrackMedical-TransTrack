@@ -12,7 +12,7 @@ const shared = require('../shared.cjs');
 function register() {
   const db = getDatabase();
 
-  // ===== OPERATIONAL RISK INTELLIGENCE =====
+  // Risk intelligence
   ipcMain.handle('risk:getDashboard', async () => {
     if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
     return riskEngine.getRiskDashboard(shared.getSessionOrgId());
@@ -31,7 +31,7 @@ function register() {
     return riskEngine.assessPatientOperationalRisk(patient, orgId);
   });
 
-  // ===== TRANSPLANT CLOCK =====
+  // --- transplant clock ---
   ipcMain.handle('clock:getData', async () => {
     if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
     return transplantClock.getTransplantClockData(shared.getSessionOrgId());
@@ -62,7 +62,7 @@ function register() {
     return transplantClock.getCoordinatorLoad(shared.getSessionOrgId());
   });
 
-  // ===== BUSINESS FUNCTIONS =====
+  // Business functions
   ipcMain.handle('function:invoke', async (event, functionName, params) => {
     if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
     const { currentUser } = shared.getSessionState();

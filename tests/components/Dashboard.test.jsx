@@ -1,12 +1,4 @@
-/**
- * Dashboard Page Component Tests
- *
- * Validates the main Dashboard UI:
- * - Renders statistics cards
- * - Displays patient cards
- * - Shows filter bar
- * - Has recalculate priorities button
- */
+// Dashboard component tests
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';

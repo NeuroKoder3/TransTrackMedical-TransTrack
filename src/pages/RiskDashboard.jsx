@@ -14,6 +14,7 @@ import {
 import { AHHQRiskBadge } from '@/components/ahhq';
 import { TransplantClock } from '@/components/clock';
 import { createPageUrl } from '@/utils';
+import ErrorState from '@/components/ui/ErrorState';
 import api from '@/api/localClient';
 
 export default function RiskDashboard() {
@@ -103,14 +104,7 @@ export default function RiskDashboard() {
   }
 
   if (isError) {
-    return (
-      <div className="p-6">
-        <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
-          <h3 className="text-red-800 font-semibold text-lg mb-2">Failed to Load Data</h3>
-          <p className="text-red-600">Unable to load risk dashboard data. Please try again or contact support.</p>
-        </div>
-      </div>
-    );
+    return <ErrorState title="Risk data unavailable" />;
   }
 
   return (

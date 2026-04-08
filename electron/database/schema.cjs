@@ -1,24 +1,7 @@
-/**
- * TransTrack - Database Schema Definition
- * 
- * Multi-Organization Architecture:
- * - Every entity belongs to an organization (org_id)
- * - Hard org isolation at query level
- * - License bound to organization, not machine
- * 
- * HIPAA Compliance:
- * - All PHI is org-scoped
- * - Audit logs are immutable and org-scoped
- * - Access justification logs for sensitive operations
- */
+// Database schema — all tables are org-scoped with hard isolation
 
-/**
- * Create all database tables with org isolation
- */
 function createSchema(db) {
-  // =========================================================================
-  // ORGANIZATIONS TABLE (First-Class Entity)
-  // =========================================================================
+  // organizations
   db.exec(`
     CREATE TABLE IF NOT EXISTS organizations (
       id TEXT PRIMARY KEY,
@@ -40,9 +23,7 @@ function createSchema(db) {
     )
   `);
 
-  // =========================================================================
-  // LICENSES TABLE (Bound to Organization)
-  // =========================================================================
+  // licenses
   db.exec(`
     CREATE TABLE IF NOT EXISTS licenses (
       id TEXT PRIMARY KEY,
@@ -72,9 +53,7 @@ function createSchema(db) {
     )
   `);
 
-  // =========================================================================
-  // USERS TABLE (Org-Scoped)
-  // =========================================================================
+  // --- users ---
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
@@ -102,9 +81,7 @@ function createSchema(db) {
     )
   `);
 
-  // =========================================================================
-  // SESSIONS TABLE (Org-Scoped)
-  // =========================================================================
+  // sessions
   db.exec(`
     CREATE TABLE IF NOT EXISTS sessions (
       id TEXT PRIMARY KEY,
@@ -119,9 +96,7 @@ function createSchema(db) {
     )
   `);
 
-  // =========================================================================
-  // LOGIN ATTEMPTS TABLE (Security - Persisted across restarts)
-  // =========================================================================
+  // login_attempts (persisted across restarts)
   db.exec(`
     CREATE TABLE IF NOT EXISTS login_attempts (
       id TEXT PRIMARY KEY,
@@ -141,9 +116,7 @@ function createSchema(db) {
     CREATE INDEX IF NOT EXISTS idx_login_attempts_locked ON login_attempts(locked_until);
   `);
 
-  // =========================================================================
-  // PATIENTS TABLE (Org-Scoped)
-  // =========================================================================
+  // --- patients ---
   db.exec(`
     CREATE TABLE IF NOT EXISTS patients (
       id TEXT PRIMARY KEY,
@@ -196,9 +169,7 @@ function createSchema(db) {
     )
   `);
 
-  // =========================================================================
-  // DONOR ORGANS TABLE (Org-Scoped)
-  // =========================================================================
+  // donor_organs
   db.exec(`
     CREATE TABLE IF NOT EXISTS donor_organs (
       id TEXT PRIMARY KEY,
@@ -231,9 +202,7 @@ function createSchema(db) {
     )
   `);
 
-  // =========================================================================
-  // MATCHES TABLE (Org-Scoped)
-  // =========================================================================
+  // matches
   db.exec(`
     CREATE TABLE IF NOT EXISTS matches (
       id TEXT PRIMARY KEY,
@@ -265,9 +234,7 @@ function createSchema(db) {
     )
   `);
 
-  // =========================================================================
-  // NOTIFICATIONS TABLE (Org-Scoped)
-  // =========================================================================
+  // --- notifications ---
   db.exec(`
     CREATE TABLE IF NOT EXISTS notifications (
       id TEXT PRIMARY KEY,
@@ -289,9 +256,7 @@ function createSchema(db) {
     )
   `);
 
-  // =========================================================================
-  // NOTIFICATION RULES TABLE (Org-Scoped)
-  // =========================================================================
+  // notification_rules
   db.exec(`
     CREATE TABLE IF NOT EXISTS notification_rules (
       id TEXT PRIMARY KEY,
@@ -310,9 +275,7 @@ function createSchema(db) {
     )
   `);
 
-  // =========================================================================
-  // PRIORITY WEIGHTS TABLE (Org-Scoped)
-  // =========================================================================
+  // priority_weights
   db.exec(`
     CREATE TABLE IF NOT EXISTS priority_weights (
       id TEXT PRIMARY KEY,
@@ -333,9 +296,8 @@ function createSchema(db) {
     )
   `);
 
-  // =========================================================================
-  // EHR INTEGRATIONS TABLE (Org-Scoped)
-  // =========================================================================
+  // TODO: add oauth2 token storage columns when we implement SMART on FHIR
+  // --- ehr_integrations ---
   db.exec(`
     CREATE TABLE IF NOT EXISTS ehr_integrations (
       id TEXT PRIMARY KEY,
@@ -354,9 +316,7 @@ function createSchema(db) {
     )
   `);
 
-  // =========================================================================
-  // EHR IMPORTS TABLE (Org-Scoped)
-  // =========================================================================
+  // ehr_imports
   db.exec(`
     CREATE TABLE IF NOT EXISTS ehr_imports (
       id TEXT PRIMARY KEY,
@@ -376,9 +336,7 @@ function createSchema(db) {
     )
   `);
 
-  // =========================================================================
-  // EHR SYNC LOGS TABLE (Org-Scoped)
-  // =========================================================================
+  // ehr_sync_logs
   db.exec(`
     CREATE TABLE IF NOT EXISTS ehr_sync_logs (
       id TEXT PRIMARY KEY,
@@ -397,9 +355,7 @@ function createSchema(db) {
     )
   `);
 
-  // =========================================================================
-  // EHR VALIDATION RULES TABLE (Org-Scoped)
-  // =========================================================================
+  // ehr_validation_rules
   db.exec(`
     CREATE TABLE IF NOT EXISTS ehr_validation_rules (
       id TEXT PRIMARY KEY,
@@ -416,9 +372,7 @@ function createSchema(db) {
     )
   `);
 
-  // =========================================================================
-  // AUDIT LOGS TABLE (Org-Scoped, Immutable)
-  // =========================================================================
+  // audit_logs (immutable)
   db.exec(`
     CREATE TABLE IF NOT EXISTS audit_logs (
       id TEXT PRIMARY KEY,
@@ -438,9 +392,7 @@ function createSchema(db) {
     )
   `);
 
-  // =========================================================================
-  // SETTINGS TABLE (Org-Scoped)
-  // =========================================================================
+  // --- settings ---
   db.exec(`
     CREATE TABLE IF NOT EXISTS settings (
       id TEXT PRIMARY KEY,
@@ -453,9 +405,7 @@ function createSchema(db) {
     )
   `);
 
-  // =========================================================================
-  // ACCESS JUSTIFICATION LOGS (Org-Scoped, Immutable)
-  // =========================================================================
+  // access_justification_logs (immutable)
   db.exec(`
     CREATE TABLE IF NOT EXISTS access_justification_logs (
       id TEXT PRIMARY KEY,
@@ -474,9 +424,7 @@ function createSchema(db) {
     )
   `);
 
-  // =========================================================================
-  // READINESS BARRIERS TABLE (Org-Scoped)
-  // =========================================================================
+  // readiness_barriers
   db.exec(`
     CREATE TABLE IF NOT EXISTS readiness_barriers (
       id TEXT PRIMARY KEY,
@@ -514,9 +462,7 @@ function createSchema(db) {
     )
   `);
 
-  // =========================================================================
-  // ADULT HEALTH HISTORY QUESTIONNAIRES TABLE (Org-Scoped)
-  // =========================================================================
+  // --- adult_health_history_questionnaires ---
   db.exec(`
     CREATE TABLE IF NOT EXISTS adult_health_history_questionnaires (
       id TEXT PRIMARY KEY,
@@ -549,9 +495,7 @@ function createSchema(db) {
     )
   `);
 
-  // =========================================================================
-  // LAB RESULTS TABLE (Org-Scoped)
-  // =========================================================================
+  // lab_results
   // NOTE: This feature is strictly NON-CLINICAL and NON-ALLOCATIVE.
   // Lab results are stored for OPERATIONAL documentation purposes only.
   // The system does NOT interpret lab values, provide clinical recommendations,
@@ -592,9 +536,7 @@ function createSchema(db) {
     )
   `);
 
-  // =========================================================================
-  // REQUIRED LAB TYPES TABLE (Org-Scoped Configuration)
-  // =========================================================================
+  // required_lab_types
   // Defines which labs are required for operational readiness tracking.
   // This is purely for documentation completeness, not clinical requirements.
   db.exec(`
@@ -627,9 +569,7 @@ function createSchema(db) {
     )
   `);
 
-  // =========================================================================
-  // OUTCOMES METRICS TABLE (Org-Scoped)
-  // =========================================================================
+  // outcomes_snapshots
   // Tracks measurable operational outcomes over time to prove TransTrack ROI.
   // Snapshots are recorded periodically and on-demand.
   db.exec(`
@@ -662,9 +602,7 @@ function createSchema(db) {
     )
   `);
 
-  // =========================================================================
-  // INACTIVATION PREDICTIONS TABLE (Org-Scoped)
-  // =========================================================================
+  // --- inactivation_predictions ---
   // Stores per-patient inactivation risk predictions computed by the
   // predictive service. Each row is a point-in-time prediction.
   db.exec(`
@@ -690,9 +628,7 @@ function createSchema(db) {
     )
   `);
 
-  // =========================================================================
-  // TASKS TABLE (Org-Scoped)
-  // =========================================================================
+  // tasks
   // Auto-generated and manual tasks with escalation tracking.
   db.exec(`
     CREATE TABLE IF NOT EXISTS tasks (
@@ -735,9 +671,7 @@ function createSchema(db) {
     )
   `);
 
-  // =========================================================================
-  // TASK ESCALATION RULES TABLE (Org-Scoped Configuration)
-  // =========================================================================
+  // task_escalation_rules
   db.exec(`
     CREATE TABLE IF NOT EXISTS task_escalation_rules (
       id TEXT PRIMARY KEY,
@@ -755,9 +689,7 @@ function createSchema(db) {
     )
   `);
 
-  // =========================================================================
-  // SRTR METRICS TABLE (Org-Scoped)
-  // =========================================================================
+  // srtr_metrics
   // Tracks CMS/SRTR readiness metrics locally for trend monitoring.
   // These are operational approximations, NOT official SRTR calculations.
   db.exec(`

@@ -87,6 +87,7 @@ function register() {
     delete data.org_id;
     const entityData = shared.sanitizeForSQLite({ ...data, id, org_id: orgId, created_by: currentUser.email });
 
+    // console.log(`creating ${entityName}`, Object.keys(entityData));
     const fields = Object.keys(entityData);
     const placeholders = fields.map(() => '?').join(', ');
     const values = fields.map(f => entityData[f]);

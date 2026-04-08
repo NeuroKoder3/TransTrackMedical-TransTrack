@@ -34,16 +34,13 @@ export default function FHIRImporter({ onImportComplete }) {
     setResult(null);
 
     try {
-      // Read file content
       const fileContent = await file.text();
       const fhirBundle = JSON.parse(fileContent);
 
-      // Validate FHIR structure
       if (!fhirBundle.resourceType || fhirBundle.resourceType !== 'Bundle') {
         throw new Error('Invalid FHIR file. Expected a FHIR Bundle resource.');
       }
 
-      // Call import function
       const response = await api.functions.invoke('importFHIRData', {
         fhir_data: fhirBundle,
         source_system: sourceSystem || 'Manual Upload',

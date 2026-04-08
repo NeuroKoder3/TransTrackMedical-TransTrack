@@ -22,9 +22,7 @@
 const { getDatabase } = require('../database/init.cjs');
 const { v4: uuidv4 } = require('uuid');
 
-// =========================================================================
 // Constants
-// =========================================================================
 
 // Default required labs for operational tracking (test_code -> display info)
 // These are common labs tracked for documentation completeness
@@ -55,9 +53,7 @@ const LAB_SOURCES = {
   FHIR_IMPORT: 'FHIR_IMPORT',
 };
 
-// =========================================================================
-// Lab Result CRUD Operations
-// =========================================================================
+// --- CRUD operations ---
 
 /**
  * Create a new lab result
@@ -270,9 +266,7 @@ function deleteLabResult(id, orgId, userEmail) {
   return true;
 }
 
-// =========================================================================
-// Required Lab Types Configuration
-// =========================================================================
+// Required lab types configuration
 
 /**
  * Get required lab types for an organization
@@ -339,9 +333,7 @@ function initializeDefaultLabTypes(orgId, userId) {
   }
 }
 
-// =========================================================================
-// Operational Risk Assessment (Non-Clinical)
-// =========================================================================
+// Operational risk assessment (non-clinical)
 
 /**
  * Get lab status summary for a patient (operational readiness signals only)
@@ -565,9 +557,7 @@ function getLabsDashboard(orgId) {
   return dashboard;
 }
 
-// =========================================================================
-// Audit Logging
-// =========================================================================
+// --- audit logging ---
 
 /**
  * Log lab-related audit entry
@@ -586,9 +576,7 @@ function logLabAudit(action, labId, patient, data, userEmail, orgId) {
   `).run(id, orgId, action, 'LabResult', labId, patientName, details, userEmail, now);
 }
 
-// =========================================================================
-// Common Lab Test Codes (Reference)
-// =========================================================================
+// Common lab test codes
 
 const COMMON_LAB_CODES = [
   { code: 'CREAT', name: 'Creatinine', category: 'Kidney' },
@@ -615,10 +603,6 @@ const COMMON_LAB_CODES = [
   { code: 'HBCAB', name: 'Hepatitis B Core Antibody', category: 'Serology' },
   { code: 'HCVAB', name: 'Hepatitis C Antibody', category: 'Serology' },
 ];
-
-// =========================================================================
-// Exports
-// =========================================================================
 
 module.exports = {
   // Constants

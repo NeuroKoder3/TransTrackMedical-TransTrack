@@ -87,9 +87,7 @@ const OWNING_ROLES = {
   OTHER: { value: 'other', label: 'Other' },
 };
 
-// =============================================================================
-// ORG ISOLATION HELPERS
-// =============================================================================
+// Org isolation helpers
 
 /**
  * Validate org_id is present - FAIL CLOSED
@@ -113,9 +111,7 @@ function verifyPatientOrg(patientId, orgId) {
   return true;
 }
 
-// =============================================================================
-// CRUD OPERATIONS (Org-Scoped)
-// =============================================================================
+// --- CRUD operations ---
 
 /**
  * Create a new readiness barrier

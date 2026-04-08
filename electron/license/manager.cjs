@@ -42,9 +42,7 @@ const {
   getTierDisplayName,
 } = require('./tiers.cjs');
 
-// =============================================================================
-// LICENSE CONFIGURATION
-// =============================================================================
+// License configuration
 
 const LICENSE_CONFIG = {
   // Contact information
@@ -71,9 +69,7 @@ ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123
 -----END PUBLIC KEY-----`,
 };
 
-// =============================================================================
-// FILE PATHS
-// =============================================================================
+// --- file paths ---
 
 function getLicenseFilePath() {
   return path.join(app.getPath('userData'), 'license.json');
@@ -91,9 +87,7 @@ function getLicenseAuditPath() {
   return path.join(app.getPath('userData'), 'license-audit.log');
 }
 
-// =============================================================================
-// MACHINE & ORGANIZATION IDENTIFICATION
-// =============================================================================
+// Machine & organization identification
 
 /**
  * Generate unique machine ID for license binding
@@ -176,9 +170,7 @@ function updateOrganizationInfo(updates) {
   return updated;
 }
 
-// =============================================================================
-// EVALUATION MANAGEMENT
-// =============================================================================
+// Evaluation management
 
 /**
  * Check if currently in evaluation mode
@@ -268,9 +260,7 @@ function isInEvaluationGracePeriod() {
   return daysPassed <= totalAllowed;
 }
 
-// =============================================================================
-// LICENSE FILE OPERATIONS
-// =============================================================================
+// --- license file operations ---
 
 /**
  * Read license file
@@ -309,9 +299,7 @@ function removeLicense() {
   }
 }
 
-// =============================================================================
-// LICENSE VALIDATION
-// =============================================================================
+// License validation
 
 /**
  * Validate license key format
@@ -462,9 +450,7 @@ function getMaintenanceStatus() {
   };
 }
 
-// =============================================================================
-// LICENSE ACTIVATION
-// =============================================================================
+// --- license activation ---
 
 /**
  * Activate license with key
@@ -598,9 +584,7 @@ async function renewMaintenance(renewalKey, years = 1) {
   };
 }
 
-// =============================================================================
-// LICENSE INFO & STATUS
-// =============================================================================
+// License info & status
 
 /**
  * Get comprehensive license info
@@ -820,9 +804,7 @@ function checkLimit(limitType, currentCount) {
   };
 }
 
-// =============================================================================
-// AUDIT LOGGING
-// =============================================================================
+// Audit logging
 
 /**
  * Log license-related event
@@ -874,9 +856,7 @@ function getLicenseAuditHistory(limit = 100) {
   }
 }
 
-// =============================================================================
-// PAYMENT HELPERS
-// =============================================================================
+// --- payment helpers ---
 
 /**
  * Get payment info for tier
@@ -919,10 +899,6 @@ function getAllPaymentOptions() {
     manualInstructions: PAYMENT_CONFIG.manualPaymentInstructions,
   };
 }
-
-// =============================================================================
-// EXPORTS
-// =============================================================================
 
 module.exports = {
   // Configuration

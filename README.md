@@ -7,51 +7,27 @@
 [![FDA 21 CFR Part 11](https://img.shields.io/badge/FDA-21%20CFR%20Part%2011-green.svg)](docs/COMPLIANCE.md)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)]()
 
-> **Operational risk intelligence for transplant programs.**
-> Identify patients at risk of inactivation before it impacts outcomes.
+TransTrack is an offline, HIPAA-compliant, FDA 21 CFR Part 11-ready desktop application for transplant centers and pre-transplant coordination teams. It provides secure, cloud-independent data management and operational risk intelligence to help reduce the risk of patient inactivation before transplant.
 
-- Reduce candidate inactivation risk
-- Improve transplant readiness tracking
-- Increase operational visibility
-- Support compliance and audit readiness
-
----
-
-## 🎥 Demo Video
-
-[▶️ Watch or Download the Demo](https://github.com/NeuroKoder3/TransTrackMedical-TransTrack/releases/download/v1.0.0/TransTrack-Wait-list.Management.Demo.mp4)
-
-> *Short overview of TransTrack's offline workflow, operational risk intelligence, and readiness tracking.*
-
----
-
-> **📋 EVALUATION ACCESS**
->
-> TransTrack is available for **evaluation by qualified healthcare organizations**.
->
-> * Request an evaluation to explore the full feature set
-> * Evaluation is intended for **non-clinical, non-operational testing only**
-> * Contact us to discuss your organization's needs and licensing options
->
-> See [LICENSE](LICENSE) and [LICENSE_NOTICE.md](LICENSE_NOTICE.md) for full terms.
+> **Evaluation access:** TransTrack is available for evaluation by qualified healthcare organizations. Evaluation is intended for non-clinical, non-operational testing only. See [LICENSE](LICENSE) and [LICENSE_NOTICE.md](LICENSE_NOTICE.md) for full terms.
 
 <p align="center">
   <img src="docs/images/dashboard-preview.svg" alt="TransTrack Dashboard" width="800">
 </p>
 
-**TransTrack** is a comprehensive, **offline, HIPAA-compliant**, and **FDA 21 CFR Part 11-ready** desktop application built for **transplant centers and pre-transplant coordination teams**. It provides secure, cloud-independent data management and **operational risk intelligence** to help reduce the risk of **patient inactivation** before transplant.
+## Demo
+
+[Watch or download the demo video](https://github.com/NeuroKoder3/TransTrackMedical-TransTrack/releases/download/v1.0.0/TransTrack-Wait-list.Management.Demo.mp4) — a short overview of TransTrack's offline workflow, operational risk intelligence, and readiness tracking.
 
 ---
 
 ## Why TransTrack Exists
 
-TransTrack addresses a critical gap in transplant operations — **operational risk intelligence** outside of national allocation systems. It helps coordination teams identify and act on **readiness risks** such as expiring evaluations, missing documentation, or frequent status changes, preventing unnecessary inactivation of candidates awaiting transplant.
+TransTrack addresses a gap in transplant operations: operational risk intelligence outside of national allocation systems. It helps coordination teams identify and act on readiness risks — expiring evaluations, missing documentation, frequent status changes — before they cause unnecessary candidate inactivation.
 
-> **Note:** TransTrack provides **operational prioritization and readiness tracking** only. It does **not** perform allocation decisions or replace **UNOS/OPTN** systems.
+**TransTrack does not perform allocation decisions or replace UNOS/OPTN systems.** It provides operational prioritization and readiness tracking only.
 
----
-
-## The Problem
+### The Problem
 
 Transplant centers face operational failures that impact patient readiness:
 
@@ -59,25 +35,9 @@ Transplant centers face operational failures that impact patient readiness:
 - Unresolved non-clinical barriers (insurance, logistics)
 - Coordination gaps across teams
 
-These issues lead to:
-- Candidate inactivation
-- Delayed transplants
-- Increased compliance risk
+These lead to candidate inactivation, delayed transplants, and increased compliance risk.
 
----
-
-## The Solution
-
-TransTrack provides operational visibility and risk detection for transplant programs.
-
-- Tracks readiness barriers in real time
-- Identifies at-risk patients before inactivation
-- Centralizes coordination workflows
-- Operates fully offline with secure local data storage
-
----
-
-## System Positioning
+### System Positioning
 
 TransTrack operates between EHR systems and transplant registries.
 
@@ -85,62 +45,55 @@ TransTrack operates between EHR systems and transplant registries.
 - Does not perform organ allocation
 - Focuses on operational readiness and coordination
 
----
+### Who This Is For
 
-## Who This Is For
+* **Transplant operations and coordination teams** — workflow visibility and readiness tracking
+* **Clinical informatics and healthcare IT** — secure, offline-first data management
+* **Compliance and audit staff** — immutable audit trails and validation artifacts
 
-TransTrack is designed for:
-
-* **Transplant operations and coordination teams** – Workflow visibility and readiness tracking
-* **Clinical informatics and healthcare IT** – Secure, offline-first data management
-* **Compliance and audit staff** – Immutable audit trails and validation artifacts
-
-**TransTrack is NOT intended for:**
-
-* ❌ Allocation or listing authority functions
-* ❌ National registry replacements (UNOS, OPTN)
+TransTrack is **not** intended for allocation or listing authority functions, or as a national registry replacement (UNOS, OPTN).
 
 ---
 
 ## Core Value: Operational Risk Intelligence
 
-The heart of TransTrack is proactive detection of operational risks that can delay or jeopardize patient readiness:
+The core of TransTrack is proactive detection of operational risks that can delay or jeopardize patient readiness:
 
-* **Expiring Evaluations** – Detect upcoming expirations automatically
-* **Documentation Gaps** – Identify missing or outdated records
-* **Status Churn Detection** – Track frequent candidate status changes
-* **Readiness Barriers** – Manage non-clinical obstacles (insurance, transport, support, etc.)
-* **Risk-Level Indicators** – Highlight high-risk cases before they cause inactivation
-* **Transplant Clock** – Real-time operational pulse and activity rhythm monitoring
+* **Expiring Evaluations** — detect upcoming expirations automatically
+* **Documentation Gaps** — identify missing or outdated records
+* **Status Churn Detection** — track frequent candidate status changes
+* **Readiness Barriers** — manage non-clinical obstacles (insurance, transport, support, etc.)
+* **Risk-Level Indicators** — highlight high-risk cases before they cause inactivation
+* **Transplant Clock** — real-time operational pulse and activity rhythm monitoring
 
 <p align="center">
   <img src="docs/images/risk-intelligence-dashboard.png" alt="Operational Risk Intelligence Dashboard" width="700">
 </p>
 
-### Transplant Clock — Real-Time Operational Awareness
+### Transplant Clock
 
-The **Transplant Clock** is a visual heartbeat of your transplant program, providing real-time operational awareness for coordination teams:
+The Transplant Clock provides real-time operational awareness for coordination teams:
 
-* **Time Since Last Update** – Visual indicator showing system activity freshness (green/yellow/red status)
-* **Operational Pulse** – Aggregated view of open barriers, aHHQ issues, lab gaps, and at-risk patients
-* **Average Resolution Time** – Track how quickly your team resolves operational tasks
-* **Next Expiration** – Countdown to the nearest expiring document or evaluation
-* **Team Load Indicator** – Monitor coordinator workload distribution (Light/Moderate/Heavy)
-* **Pulse Rate (Hz)** – Dynamic rhythm that increases with more open tasks
+* **Time Since Last Update** — visual indicator showing system activity freshness (green/yellow/red status)
+* **Operational Pulse** — aggregated view of open barriers, aHHQ issues, lab gaps, and at-risk patients
+* **Average Resolution Time** — track how quickly the team resolves operational tasks
+* **Next Expiration** — countdown to the nearest expiring document or evaluation
+* **Team Load Indicator** — monitor coordinator workload distribution (Light/Moderate/Heavy)
+* **Pulse Rate (Hz)** — dynamic rhythm that increases with more open tasks
 
 <p align="center">
   <img src="docs/images/transplant-clock.png" alt="Transplant Clock - Real-Time Operational Awareness" width="700">
 </p>
 
-> **100% Local Computation** – All metrics are computed locally from the encrypted SQLite database. No cloud, API, or AI inference required.
+All metrics are computed locally from the encrypted SQLite database. No cloud, API, or AI inference required.
 
 ---
 
-## Key Features
+## Features
 
 ### Patient Waitlist Management
 
-* Comprehensive candidate demographics and evaluation tracking
+* Candidate demographics and evaluation tracking
 * Configurable readiness indicators and internal prioritization
 * Search, filter, and status-based workflow visibility
 
@@ -164,9 +117,9 @@ The **Transplant Clock** is a visual heartbeat of your transplant program, provi
 
 ### Compliance
 
-* **HIPAA**: Encryption, access control, audit trails
-* **FDA 21 CFR Part 11**: Electronic records integrity and validation
-* **Offline operation**: No PHI leaves the local system
+* **HIPAA**: encryption, access control, audit trails
+* **FDA 21 CFR Part 11**: electronic records integrity and validation
+* **Offline operation**: no PHI leaves the local system
 
 ### Offline-First Architecture
 
@@ -179,24 +132,6 @@ The **Transplant Clock** is a visual heartbeat of your transplant program, provi
 * Role-based access and justification
 * Disaster recovery and validation documentation
 * Read-only compliance view for auditors
-
----
-
-## Use Cases
-
-- Identify patients with unresolved readiness barriers
-- Monitor transplant program operational status
-- Track coordination tasks across teams
-- Prepare for audits and compliance reviews
-
----
-
-## Differentiation
-
-- Fully offline (no cloud dependency)
-- Local encrypted data storage
-- Designed specifically for transplant workflows
-- Focus on operational risk, not clinical decision-making
 
 ---
 
@@ -266,8 +201,6 @@ The **Transplant Clock** is a visual heartbeat of your transplant program, provi
 * **Build**: Vite 6, electron-builder
 * **Languages**: TypeScript / JavaScript
 
----
-
 ## Installation
 
 > **Note:** Evaluation versions are for testing only — do **not** use with live patient data.
@@ -300,17 +233,14 @@ npm run dev:electron
 npm run build:electron
 ```
 
----
-
 ## Quick Start (Evaluation)
 
-1. Launch **TransTrack**
+1. Launch TransTrack
 2. Use the default credentials provided in your evaluation package
 3. Change your password on first login (you will be prompted automatically)
 4. Explore features using sample/test data
-5. Contact us: [Trans_Track@outlook.com](mailto:Trans_Track@outlook.com)
 
-> **Note:** Default credentials are provided separately in your evaluation onboarding materials for security purposes. Contact [Trans_Track@outlook.com](mailto:Trans_Track@outlook.com) if you need assistance.
+Default credentials are provided separately in your evaluation onboarding materials for security purposes. Contact [Trans_Track@outlook.com](mailto:Trans_Track@outlook.com) if you need assistance.
 
 ---
 
@@ -335,29 +265,7 @@ npm run build:electron
 * Local encryption
 * Secure, encrypted backups
 
-[View Full Compliance Documentation →](docs/COMPLIANCE.md)
-
----
-
-## Repository Highlights
-
-* Offline-first Electron desktop application for transplant operations
-* Built with React 18, Vite 6, and encrypted SQLite storage
-* Designed for HIPAA and FDA 21 CFR Part 11 readiness workflows
-* 🎥 [Watch the Demo](https://github.com/NeuroKoder3/TransTrackMedical-TransTrack/releases/download/v1.0.0/TransTrack-Wait-list.Management.Demo.mp4)
-
-⭐ If you find TransTrack valuable, please **star this repository** to help others in the transplant community discover it.
-
----
-
-## Request Evaluation Access
-
-TransTrack is available for evaluation by qualified organizations.
-
-- Full feature access available for review
-- Deployment guidance and onboarding support
-
-📩 Contact: [Trans_Track@outlook.com](mailto:Trans_Track@outlook.com)
+[View full compliance documentation](docs/COMPLIANCE.md)
 
 ---
 
@@ -369,23 +277,6 @@ This software is provided for evaluation purposes only.
 - Not connected to national transplant systems
 - Intended for operational workflow assessment
 
----
+## Contact
 
-## Contact & Support
-
-📧 **[Trans_Track@outlook.com](mailto:Trans_Track@outlook.com)**
-For evaluation access, enterprise deployment, or technical inquiries.
-
----
-
-## Keywords
-
-`hipaa-compliant` `fda-21-cfr-part-11` `offline-first` `pre-transplant` `waitlist-management` `transplant-center` `risk-intelligence` `patient-readiness` `clinical-informatics` `healthcare-operations` `regulatory-compliance` `ehr-integration` `fhir` `optn` `unos` `secure-desktop-app` `encrypted-database`
-
----
-
-<p align="center">
-  <strong>TransTrack</strong> — HIPAA-Compliant, Offline Pre-Transplant Waitlist Management
-  <br>
-  <em>Operational Risk Intelligence for Transplant Coordination Teams</em>
-</p>
+**[Trans_Track@outlook.com](mailto:Trans_Track@outlook.com)** — evaluation access, enterprise deployment, or technical inquiries.

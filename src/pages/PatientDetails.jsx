@@ -8,6 +8,7 @@ import { ArrowLeft, User, Heart, Droplet, Calendar, Phone, Mail, FileText, Downl
 import { Link, useLocation } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { format } from 'date-fns';
+import ErrorState from '@/components/ui/ErrorState';
 import PriorityBadge from '../components/waitlist/PriorityBadge';
 import PriorityBreakdown from '../components/patients/PriorityBreakdown';
 import PatientSyncControls from '../components/ehr/PatientSyncControls';
@@ -54,14 +55,7 @@ export default function PatientDetails() {
   }
 
   if (isError) {
-    return (
-      <div className="p-6">
-        <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
-          <h3 className="text-red-800 font-semibold text-lg mb-2">Failed to Load Data</h3>
-          <p className="text-red-600">Unable to load patient details. Please try again or contact support.</p>
-        </div>
-      </div>
-    );
+    return <ErrorState title="Patient not found" message="Unable to load patient details." />;
   }
 
   if (!patient) {

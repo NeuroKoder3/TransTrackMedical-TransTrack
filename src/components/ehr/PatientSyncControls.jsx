@@ -30,6 +30,7 @@ export default function PatientSyncControls({ patient }) {
     }, '-created_at', 10),
   });
 
+  // FIXME: should debounce this to prevent double-clicks
   const handlePushToEHR = async () => {
     if (!selectedIntegration) {
       alert('Please select an integration');

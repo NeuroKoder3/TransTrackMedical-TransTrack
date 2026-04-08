@@ -16,9 +16,7 @@
 
 const { getDatabase } = require('../database/init.cjs');
 
-// =============================================================================
-// ORG ISOLATION HELPERS
-// =============================================================================
+// Org isolation
 
 /**
  * Validate org_id is present - FAIL CLOSED
@@ -30,9 +28,7 @@ function requireOrgId(orgId) {
   return orgId;
 }
 
-// =============================================================================
-// CLOCK STATUS THRESHOLDS
-// =============================================================================
+// --- clock thresholds ---
 
 // Time thresholds for status colors (in hours)
 const STATUS_THRESHOLDS = {
@@ -41,6 +37,7 @@ const STATUS_THRESHOLDS = {
   // >= 72h = red (critical)
 };
 
+// NOTE: pulse rate calculation was tuned empirically, may need adjustment per-site
 // Pulse rate calculation (Hz based on open tasks)
 const PULSE_RATES = {
   BASE: 0.5,          // Base pulse rate (Hz) - calm
@@ -48,9 +45,7 @@ const PULSE_RATES = {
   MAX: 3.0,           // Maximum pulse rate
 };
 
-// =============================================================================
-// CORE CLOCK METRICS
-// =============================================================================
+// Core clock metrics
 
 /**
  * Get the time since the last readiness update (hours)
@@ -353,9 +348,7 @@ function getStatusColor(hoursSinceUpdate) {
   return 'red';
 }
 
-// =============================================================================
-// MAIN CLOCK DATA FUNCTION
-// =============================================================================
+// Main clock data
 
 /**
  * Get all Transplant Clock data (org-scoped)

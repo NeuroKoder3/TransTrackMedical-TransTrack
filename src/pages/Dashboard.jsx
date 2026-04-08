@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Users, Activity, AlertCircle, CheckCircle, RefreshCw } from 'lucide-react';
+import ErrorState from '@/components/ui/ErrorState';
 import FilterBar from '../components/waitlist/FilterBar';
 import PatientCard from '../components/patients/PatientCard';
 import { motion } from 'framer-motion';
@@ -39,6 +40,7 @@ export default function Dashboard() {
     try {
       const activePatients = patients.filter(p => p.waitlist_status === 'active');
       
+      // FIXME: recalculating all patients sequentially is O(n), should batch
       for (const patient of activePatients) {
         await api.functions.invoke('calculatePriorityAdvanced', { patient_id: patient.id });
       }
@@ -84,14 +86,7 @@ export default function Dashboard() {
   };
 
   if (isError) {
-    return (
-      <div className="p-6">
-        <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
-          <h3 className="text-red-800 font-semibold text-lg mb-2">Failed to Load Data</h3>
-          <p className="text-red-600">Unable to load dashboard data. Please try again or contact support.</p>
-        </div>
-      </div>
-    );
+    return <ErrorState title="Dashboard unavailable" message="Could not load dashboard data." />;
   }
 
   return (

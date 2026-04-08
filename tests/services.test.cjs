@@ -13,7 +13,7 @@
 const path = require('path');
 const crypto = require('crypto');
 
-// ─── Mock Electron ──────────────────────────────────────────────────────────
+// mock electron env
 const mockUserDataPath = path.join(__dirname, '.test-data-svc-' + Date.now());
 require.cache[require.resolve('electron')] = {
   id: 'electron',
@@ -27,7 +27,7 @@ require.cache[require.resolve('electron')] = {
   },
 };
 
-// ─── In-memory DB ───────────────────────────────────────────────────────────
+// setup test db
 const Database = require('better-sqlite3-multiple-ciphers');
 let db;
 
@@ -138,7 +138,7 @@ function setupDB() {
   `);
 }
 
-// ─── Mock database/init and logger BEFORE requiring services ────────────────
+// mock db/init and logger before requiring services
 
 const initModulePath = require.resolve('../electron/database/init.cjs');
 require.cache[initModulePath] = {
@@ -163,13 +163,13 @@ require.cache[loggerModulePath] = {
   },
 };
 
-// ─── Now require the services under test ────────────────────────────────────
+// require services under test
 const predictiveService = require('../electron/services/predictiveService.cjs');
 const taskEngine = require('../electron/services/taskEngine.cjs');
 const outcomesService = require('../electron/services/outcomesService.cjs');
 const srtrService = require('../electron/services/srtrService.cjs');
 
-// ─── Test harness ───────────────────────────────────────────────────────────
+// test harness
 let passed = 0;
 let failed = 0;
 const failures = [];
@@ -201,7 +201,7 @@ function assertThrows(fn, msg) {
   if (!threw) throw new Error(msg || 'Expected function to throw');
 }
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
+// helpers
 const { v4: uuidv4 } = require('uuid');
 const ORG = 'TEST_ORG';
 const OTHER_ORG = 'OTHER_ORG';
@@ -278,9 +278,7 @@ function seedAuditLog(overrides = {}) {
   return a;
 }
 
-// =============================================================================
-// RUN ALL SUITES
-// =============================================================================
+// run all suites
 
 function runTests() {
   console.log('\n========================================');
@@ -289,9 +287,7 @@ function runTests() {
 
   setupDB();
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // SUITE 1: Predictive Service
-  // ═══════════════════════════════════════════════════════════════════════════
+  // -- predictive service --
   console.log('Suite 1: Predictive Service');
   console.log('──────────────────────────');
 
@@ -409,9 +405,7 @@ function runTests() {
     assert(notCurrent.count > 0, 'Previous predictions should be marked is_current = 0');
   });
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // SUITE 2: Task Engine
-  // ═══════════════════════════════════════════════════════════════════════════
+  // -- task engine --
   console.log('\nSuite 2: Task Engine');
   console.log('──────────────────────────');
 
@@ -528,9 +522,7 @@ function runTests() {
     }
   });
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // SUITE 3: Outcomes Service
-  // ═══════════════════════════════════════════════════════════════════════════
+  // -- outcomes service --
   console.log('\nSuite 3: Outcomes Service');
   console.log('──────────────────────────');
 
@@ -609,9 +601,7 @@ function runTests() {
     );
   });
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // SUITE 4: SRTR Service
-  // ═══════════════════════════════════════════════════════════════════════════
+  // -- srtr service --
   console.log('\nSuite 4: SRTR Service');
   console.log('──────────────────────────');
 
@@ -747,9 +737,7 @@ function runTests() {
     }
   });
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // Summary
-  // ═══════════════════════════════════════════════════════════════════════════
+  // summary
   console.log('\n========================================');
   console.log(' Test Summary');
   console.log('========================================');

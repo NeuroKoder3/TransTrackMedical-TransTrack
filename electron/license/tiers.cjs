@@ -8,9 +8,7 @@
  * feature gating. Changes here affect application behavior.
  */
 
-// =============================================================================
-// BUILD VERSION TYPES
-// =============================================================================
+// Build version types
 
 const BUILD_VERSION = {
   EVALUATION: 'evaluation',   // Demo/trial build with hard restrictions
@@ -45,9 +43,7 @@ function getCurrentBuildVersion() {
   return BUILD_VERSION.EVALUATION;
 }
 
-// =============================================================================
-// LICENSE TIERS
-// =============================================================================
+// --- license tiers ---
 
 const LICENSE_TIER = {
   EVALUATION: 'evaluation',
@@ -56,9 +52,7 @@ const LICENSE_TIER = {
   ENTERPRISE: 'enterprise',
 };
 
-// =============================================================================
-// PRICING CONFIGURATION
-// =============================================================================
+// Pricing
 
 const PRICING = {
   [LICENSE_TIER.STARTER]: {
@@ -114,9 +108,7 @@ const PRICING = {
   },
 };
 
-// =============================================================================
-// FEATURE FLAGS
-// =============================================================================
+// Feature flags
 
 const FEATURES = {
   // Patient Management
@@ -166,9 +158,7 @@ const FEATURES = {
   BULK_OPERATIONS: 'bulk_operations',
 };
 
-// =============================================================================
-// LICENSE FEATURES MAP (Static, Deterministic - Single Source of Truth)
-// =============================================================================
+// License features map (single source of truth)
 // This is the authoritative feature map for all license enforcement.
 // No guessing. No runtime "magic". This map is enforced in:
 // 1. Backend (authoritative) - throws ForbiddenError if feature not available
@@ -313,9 +303,7 @@ const TIER_LIMITS = {
   [LICENSE_TIER.ENTERPRISE]: LICENSE_FEATURES[LICENSE_TIER.ENTERPRISE],
 };
 
-// =============================================================================
-// FEATURE ENTITLEMENTS BY TIER
-// =============================================================================
+// --- feature entitlements by tier ---
 
 const TIER_FEATURES = {
   [LICENSE_TIER.EVALUATION]: [
@@ -390,9 +378,7 @@ const TIER_FEATURES = {
   ],
 };
 
-// =============================================================================
-// EVALUATION BUILD RESTRICTIONS
-// =============================================================================
+// Evaluation restrictions
 
 const EVALUATION_RESTRICTIONS = {
   // Time restriction
@@ -431,9 +417,7 @@ const EVALUATION_RESTRICTIONS = {
   forceExpirationLockout: true,
 };
 
-// =============================================================================
-// PAYMENT CONFIGURATION
-// =============================================================================
+// --- payment config ---
 
 const PAYMENT_CONFIG = {
   businessEmail: 'billing@transtrack.medical',
@@ -472,9 +456,7 @@ You will receive your license key within 24-48 hours.
 `,
 };
 
-// =============================================================================
-// MAINTENANCE CONFIGURATION
-// =============================================================================
+// Maintenance config
 
 const MAINTENANCE_CONFIG = {
   gracePeriodDays: 30, // Days after expiry before warnings appear
@@ -489,9 +471,7 @@ const MAINTENANCE_CONFIG = {
   },
 };
 
-// =============================================================================
-// HELPER FUNCTIONS
-// =============================================================================
+// Helper functions
 
 /**
  * Check if a feature is enabled for a given license tier
@@ -587,10 +567,6 @@ function getTierDisplayName(tier) {
   const pricing = PRICING[tier];
   return pricing ? pricing.name : 'Evaluation';
 }
-
-// =============================================================================
-// EXPORTS
-// =============================================================================
 
 module.exports = {
   // Enums

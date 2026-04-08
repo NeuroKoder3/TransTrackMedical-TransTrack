@@ -5,12 +5,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Heart, Plus, Search, Users, Activity, Beaker } from 'lucide-react';
+import ErrorState from '@/components/ui/ErrorState';
 import DonorForm from '../components/donor/DonorForm';
 import MatchList from '../components/donor/MatchList';
 import MatchSimulator from '../components/donor/MatchSimulator';
 import { motion, AnimatePresence } from 'framer-motion';
 import { format } from 'date-fns';
 
+// TODO: add pagination — this will get slow with large donor lists
 export default function DonorMatching() {
   const [showDonorForm, setShowDonorForm] = useState(false);
   const [showSimulator, setShowSimulator] = useState(false);
@@ -115,14 +117,7 @@ export default function DonorMatching() {
   const allocatedDonors = donors.filter(d => d.status === 'allocated' || d.status === 'transplanted');
 
   if (isError) {
-    return (
-      <div className="p-6">
-        <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
-          <h3 className="text-red-800 font-semibold text-lg mb-2">Failed to Load Data</h3>
-          <p className="text-red-600">Unable to load donor matching data. Please try again or contact support.</p>
-        </div>
-      </div>
-    );
+    return <ErrorState title="Failed to load donors" message="Could not retrieve donor data." />;
   }
 
   return (

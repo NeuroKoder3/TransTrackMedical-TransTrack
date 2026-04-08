@@ -15,6 +15,7 @@ import {
   Clock, HardDrive, RefreshCw, Shield
 } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
+import ErrorState from '@/components/ui/ErrorState';
 import { toast } from 'sonner';
 
 export default function DisasterRecovery() {
@@ -105,14 +106,7 @@ export default function DisasterRecovery() {
   }
 
   if (isError) {
-    return (
-      <div className="p-6">
-        <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
-          <h3 className="text-red-800 font-semibold text-lg mb-2">Failed to Load Data</h3>
-          <p className="text-red-600">Unable to load disaster recovery data. Please try again or contact support.</p>
-        </div>
-      </div>
-    );
+    return <ErrorState title="Recovery data unavailable" />;
   }
 
   return (

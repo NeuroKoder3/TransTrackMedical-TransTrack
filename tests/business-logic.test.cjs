@@ -10,7 +10,7 @@
 const path = require('path');
 const crypto = require('crypto');
 
-// ─── Mock Electron ──────────────────────────────────────────────
+// mock electron
 
 const mockUserDataPath = path.join(__dirname, '.test-data-biz-' + Date.now());
 require.cache[require.resolve('electron')] = {
@@ -29,7 +29,7 @@ require.cache[require.resolve('electron')] = {
 
 const { v4: uuidv4 } = require('uuid');
 
-// ─── Test helpers ──────────────────────────────────────────────
+// test helpers
 
 const results = { passed: 0, failed: 0, errors: [] };
 
@@ -52,7 +52,7 @@ function assertInRange(val, min, max, msg) {
   if (val < min || val > max) throw new Error(`${msg}: ${val} not in [${min}, ${max}]`);
 }
 
-// ─── In-memory DB ──────────────────────────────────────────────
+// in-memory db
 
 const Database = require('better-sqlite3-multiple-ciphers');
 let db;
@@ -131,7 +131,7 @@ function setupDB() {
   `);
 }
 
-// ─── Seed helpers ──────────────────────────────────────────────
+// seed helpers
 
 function seedPatient(overrides = {}) {
   const id = uuidv4();
@@ -176,7 +176,7 @@ function seedAdmin() {
   );
 }
 
-// ─── Load functions module ─────────────────────────────────────
+// load functions module
 
 const functions = require('../electron/functions/index.cjs');
 const mockContext = () => ({
@@ -185,9 +185,7 @@ const mockContext = () => ({
   logAudit: () => {},
 });
 
-// =================================================================
-// TEST SUITES
-// =================================================================
+// test suites
 
 async function runTests() {
   console.log('\n========================================');
@@ -196,7 +194,7 @@ async function runTests() {
 
   setupDB();
 
-  // ─── 1. Priority Scoring ──────────────────────────────────
+  // 1. priority scoring
   console.log('Suite 1: Priority Scoring');
   console.log('------------------------');
 
@@ -249,7 +247,11 @@ async function runTests() {
     assert(threw, 'Should throw for missing patient');
   });
 
-  // ─── 2. Donor Matching ────────────────────────────────────
+  // it('should handle edge case with zero waitlist time', () => {
+  //   // skipping for now, need to decide on the floor value
+  // });
+
+  // 2. donor matching
   console.log('\nSuite 2: Donor Matching');
   console.log('-----------------------');
 
@@ -307,7 +309,7 @@ async function runTests() {
     assert(hypoResult.simulation_mode, 'Should be simulation');
   });
 
-  // ─── 3. FHIR Validation ───────────────────────────────────
+  // 3. fhir validation
   console.log('\nSuite 3: FHIR Validation');
   console.log('------------------------');
 
@@ -350,7 +352,7 @@ async function runTests() {
     assert(emptyResult.warnings.length > 0, 'Should have warning for empty bundle');
   });
 
-  // ─── 4. FHIR Import ──────────────────────────────────────
+  // 4. fhir import
   console.log('\nSuite 4: FHIR Import');
   console.log('--------------------');
 
@@ -379,7 +381,7 @@ async function runTests() {
     assert(threw, 'Should throw on invalid JSON');
   });
 
-  // ─── 5. Notification Rules ────────────────────────────────
+  // 5. notification rules
   console.log('\nSuite 5: Notification Rules');
   console.log('--------------------------');
 
@@ -413,7 +415,7 @@ async function runTests() {
     assertEqual(notifResult2.notifications_created, 0, 'Should not trigger');
   });
 
-  // ─── 6. Password Validation ──────────────────────────────
+  // 6. password validation
   console.log('\nSuite 6: Password Validation (shared.cjs)');
   console.log('-----------------------------------------');
 
@@ -449,7 +451,7 @@ async function runTests() {
     assert(!r.valid, 'Should fail');
   });
 
-  // ─── 7. Entity Helpers ────────────────────────────────────
+  // 7. entity helpers
   console.log('\nSuite 7: Entity Helpers');
   console.log('-----------------------');
 
@@ -490,7 +492,7 @@ async function runTests() {
     assertEqual(data.name, 'test', 'String unchanged');
   });
 
-  // ─── 8. Priority Calculation Edge Cases ──────────────────
+  // 8. priority edge cases
   console.log('\nSuite 8: Priority Calculation Edge Cases');
   console.log('----------------------------------------');
 
@@ -555,7 +557,7 @@ async function runTests() {
     assert(scores[0] >= scores[3], 'Critical urgency should score >= low urgency');
   });
 
-  // ─── 9. HLA Matching Correctness ────────────────────────
+  // 9. hla matching
   console.log('\nSuite 9: HLA Matching Correctness');
   console.log('---------------------------------');
 
@@ -682,7 +684,7 @@ async function runTests() {
     }
   });
 
-  // ─── Summary ──────────────────────────────────────────────
+  // summary
   console.log('\n========================================');
   console.log('Test Summary');
   console.log('========================================');

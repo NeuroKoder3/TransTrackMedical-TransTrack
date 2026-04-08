@@ -1,13 +1,7 @@
-/**
- * TransTrack - Electron Preload Script
- * 
- * Provides secure bridge between renderer and main process.
- * Follows security best practices for Electron applications.
- */
+// preload.cjs — exposes IPC bridge to renderer
 
 const { contextBridge, ipcRenderer } = require('electron');
 
-// Secure API exposed to renderer process
 contextBridge.exposeInMainWorld('electronAPI', {
   // Application info
   getAppInfo: () => ipcRenderer.invoke('app:getInfo'),

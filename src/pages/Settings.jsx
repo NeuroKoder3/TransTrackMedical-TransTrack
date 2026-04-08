@@ -3,6 +3,7 @@ import { api } from '@/api/apiClient';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Users, Shield, Activity } from 'lucide-react';
+import ErrorState from '@/components/ui/ErrorState';
 import { format } from 'date-fns';
 
 export default function Settings() {
@@ -24,14 +25,7 @@ export default function Settings() {
   });
 
   if (isError) {
-    return (
-      <div className="p-6">
-        <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
-          <h3 className="text-red-800 font-semibold text-lg mb-2">Failed to Load Settings</h3>
-          <p className="text-red-600">Unable to load settings data. Please try again or contact support.</p>
-        </div>
-      </div>
-    );
+    return <ErrorState title="Settings unavailable" message="Could not load settings." />;
   }
 
   if (user?.role !== 'admin') {

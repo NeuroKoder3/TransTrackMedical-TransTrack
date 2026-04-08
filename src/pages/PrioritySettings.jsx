@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { Save, RefreshCw, AlertCircle } from 'lucide-react';
+import ErrorState from '@/components/ui/ErrorState';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
 export default function PrioritySettings() {
@@ -89,14 +90,7 @@ export default function PrioritySettings() {
   const isValidTotal = totalWeight === 100;
 
   if (isError) {
-    return (
-      <div className="p-6">
-        <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
-          <h3 className="text-red-800 font-semibold text-lg mb-2">Failed to Load Priority Settings</h3>
-          <p className="text-red-600">Unable to load priority configuration. Please try again or contact support.</p>
-        </div>
-      </div>
-    );
+    return <ErrorState title="Failed to load priority settings" />;
   }
 
   if (user?.role !== 'admin') {

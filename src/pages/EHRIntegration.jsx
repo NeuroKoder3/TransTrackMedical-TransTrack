@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Database, Upload, Settings, FileText } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import ErrorState from '@/components/ui/ErrorState';
 import FHIRImporter from '../components/ehr/FHIRImporter';
 import EHRIntegrationManager from '../components/ehr/EHRIntegrationManager';
 import ValidationRuleManager from '../components/ehr/ValidationRuleManager';
@@ -26,14 +27,7 @@ export default function EHRIntegration() {
   };
 
   if (isError) {
-    return (
-      <div className="p-6">
-        <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
-          <h3 className="text-red-800 font-semibold text-lg mb-2">Failed to Load EHR Integration</h3>
-          <p className="text-red-600">Unable to load EHR integration data. Please try again or contact support.</p>
-        </div>
-      </div>
-    );
+    return <ErrorState title="Failed to Load EHR Integration" message="Unable to load integration data." />;
   }
 
   if (user?.role !== 'admin') {

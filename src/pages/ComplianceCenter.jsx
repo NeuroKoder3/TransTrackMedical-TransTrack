@@ -16,6 +16,7 @@ import {
   ClipboardList, Info
 } from 'lucide-react';
 import { format } from 'date-fns';
+import ErrorState from '@/components/ui/ErrorState';
 import api from '@/api/localClient';
 
 export default function ComplianceCenter() {
@@ -106,14 +107,7 @@ export default function ComplianceCenter() {
   }
 
   if (isError) {
-    return (
-      <div className="p-6">
-        <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
-          <h3 className="text-red-800 font-semibold text-lg mb-2">Failed to Load Data</h3>
-          <p className="text-red-600">Unable to load compliance data. Please try again or contact support.</p>
-        </div>
-      </div>
-    );
+    return <ErrorState title="Compliance data unavailable" />;
   }
 
   return (

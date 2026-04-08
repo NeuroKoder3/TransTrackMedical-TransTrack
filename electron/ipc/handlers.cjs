@@ -1,17 +1,4 @@
-/**
- * TransTrack - IPC Handler Coordinator
- *
- * Registers all domain-specific IPC handler modules.
- * Each module handles a specific set of IPC channels.
- *
- * Security Features:
- * - SQL injection prevention via parameterized queries and column whitelisting
- * - Session expiration validation
- * - Account lockout after failed login attempts
- * - Password strength requirements
- * - Audit logging for all operations
- * - Organization isolation on all data access
- */
+// IPC handler coordinator — registers all handler modules
 
 const authHandlers = require('./handlers/auth.cjs');
 const entityHandlers = require('./handlers/entities.cjs');

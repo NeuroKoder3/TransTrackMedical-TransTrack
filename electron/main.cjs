@@ -1,14 +1,4 @@
-/**
- * TransTrack - Electron Main Process
- * 
- * HIPAA/FDA/AATB Compliant Desktop Application
- * 
- * Security Features:
- * - Encrypted local database (SQLCipher)
- * - Secure session management
- * - Audit logging for all operations
- * - No external network calls in production
- */
+// Main process entry point
 
 const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron');
 const path = require('path');
@@ -125,6 +115,7 @@ function createMainWindow() {
     return { action: 'deny' };
   });
 
+  // TODO: tighten CSP further for production builds
   // Security: Add Content Security Policy and other security headers
   mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
     const cspDirectives = [
@@ -253,9 +244,7 @@ function createMenu() {
   Menu.setApplicationMenu(menu);
 }
 
-// =========================================================================
-// BUILD TYPE ENFORCEMENT
-// =========================================================================
+// Build type enforcement
 
 /**
  * Check if Enterprise build has a valid license
@@ -350,9 +339,7 @@ function showLicenseRequiredDialog(message) {
   return true; // Block
 }
 
-// =========================================================================
-// PERIODIC LICENSE EXPIRATION CHECK
-// =========================================================================
+// --- periodic license check ---
 
 let licenseCheckInterval = null;
 const LICENSE_CHECK_INTERVAL_MS = 60 * 60 * 1000; // Check every hour
@@ -449,9 +436,7 @@ function stopPeriodicLicenseCheck() {
   }
 }
 
-// =========================================================================
-// AUTO-UPDATE (Enterprise builds only)
-// =========================================================================
+// Auto-update (enterprise only)
 
 function initAutoUpdater() {
   try {
@@ -525,11 +510,7 @@ app.whenReady().then(async () => {
     await initDatabase();
     logger.info('Database initialized');
     
-    // =========================================================================
-    // ENTERPRISE LICENSE ENFORCEMENT
-    // =========================================================================
-    // If this is an Enterprise build, require a valid license
-    // If this is an Evaluation build, evaluation restrictions apply in handlers
+    // Enterprise license enforcement
     
     const licenseError = checkEnterpriseLicense();
     if (licenseError && buildVersion === BUILD_VERSION.ENTERPRISE) {

@@ -27,9 +27,7 @@ const { runMigrations } = require('./migrations.cjs');
 let db = null;
 let encryptionEnabled = false;
 
-// =========================================================================
-// DATABASE FILE PATHS
-// =========================================================================
+// Database file paths
 
 function getDatabasePath() {
   const userDataPath = app.getPath('userData');
@@ -49,9 +47,7 @@ function getKeyBackupPath() {
   return path.join(app.getPath('userData'), '.transtrack-key.backup');
 }
 
-// =========================================================================
-// ENCRYPTION KEY MANAGEMENT
-// =========================================================================
+// --- encryption key management ---
 
 /**
  * Check whether Electron's OS-native safeStorage (DPAPI / Keychain / libsecret)
@@ -184,9 +180,7 @@ function isDatabaseEncrypted(dbPath) {
   }
 }
 
-// =========================================================================
-// DATABASE MIGRATION (Unencrypted to Encrypted)
-// =========================================================================
+// Migration: unencrypted to encrypted
 
 /**
  * Migrate an unencrypted database to encrypted format
@@ -291,9 +285,7 @@ async function migrateToEncrypted(unencryptedPath, encryptedPath, encryptionKey)
   }
 }
 
-// =========================================================================
-// ORGANIZATION MANAGEMENT
-// =========================================================================
+// Organization management
 
 /**
  * Generate a unique organization ID
@@ -354,9 +346,7 @@ function createDefaultOrganization() {
   return { id: orgId, name: 'Default Organization', type: 'TRANSPLANT_CENTER', status: 'ACTIVE' };
 }
 
-// =========================================================================
-// LICENSE MANAGEMENT (Database-backed)
-// =========================================================================
+// --- license management ---
 
 /**
  * Get license for an organization
@@ -401,9 +391,7 @@ function getUserCount(orgId) {
   return result ? result.count : 0;
 }
 
-// =========================================================================
-// SCHEMA MIGRATION (Pre-org to Multi-org)
-// =========================================================================
+// Schema migration (pre-org to multi-org)
 
 /**
  * Check if database needs org migration
@@ -518,14 +506,13 @@ function migrateToOrgSchema(defaultOrgId) {
   }
 }
 
-// =========================================================================
-// DATABASE INITIALIZATION
-// =========================================================================
+// --- database initialization ---
 
 /**
  * Initialize database with encryption and multi-org support
  */
 async function initDatabase() {
+  // db init is surprisingly tricky with encrypted sqlite — be careful changing this
   const dbPath = getDatabasePath();
   const encryptionKey = getEncryptionKey();
   
@@ -609,9 +596,7 @@ async function initDatabase() {
   return db;
 }
 
-// =========================================================================
-// DEFAULT DATA SEEDING
-// =========================================================================
+// Default data seeding
 
 async function seedDefaultData(defaultOrgId) {
   const { v4: uuidv4 } = require('uuid');
@@ -694,9 +679,7 @@ async function seedDefaultData(defaultOrgId) {
   }
 }
 
-// =========================================================================
-// DEMO DATA SEEDING (Evaluation builds only)
-// =========================================================================
+// Demo data (evaluation builds only)
 
 function seedDemoData(orgId) {
   const { getCurrentBuildVersion } = require('../license/tiers.cjs');
@@ -794,9 +777,7 @@ function seedDemoData(orgId) {
   `).run(auditId, orgId, 'demo_data_loaded', 'System', 'Demo data seeded for evaluation', 'system', 'system', now);
 }
 
-// =========================================================================
-// ENCRYPTION UTILITIES
-// =========================================================================
+// --- encryption utilities ---
 
 /**
  * Check if database encryption is enabled
@@ -856,9 +837,7 @@ function getEncryptionStatus() {
   };
 }
 
-// =========================================================================
-// DATABASE OPERATIONS
-// =========================================================================
+// Database operations
 
 function getDatabase() {
   return db;
@@ -957,10 +936,6 @@ async function rekeyDatabase(newKey) {
     throw new Error(`Database rekey failed: ${error.message}`);
   }
 }
-
-// =========================================================================
-// EXPORTS
-// =========================================================================
 
 module.exports = {
   // Database initialization

@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Bell, Plus, AlertCircle, Trash2, Edit, Check, X } from 'lucide-react';
+import ErrorState from '@/components/ui/ErrorState';
 import { format } from 'date-fns';
 
 export default function Notifications() {
@@ -100,14 +101,7 @@ export default function Notifications() {
   const unreadCount = notifications.filter(n => !n.is_read).length;
 
   if (isError) {
-    return (
-      <div className="p-6">
-        <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
-          <h3 className="text-red-800 font-semibold text-lg mb-2">Failed to Load Notifications</h3>
-          <p className="text-red-600">Unable to load notification data. Please try again or contact support.</p>
-        </div>
-      </div>
-    );
+    return <ErrorState title="Notifications unavailable" />;
   }
 
   if (user?.role !== 'admin') {

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Plus, Users, Loader2, AlertCircle } from 'lucide-react';
+import ErrorState from '@/components/ui/ErrorState';
 import PatientForm from '../components/patients/PatientForm';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -26,6 +27,7 @@ export default function Patients() {
 
   const createPatientMutation = useMutation({
     mutationFn: async (patientData) => {
+      // console.log('patient payload:', patientData);
       const patient = await api.entities.Patient.create(patientData);
       
       // Calculate initial priority
@@ -95,14 +97,7 @@ export default function Patients() {
   const isMutating = createPatientMutation.isPending || updatePatientMutation.isPending;
 
   if (isError) {
-    return (
-      <div className="p-6">
-        <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
-          <h3 className="text-red-800 font-semibold text-lg mb-2">Failed to Load Data</h3>
-          <p className="text-red-600">Unable to load patient data. Please try again or contact support.</p>
-        </div>
-      </div>
-    );
+    return <ErrorState title="Failed to load patients" message="There was a problem loading patient data." />;
   }
 
   return (

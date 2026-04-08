@@ -17,7 +17,7 @@ const shared = require('../shared.cjs');
 function register() {
   const db = getDatabase();
 
-  // ===== ACCESS CONTROL =====
+  // Access control
   ipcMain.handle('access:validateRequest', async (event, permission, justification) => {
     if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
     const { currentUser } = shared.getSessionState();
@@ -42,7 +42,7 @@ function register() {
     return accessControl.JUSTIFICATION_REASONS;
   });
 
-  // ===== DISASTER RECOVERY =====
+  // --- disaster recovery ---
   ipcMain.handle('recovery:createBackup', async (event, options) => {
     if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
     const { currentUser } = shared.getSessionState();
@@ -72,7 +72,7 @@ function register() {
     return disasterRecovery.getRecoveryStatus();
   });
 
-  // ===== COMPLIANCE VIEW =====
+  // Compliance view
   ipcMain.handle('compliance:getSummary', async () => {
     if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
     const { currentUser } = shared.getSessionState();
@@ -111,7 +111,7 @@ function register() {
     return complianceView.getAccessLogReport({ ...options, orgId });
   });
 
-  // ===== OFFLINE RECONCILIATION =====
+  // Offline reconciliation
   ipcMain.handle('reconciliation:getStatus', async () => {
     if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
     return offlineReconciliation.getReconciliationStatus();
@@ -140,7 +140,7 @@ function register() {
     return offlineReconciliation.getOperationMode();
   });
 
-  // ===== FILE OPERATIONS =====
+  // --- file operations ---
   ipcMain.handle('file:exportCSV', async (event, data, filename) => {
     if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
 
@@ -183,7 +183,7 @@ function register() {
     return { success: true };
   });
 
-  // ===== EXCEL EXPORT =====
+  // Excel export
   ipcMain.handle('file:exportExcel', async (event, data, filename) => {
     if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
 
@@ -226,7 +226,7 @@ function register() {
     return { success: true, path: filePath };
   });
 
-  // ===== PDF EXPORT =====
+  // PDF export
   ipcMain.handle('file:exportPDF', async (event, data, filename) => {
     if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
 
@@ -272,7 +272,7 @@ function register() {
     return { success: true, path: filePath };
   });
 
-  // ===== FILE IMPORT =====
+  // File import
   ipcMain.handle('file:import', async (event, type) => {
     if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
 
@@ -346,7 +346,7 @@ function register() {
     };
   });
 
-  // ===== DATABASE RESTORE =====
+  // --- database restore ---
   ipcMain.handle('file:restoreDatabase', async (event, restorePath) => {
     if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
 

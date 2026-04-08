@@ -7,7 +7,7 @@
 // Check if running in Electron
 const isElectron = typeof window !== 'undefined' && window.electronAPI;
 
-// Create a mock client for development in browser
+// mock client for browser dev — keeps hot-reload working without electron
 const mockClient = {
   auth: {
     login: async () => ({ user: { id: '1', email: 'admin@transtrack.local', role: 'admin', full_name: 'Admin' } }),

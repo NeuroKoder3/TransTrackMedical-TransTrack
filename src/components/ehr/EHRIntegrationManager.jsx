@@ -177,6 +177,7 @@ export default function EHRIntegrationManager() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="bearer_token">Bearer Token</SelectItem>
+                      {/* TODO: OAuth2 flow not implemented yet — just stores the preference */}
                       <SelectItem value="oauth2">OAuth 2.0</SelectItem>
                       <SelectItem value="basic_auth">Basic Auth</SelectItem>
                     </SelectContent>

@@ -1,13 +1,7 @@
-/**
- * TransTrack - Local Business Logic Functions
- * 
- * These functions replace the Deno serverless functions and run locally.
- * All functions maintain HIPAA compliance with full audit logging.
- */
+// Business logic functions (priority calc, donor matching, FHIR, etc.)
 
 const { v4: uuidv4 } = require('uuid');
 
-// Calculate Priority (Advanced)
 async function calculatePriorityAdvanced(params, context) {
   const { db, currentUser, logAudit } = context;
   const { patient_id } = params;
@@ -18,7 +12,6 @@ async function calculatePriorityAdvanced(params, context) {
     throw new Error('Patient not found');
   }
   
-  // Get active priority weights configuration
   const weights = db.prepare('SELECT * FROM priority_weights WHERE is_active = 1').get() || {
     medical_urgency_weight: 30,
     time_on_waitlist_weight: 25,
@@ -208,7 +201,6 @@ async function calculatePriorityAdvanced(params, context) {
     };
   }
   
-  // Calculate weighted scores
   breakdown.weighted_scores.medical_urgency = 
     (breakdown.raw_scores.medical_urgency / 100) * weights.medical_urgency_weight;
   breakdown.weighted_scores.time_on_waitlist = 
@@ -220,7 +212,6 @@ async function calculatePriorityAdvanced(params, context) {
   breakdown.weighted_scores.blood_type_rarity = 
     (breakdown.raw_scores.blood_type_rarity / 100) * weights.blood_type_rarity_weight;
   
-  // Calculate final score
   let finalScore = Object.values(breakdown.weighted_scores).reduce((sum, val) => sum + val, 0);
   finalScore = finalScore - comorbidityPenalty + previousTransplantAdjustment + complianceBonus;
   finalScore = Math.min(100, Math.max(0, finalScore));
@@ -239,7 +230,6 @@ async function calculatePriorityAdvanced(params, context) {
     WHERE id = ?
   `).run(finalScore, JSON.stringify(breakdown), patient_id);
   
-  // Log the calculation
   logAudit(
     'update',
     'Patient',
@@ -258,7 +248,6 @@ async function calculatePriorityAdvanced(params, context) {
   };
 }
 
-// Match Donor (Advanced)
 async function matchDonorAdvanced(params, context) {
   const { db, currentUser, logAudit } = context;
   const { donor_organ_id, simulation_mode, hypothetical_donor } = params;
@@ -282,6 +271,7 @@ async function matchDonorAdvanced(params, context) {
   
   const matches = [];
   
+  // TODO: pull this into a shared config — duplicated in frontend
   // Blood type compatibility matrix
   const bloodCompatibility = {
     'O-': ['O-', 'O+', 'A-', 'A+', 'B-', 'B+', 'AB-', 'AB+'],
@@ -294,6 +284,7 @@ async function matchDonorAdvanced(params, context) {
     'AB+': ['AB+']
   };
   
+  // XXX: naive string parsing — consider using a proper HLA nomenclature lib
   // Parse HLA typing
   const parseHLA = (hlaString) => {
     if (!hlaString) return { A: [], B: [], DR: [], DQ: [] };
@@ -402,6 +393,7 @@ async function matchDonorAdvanced(params, context) {
       }
     }
     
+    // FIXME: survival model is overly simplistic, need real Cox regression data
     let predictedSurvival = 85;
     predictedSurvival += (totalHLAMatches / 6) * 10;
     if (donor.blood_type === patient.blood_type) predictedSurvival += 3;
@@ -520,7 +512,6 @@ async function matchDonorAdvanced(params, context) {
   };
 }
 
-// Check Notification Rules
 async function checkNotificationRules(params, context) {
   const { db, currentUser, logAudit } = context;
   const { patient_id, event_type, old_data } = params;
@@ -608,7 +599,6 @@ async function checkNotificationRules(params, context) {
   };
 }
 
-// Export Waitlist
 async function exportWaitlist(params, context) {
   const { db, currentUser, logAudit } = context;
   const { format, filters } = params;
@@ -643,7 +633,6 @@ async function exportWaitlist(params, context) {
   };
 }
 
-// Import FHIR Data
 async function importFHIRData(params, context) {
   const { db, currentUser, logAudit } = context;
   const { fhir_data, integration_id } = params;
@@ -654,7 +643,6 @@ async function importFHIRData(params, context) {
   const errors = [];
   
   try {
-    // Parse FHIR bundle
     const bundle = typeof fhir_data === 'string' ? JSON.parse(fhir_data) : fhir_data;
     
     if (bundle.resourceType !== 'Bundle') {
@@ -666,7 +654,6 @@ async function importFHIRData(params, context) {
         const resource = entry.resource;
         
         if (resource.resourceType === 'Patient') {
-          // Map FHIR Patient to TransTrack Patient
           const patientId = uuidv4();
           const name = resource.name?.[0] || {};
           
@@ -690,7 +677,6 @@ async function importFHIRData(params, context) {
       }
     }
     
-    // Log import
     db.prepare(`
       INSERT INTO ehr_imports (id, integration_id, import_type, status, records_imported, records_failed, error_details, created_by, completed_date)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
@@ -737,7 +723,6 @@ async function importFHIRData(params, context) {
   };
 }
 
-// Validate FHIR Data
 async function validateFHIRData(params, context) {
   const { db } = context;
   const { fhir_data } = params;
@@ -799,7 +784,6 @@ async function logError(params, context) {
   return { logged: true };
 }
 
-// Export to FHIR R4 Bundle
 async function exportToFHIR(params, context) {
   const { db, currentUser, logAudit } = context;
   const { patient_id, resource_types } = params;
@@ -1098,7 +1082,6 @@ async function exportToFHIR(params, context) {
   };
 }
 
-// Push data to external EHR system via FHIR
 async function pushToEHR(params, context) {
   const { db, currentUser, logAudit } = context;
   const { patient_id, integration_id, fields_to_sync } = params;
@@ -1226,7 +1209,6 @@ async function pushToEHR(params, context) {
   };
 }
 
-// Process inbound FHIR webhook data
 async function fhirWebhook(params, context) {
   const { db, currentUser, logAudit } = context;
   const { payload, webhook_secret } = params;

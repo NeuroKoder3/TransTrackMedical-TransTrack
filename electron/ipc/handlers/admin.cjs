@@ -19,7 +19,7 @@ const shared = require('../shared.cjs');
 function register() {
   const db = getDatabase();
 
-  // ===== APP INFO =====
+  // App info
   ipcMain.handle('app:getInfo', () => ({
     name: 'TransTrack',
     version: '1.0.0',
@@ -29,7 +29,7 @@ function register() {
 
   ipcMain.handle('app:getVersion', () => '1.0.0');
 
-  // ===== ENCRYPTION STATUS =====
+  // Encryption status
   ipcMain.handle('encryption:getStatus', async () => getEncryptionStatus());
 
   ipcMain.handle('encryption:verifyIntegrity', async () => {
@@ -46,7 +46,7 @@ function register() {
 
   ipcMain.handle('encryption:isEnabled', async () => isEncryptionEnabled());
 
-  // ===== ORGANIZATION MANAGEMENT =====
+  // --- organization ---
   ipcMain.handle('organization:getCurrent', async () => {
     if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
     const orgId = shared.getSessionOrgId();
@@ -97,7 +97,7 @@ function register() {
     return { success: true };
   });
 
-  // ===== SETTINGS (Org-Scoped) =====
+  // Settings
   ipcMain.handle('settings:get', async (event, key) => {
     if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
     const orgId = shared.getSessionOrgId();

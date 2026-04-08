@@ -30,9 +30,7 @@ const {
 } = require('./manager.cjs');
 const { logger } = require('../services/logger.cjs');
 
-// =============================================================================
-// FEATURE GATE ERRORS
-// =============================================================================
+// Feature gate errors
 
 class FeatureGateError extends Error {
   constructor(message, details = {}) {
@@ -70,9 +68,7 @@ class EvaluationBuildError extends Error {
   }
 }
 
-// =============================================================================
-// LICENSE STATE CHECKS
-// =============================================================================
+// --- license state checks ---
 
 /**
  * Check if application is in a usable state
@@ -152,9 +148,7 @@ function requireUsableState() {
   return state.info;
 }
 
-// =============================================================================
-// FEATURE GATES
-// =============================================================================
+// Feature gates
 
 /**
  * Check if a feature is accessible
@@ -221,9 +215,7 @@ function gateFeature(feature) {
   };
 }
 
-// =============================================================================
-// LIMIT GATES
-// =============================================================================
+// Limit gates
 
 /**
  * Check if within a specific limit
@@ -295,9 +287,7 @@ function requireWithinLimit(limitType, currentCount) {
   return result;
 }
 
-// =============================================================================
-// EVALUATION BUILD GATES
-// =============================================================================
+// --- evaluation build gates ---
 
 /**
  * Check if action is allowed on evaluation build
@@ -360,9 +350,7 @@ function requireAllowedOnBuild(action) {
   return true;
 }
 
-// =============================================================================
-// READ-ONLY MODE CHECKS
-// =============================================================================
+// Read-only mode
 
 /**
  * Check if in read-only mode (expired evaluation or invalid license)
@@ -397,9 +385,7 @@ function requireWriteAccess() {
   return true;
 }
 
-// =============================================================================
-// COMBINED GATE HELPERS
-// =============================================================================
+// Combined gate helpers
 
 /**
  * Full access check combining multiple gates
@@ -527,10 +513,6 @@ function requireFullAccess(options = {}) {
   
   return result;
 }
-
-// =============================================================================
-// EXPORTS
-// =============================================================================
 
 module.exports = {
   // Error classes

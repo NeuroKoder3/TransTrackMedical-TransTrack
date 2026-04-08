@@ -1,9 +1,4 @@
-/**
- * TransTrack - Shared IPC State & Utilities
- *
- * Centralizes session management, security constants, audit logging,
- * and entity helper functions used by all IPC handler modules.
- */
+// Shared IPC state, session management, and entity helpers
 
 const { v4: uuidv4 } = require('uuid');
 const {
@@ -19,9 +14,7 @@ const {
 const { LICENSE_TIER, LICENSE_FEATURES, hasFeature, checkDataLimit } = require('../license/tiers.cjs');
 const { checkRateLimit } = require('./rateLimiter.cjs');
 
-// =============================================================================
-// SESSION STORE (bound to WebContents ID for session-riding prevention)
-// =============================================================================
+// Session store (bound to WebContents for session-riding prevention)
 
 let currentSession = null;
 let currentUser = null;
@@ -29,6 +22,7 @@ let sessionExpiry = null;
 let boundWebContentsId = null;
 let lastActivityTime = null;
 
+// TODO: make this configurable per-org via settings table
 const IDLE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
 
 function getSessionState() {
@@ -116,9 +110,7 @@ function validateSession(senderWebContentsId) {
   return true;
 }
 
-// =============================================================================
-// HANDLER WRAPPER (session check + rate limiting + WebContents binding)
-// =============================================================================
+// --- handler wrapper ---
 
 function wrapHandler(handlerFn) {
   return async (event, ...args) => {
@@ -139,9 +131,7 @@ function wrapHandler(handlerFn) {
   };
 }
 
-// =============================================================================
-// SECURITY CONSTANTS
-// =============================================================================
+// Security constants
 
 const MAX_LOGIN_ATTEMPTS = 5;
 const LOCKOUT_DURATION_MS = 15 * 60 * 1000;
@@ -199,9 +189,7 @@ const PASSWORD_REQUIREMENTS = {
   requireSpecial: true,
 };
 
-// =============================================================================
-// PASSWORD VALIDATION
-// =============================================================================
+// --- password validation ---
 
 function validatePasswordStrength(password) {
   const errors = [];
@@ -223,9 +211,7 @@ function validatePasswordStrength(password) {
   return { valid: errors.length === 0, errors };
 }
 
-// =============================================================================
-// LOGIN ATTEMPT TRACKING
-// =============================================================================
+// Login attempt tracking
 
 function checkAccountLockout(email) {
   const db = getDatabase();
@@ -273,9 +259,7 @@ function clearFailedLogins(email) {
   db.prepare('DELETE FROM login_attempts WHERE email = ?').run(email.toLowerCase().trim());
 }
 
-// =============================================================================
-// ORDER BY VALIDATION
-// =============================================================================
+// --- order-by validation ---
 
 function isValidOrderColumn(tableName, column) {
   const allowedColumns = ALLOWED_ORDER_COLUMNS[tableName];
@@ -283,10 +267,9 @@ function isValidOrderColumn(tableName, column) {
   return allowedColumns.includes(column);
 }
 
-// =============================================================================
-// ENTITY HELPERS
-// =============================================================================
+// Entity helpers
 
+// FIXME: this is fragile — should validate before parsing
 function parseJsonFields(row) {
   if (!row) return row;
   const parsed = { ...row };
@@ -354,9 +337,7 @@ function sanitizeForSQLite(entityData) {
   return entityData;
 }
 
-// =============================================================================
-// AUDIT LOGGING
-// =============================================================================
+// --- audit logging ---
 
 function logAudit(action, entityType, entityId, patientName, details, userEmail, userRole, requestId) {
   const db = getDatabase();
@@ -374,10 +355,6 @@ function logAudit(action, entityType, entityId, patientName, details, userEmail,
     ).run(id, orgId, action, entityType, entityId, patientName, details, userEmail, userRole, now);
   }
 }
-
-// =============================================================================
-// EXPORTS
-// =============================================================================
 
 module.exports = {
   // Session
