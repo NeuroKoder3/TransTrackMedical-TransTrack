@@ -31,6 +31,23 @@ vi.mock('@/api/apiClient', () => ({
   },
 }));
 
+vi.mock('@/hooks/useJustifiedAccess', () => ({
+  useJustifiedAccess: () => ({
+    requireJustification: vi.fn().mockResolvedValue({ authorized: true, justification: 'test' }),
+    dialogOpen: false,
+    handleConfirm: vi.fn(),
+    handleCancel: vi.fn(),
+    pendingAction: null,
+  }),
+  default: () => ({
+    requireJustification: vi.fn().mockResolvedValue({ authorized: true, justification: 'test' }),
+    dialogOpen: false,
+    handleConfirm: vi.fn(),
+    handleCancel: vi.fn(),
+    pendingAction: null,
+  }),
+}));
+
 vi.mock('@/components/barriers', () => ({
   ReadinessBarrierList: () => <div data-testid="barriers">Barriers</div>,
 }));
@@ -63,12 +80,19 @@ function renderPatientDetails(id = 'pat-1') {
 describe('PatientDetails Page', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.electronAPI = {
+      functions: {
+        invoke: vi.fn().mockResolvedValue({ success: true }),
+      },
+    };
   });
 
-  it('renders loading state initially', () => {
-    mockPatientList.mockResolvedValue([]);
+  it('renders loading state initially', async () => {
+    mockPatientList.mockImplementation(() => new Promise(() => {}));
     renderPatientDetails();
-    expect(screen.getByText(/Loading patient details/i)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText(/Loading patient details/i)).toBeInTheDocument();
+    });
   });
 
   it('displays patient name after loading', async () => {

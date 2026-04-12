@@ -13,24 +13,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { HashRouter } from 'react-router-dom';
 
-// Mock the localClient default export used by ComplianceCenter
-vi.mock('@/api/localClient', () => ({
-  default: {
-    barriers: {
-      getAuditHistory: vi.fn().mockResolvedValue([]),
-      getDashboard: vi.fn().mockResolvedValue({
-        totalBarriers: 0,
-        patientsWithBarriers: 0,
-        totalOpenBarriers: 0,
-      }),
-    },
-  },
-}));
-
-// Mock window.electronAPI.compliance
-beforeEach(() => {
-  window.electronAPI = {
-    ...window.electronAPI,
+vi.mock('@/api/apiClient', () => ({
+  api: {
     compliance: {
       getSummary: vi.fn().mockResolvedValue({
         patients: { total: 42, active: 35 },
@@ -48,8 +32,16 @@ beforeEach(() => {
       }),
       getAuditTrail: vi.fn().mockResolvedValue({ entries: [] }),
     },
-  };
-});
+    barriers: {
+      getAuditHistory: vi.fn().mockResolvedValue([]),
+      getDashboard: vi.fn().mockResolvedValue({
+        totalBarriers: 0,
+        patientsWithBarriers: 0,
+        totalOpenBarriers: 0,
+      }),
+    },
+  },
+}));
 
 import ComplianceCenter from '@/pages/ComplianceCenter';
 
