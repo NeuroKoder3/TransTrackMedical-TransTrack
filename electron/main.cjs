@@ -24,7 +24,9 @@ let mainWindow = null;
 let splashWindow = null;
 
 // Production check - detect dev mode by checking if app is packaged or if ELECTRON_DEV is set
-const isDev = !app.isPackaged || process.env.NODE_ENV === 'development' || process.env.ELECTRON_DEV === '1';
+// NODE_ENV=test is used by E2E tests to load dist/index.html without a dev server
+const isDev = process.env.NODE_ENV !== 'test' &&
+  (!app.isPackaged || process.env.NODE_ENV === 'development' || process.env.ELECTRON_DEV === '1');
 
 // Application metadata
 const APP_INFO = {

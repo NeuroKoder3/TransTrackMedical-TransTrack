@@ -42,7 +42,7 @@ test.beforeAll(async () => {
     args: [path.join(__dirname, '..', '..', 'electron', 'main.cjs')],
     env: {
       ...process.env,
-      // Use 'test' so isDev is false and Electron loads dist/index.html
+      // NODE_ENV=test tells main.cjs to load dist/index.html
       // instead of trying to connect to http://localhost:5173
       NODE_ENV: 'test',
       ELECTRON_DEV: '0',
@@ -50,13 +50,27 @@ test.beforeAll(async () => {
     timeout: 45000,
   });
 
-  // The splash window appears first; wait for the main window.
+  // The splash window appears first, then the main window replaces it.
+  // Wait for the first window (splash).
   window = await app.firstWindow({ timeout: 30000 });
 
-  // If the splash is still the only window, wait for the next one.
-  if (app.windows().length === 1) {
-    const nextWindow = await app.waitForEvent('window', { timeout: 30000 }).catch(() => null);
-    if (nextWindow) window = nextWindow;
+  // Wait for the main window to appear. The splash window loads splash.html
+  // while the main window loads dist/index.html — use the URL to distinguish.
+  const isMainWindow = (w) => {
+    try {
+      const url = w.url();
+      return url.includes('index.html') || url.includes('localhost');
+    } catch {
+      return false;
+    }
+  };
+
+  if (!isMainWindow(window)) {
+    // Current window is the splash — wait for the main window.
+    const mainWindow = await app.waitForEvent('window', { timeout: 30000 }).catch(() => null);
+    if (mainWindow) {
+      window = mainWindow;
+    }
   }
 
   await window.waitForLoadState('domcontentloaded', { timeout: 30000 });

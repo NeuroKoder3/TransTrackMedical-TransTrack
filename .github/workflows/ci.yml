@@ -83,8 +83,8 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
-      - name: Rebuild native modules for Node.js
-        run: npm rebuild better-sqlite3-multiple-ciphers
+      - name: Rebuild native modules for Electron
+        run: npx @electron/rebuild -f
 
       - name: Build renderer
         run: npm run build
