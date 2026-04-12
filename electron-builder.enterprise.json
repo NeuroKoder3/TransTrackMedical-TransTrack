@@ -51,7 +51,9 @@
     "entitlementsInherit": "electron/assets/entitlements.mac.plist",
     "artifactName": "TransTrack-Enterprise-${version}-${arch}.${ext}",
     "type": "distribution",
-    "notarize": false
+    "notarize": {
+      "teamId": "${env.APPLE_TEAM_ID}"
+    }
   },
   "linux": {
     "target": ["AppImage", "deb"],

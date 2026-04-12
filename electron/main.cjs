@@ -115,26 +115,44 @@ function createMainWindow() {
     return { action: 'deny' };
   });
 
-  // TODO: tighten CSP further for production builds
-  // Security: Add Content Security Policy and other security headers
+  // Security: Content Security Policy and response headers
   mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
-    const cspDirectives = [
-      "default-src 'self'",
-      "script-src 'self'",
-      "style-src 'self' 'unsafe-inline'",
-      "img-src 'self' data: https:",
-      "font-src 'self' data:",
-      isDev ? "connect-src 'self' http://localhost:5173 ws://localhost:5173" : "connect-src 'self'",
-    ].join('; ');
+    const cspDirectives = isDev
+      ? [
+          "default-src 'self'",
+          "script-src 'self'",
+          "style-src 'self' 'unsafe-inline'",
+          "img-src 'self' data:",
+          "font-src 'self' data:",
+          "connect-src 'self' http://localhost:5173 ws://localhost:5173",
+          "object-src 'none'",
+          "base-uri 'self'",
+          "form-action 'self'",
+          "frame-ancestors 'none'",
+        ]
+      : [
+          "default-src 'self'",
+          "script-src 'self'",
+          "style-src 'self' 'unsafe-inline'",
+          "img-src 'self' data:",
+          "font-src 'self' data:",
+          "connect-src 'self'",
+          "object-src 'none'",
+          "base-uri 'self'",
+          "form-action 'self'",
+          "frame-ancestors 'none'",
+          "upgrade-insecure-requests",
+        ];
 
     callback({
       responseHeaders: {
         ...details.responseHeaders,
-        'Content-Security-Policy': [cspDirectives],
+        'Content-Security-Policy': [cspDirectives.join('; ')],
         'X-Content-Type-Options': ['nosniff'],
         'X-Frame-Options': ['DENY'],
         'X-XSS-Protection': ['1; mode=block'],
         'Referrer-Policy': ['strict-origin-when-cross-origin'],
+        'Permissions-Policy': ['camera=(), microphone=(), geolocation=(), payment=()'],
       }
     });
   });
