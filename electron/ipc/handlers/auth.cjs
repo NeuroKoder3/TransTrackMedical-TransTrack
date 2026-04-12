@@ -28,7 +28,10 @@ function register() {
         throw new Error(`Account temporarily locked due to too many failed attempts. Try again in ${lockoutStatus.remainingTime} minutes.`);
       }
 
-      const user = db.prepare('SELECT * FROM users WHERE email = ? AND is_active = 1').get(email);
+      const defaultOrg = getDefaultOrganization();
+      const user = defaultOrg
+        ? db.prepare('SELECT * FROM users WHERE email = ? AND org_id = ? AND is_active = 1').get(email, defaultOrg.id)
+        : db.prepare('SELECT * FROM users WHERE email = ? AND is_active = 1').get(email);
       if (!user) {
         shared.recordFailedLogin(email);
         shared.logAudit('login_failed', 'User', null, null, 'Login failed: user not found', email, null);
@@ -247,7 +250,7 @@ function register() {
       updates.push('is_active = ?');
       values.push(userData.is_active ? 1 : 0);
       if (!userData.is_active) {
-        db.prepare('DELETE FROM sessions WHERE user_id = ?').run(id);
+        db.prepare('DELETE FROM sessions WHERE user_id = ? AND user_id IN (SELECT id FROM users WHERE org_id = ?)').run(id, shared.getSessionOrgId());
         shared.logAudit('session_invalidated', 'User', id, null, 'User sessions invalidated due to account deactivation', currentUser.email, currentUser.role);
       }
     }
@@ -255,7 +258,9 @@ function register() {
     if (updates.length > 0) {
       updates.push("updated_at = datetime('now')");
       values.push(id);
-      db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...values);
+      const orgId = shared.getSessionOrgId();
+      values.push(orgId);
+      db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ? AND org_id = ?`).run(...values);
       shared.logAudit('update', 'User', id, null, 'User updated', currentUser.email, currentUser.role);
     }
     return { success: true };
@@ -268,8 +273,12 @@ function register() {
     }
     if (id === currentUser.id) throw new Error('Cannot delete your own account');
 
-    db.prepare('DELETE FROM sessions WHERE user_id = ?').run(id);
-    db.prepare('DELETE FROM users WHERE id = ?').run(id);
+    const orgId = shared.getSessionOrgId();
+    const targetUser = db.prepare('SELECT id FROM users WHERE id = ? AND org_id = ?').get(id, orgId);
+    if (!targetUser) throw new Error('User not found in your organization');
+
+    db.prepare('DELETE FROM sessions WHERE user_id = ? AND user_id IN (SELECT id FROM users WHERE org_id = ?)').run(id, orgId);
+    db.prepare('DELETE FROM users WHERE id = ? AND org_id = ?').run(id, orgId);
     shared.logAudit('delete', 'User', id, null, 'User deleted', currentUser.email, currentUser.role);
     return { success: true };
   });

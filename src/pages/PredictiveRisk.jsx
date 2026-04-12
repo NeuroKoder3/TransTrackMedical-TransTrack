@@ -11,6 +11,7 @@ import {
   Info, ExternalLink, Play, Zap, ShieldAlert
 } from 'lucide-react';
 import { createPageUrl, formatDate } from '@/utils';
+import { api } from '@/api/apiClient';
 
 function RiskGauge({ score, size = 'large' }) {
   const radius = size === 'large' ? 60 : 30;
@@ -64,22 +65,12 @@ export default function PredictiveRisk() {
 
   const { data: dashboard, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['predictionsDashboard'],
-    queryFn: async () => {
-      if (window.electronAPI?.predictions) {
-        return await window.electronAPI.predictions.getDashboard();
-      }
-      return null;
-    },
+    queryFn: () => api.predictions.getDashboard(),
     refetchInterval: 120000,
   });
 
   const runPredictionsMutation = useMutation({
-    mutationFn: async () => {
-      if (window.electronAPI?.predictions) {
-        return await window.electronAPI.predictions.runAll();
-      }
-      throw new Error('Predictions API not available');
-    },
+    mutationFn: () => api.predictions.runAll(),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['predictionsDashboard'] }),
   });
 

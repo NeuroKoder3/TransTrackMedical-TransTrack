@@ -15,30 +15,20 @@ import { AHHQRiskBadge } from '@/components/ahhq';
 import { TransplantClock } from '@/components/clock';
 import { createPageUrl } from '@/utils';
 import ErrorState from '@/components/ui/ErrorState';
-import api from '@/api/localClient';
+import { api } from '@/api/apiClient';
 
 export default function RiskDashboard() {
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const { data: dashboard, isLoading, isError, refetch } = useQuery({
     queryKey: ['riskDashboard'],
-    queryFn: async () => {
-      if (window.electronAPI?.risk) {
-        return await window.electronAPI.risk.getDashboard();
-      }
-      return null;
-    },
-    refetchInterval: 60000, // Refresh every minute
+    queryFn: () => api.risk.getDashboard(),
+    refetchInterval: 60000,
   });
 
   const { data: fullReport } = useQuery({
     queryKey: ['riskReport'],
-    queryFn: async () => {
-      if (window.electronAPI?.risk) {
-        return await window.electronAPI.risk.getFullReport();
-      }
-      return null;
-    },
+    queryFn: () => api.risk.getFullReport(),
   });
 
   // Fetch barrier dashboard data
@@ -51,24 +41,14 @@ export default function RiskDashboard() {
   // Fetch aHHQ dashboard data
   const { data: ahhqDashboard } = useQuery({
     queryKey: ['ahhqDashboard'],
-    queryFn: async () => {
-      if (window.electronAPI?.ahhq) {
-        return await window.electronAPI.ahhq.getDashboard();
-      }
-      return null;
-    },
+    queryFn: () => api.ahhq.getDashboard(),
     refetchInterval: 60000,
   });
 
   // Fetch patients with aHHQ issues
   const { data: ahhqPatientsWithIssues } = useQuery({
     queryKey: ['ahhqPatientsWithIssues'],
-    queryFn: async () => {
-      if (window.electronAPI?.ahhq) {
-        return await window.electronAPI.ahhq.getPatientsWithIssues(10);
-      }
-      return [];
-    },
+    queryFn: () => api.ahhq.getPatientsWithIssues(10),
     refetchInterval: 60000,
   });
 

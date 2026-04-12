@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { api } from '@/api/apiClient';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -16,6 +16,8 @@ import { ReadinessBarrierList } from '../components/barriers';
 import { AHHQPanel } from '../components/ahhq';
 import { LabsPanel } from '../components/labs';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useJustifiedAccess } from '@/hooks/useJustifiedAccess';
+import JustificationDialog from '@/components/access/JustificationDialog';
 
 export default function PatientDetails() {
   // Use React Router's useLocation to get query params (works with HashRouter)
@@ -23,6 +25,24 @@ export default function PatientDetails() {
   const urlParams = new URLSearchParams(location.search);
   const patientId = urlParams.get('id');
   const queryClient = useQueryClient();
+  const { requireJustification, dialogOpen, handleConfirm, handleCancel, pendingAction } = useJustifiedAccess();
+  const [accessGranted, setAccessGranted] = useState(false);
+
+  useEffect(() => {
+    if (patientId && !accessGranted) {
+      requireJustification('patient:view_phi', 'Patient', patientId).then((result) => {
+        if (result.authorized) {
+          setAccessGranted(true);
+          if (window.electronAPI?.functions?.invoke) {
+            window.electronAPI.functions.invoke('logError', {
+              message: `PHI access justified: ${result.justification}`,
+              stack: `Patient ID: ${patientId}`,
+            }).catch(() => {});
+          }
+        }
+      });
+    }
+  }, [patientId]);
 
   const { data: patient, isLoading, isError } = useQuery({
     queryKey: ['patient', patientId],
@@ -45,6 +65,26 @@ export default function PatientDetails() {
       queryClient.invalidateQueries({ queryKey: ['patient', patientId] });
     },
   });
+
+  if (!accessGranted) {
+    return (
+      <>
+        <JustificationDialog
+          open={dialogOpen}
+          onConfirm={handleConfirm}
+          onCancel={() => {
+            handleCancel();
+            window.history.back();
+          }}
+          entityType="patient"
+          action="view"
+        />
+        <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6 flex items-center justify-center">
+          <div className="text-slate-600">Awaiting access justification...</div>
+        </div>
+      </>
+    );
+  }
 
   if (isLoading) {
     return (

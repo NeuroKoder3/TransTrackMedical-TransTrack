@@ -10,6 +10,7 @@ import {
   Info, Calendar, Shield
 } from 'lucide-react';
 import { formatDate } from '@/utils';
+import { api } from '@/api/apiClient';
 
 function CheckStatusIcon({ status }) {
   if (status === 'pass') return <CheckCircle className="w-5 h-5 text-green-600" />;
@@ -52,22 +53,12 @@ export default function CMSReadiness() {
 
   const { data: dashboard, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['srtrDashboard'],
-    queryFn: async () => {
-      if (window.electronAPI?.srtr) {
-        return await window.electronAPI.srtr.getDashboard();
-      }
-      return null;
-    },
+    queryFn: () => api.srtr.getDashboard(),
     refetchInterval: 120000,
   });
 
   const saveSnapshotMutation = useMutation({
-    mutationFn: async () => {
-      if (window.electronAPI?.srtr) {
-        return await window.electronAPI.srtr.saveSnapshot();
-      }
-      throw new Error('SRTR API not available');
-    },
+    mutationFn: () => api.srtr.saveSnapshot(),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['srtrDashboard'] }),
   });
 

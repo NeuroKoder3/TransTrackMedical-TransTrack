@@ -1,11 +1,13 @@
 /**
- * TransTrack - Cross-Organization Access Prevention Tests
+ * TransTrack - Cross-Organization Data Isolation Tests (Schema Level)
  * 
- * These tests verify that organization isolation is properly enforced,
- * ensuring that users from Org A cannot access data from Org B.
+ * These tests verify that org-scoped SQL query patterns correctly
+ * isolate data between organizations at the database schema level.
  * 
- * CRITICAL: These tests are essential for enterprise security audits
- * and HIPAA compliance verification.
+ * NOTE: These tests exercise local helper functions that mirror the
+ * query patterns used in production IPC handlers. They do NOT invoke
+ * actual ipcMain handlers. For end-to-end IPC isolation tests, see
+ * tests/ipc-integration.test.cjs.
  */
 
 'use strict';
@@ -300,7 +302,7 @@ function getUserByEmail(email, orgId) {
 
 function runTests() {
   console.log('\n========================================');
-  console.log('Cross-Organization Access Prevention Tests');
+  console.log('Cross-Organization Data Isolation Tests (Schema Level)');
   console.log('========================================\n');
   
   // Setup
@@ -514,8 +516,8 @@ function runTests() {
     });
     process.exit(1);
   } else {
-    console.log('\n✓ All cross-organization access prevention tests passed!');
-    console.log('  Organization isolation is properly enforced.');
+    console.log('\n✓ All cross-organization data isolation tests passed!');
+    console.log('  Schema-level organization isolation is properly enforced.');
   }
   
   // Cleanup

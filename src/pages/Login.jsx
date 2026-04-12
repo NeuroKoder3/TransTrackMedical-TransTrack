@@ -67,6 +67,7 @@ export default function Login() {
                   required
                   disabled={isLoading}
                   className="h-11"
+                  autoComplete="off"
                 />
               </div>
 
@@ -81,6 +82,7 @@ export default function Login() {
                   required
                   disabled={isLoading}
                   className="h-11"
+                  autoComplete="off"
                 />
               </div>
 

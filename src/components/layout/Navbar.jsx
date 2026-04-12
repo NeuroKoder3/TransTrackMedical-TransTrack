@@ -120,6 +120,7 @@ export default function Navbar({ user }) {
               size="sm"
               onClick={handleLogout}
               className="text-slate-600 hover:text-slate-900"
+              aria-label="Log out"
             >
               <LogOut className="w-4 h-4" />
             </Button>

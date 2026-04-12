@@ -19,7 +19,7 @@ When you first launch TransTrack, you'll be prompted to log in:
 
 - **Default Administrator Account**:
   - Email: `admin@transtrack.local`
-  - Password: `TransTrack#Admin2026!`
+  - Password: *(provided during deployment — see your administrator)*
 
 > **Important**: You will be prompted to change the default password on first login. Choose a strong password that meets the system's requirements (12+ characters, uppercase, lowercase, number, special character).
 
@@ -31,7 +31,7 @@ After logging in, activate your Enterprise license to unlock all features:
 2. Select the **Activate License** tab
 3. Enter your organization name and contact email
 4. Enter your license key:
-   - **Enterprise Key**: `EN4DX-K8P2M-T7R3N-W9F6J-Q5H1B`
+   - **Enterprise Key**: *(provided with your license agreement)*
 5. Click **Activate**
 
 Once activated, all features are unlocked including:

@@ -11,6 +11,7 @@ import {
   ExternalLink, ArrowUpCircle, Zap, CircleDot
 } from 'lucide-react';
 import { createPageUrl, formatDate } from '@/utils';
+import { api } from '@/api/apiClient';
 
 const TASK_TYPE_LABELS = {
   EVALUATION_RENEWAL: 'Evaluation Renewal',
@@ -46,42 +47,29 @@ export default function TaskCenter() {
 
   const { data: dashboard, isLoading, isError, error } = useQuery({
     queryKey: ['tasksDashboard'],
-    queryFn: async () => {
-      if (window.electronAPI?.tasks) {
-        return await window.electronAPI.tasks.getDashboard();
-      }
-      return null;
-    },
+    queryFn: () => api.tasks.getDashboard(),
     refetchInterval: 60000,
   });
 
   const { data: allTasks, isLoading: isLoadingTasks } = useQuery({
     queryKey: ['allTasks', statusFilter, typeFilter],
     queryFn: async () => {
-      if (window.electronAPI?.tasks) {
-        const filters = {};
-        if (statusFilter === 'active') {
-          // handled client-side
-        } else if (statusFilter !== 'all') {
-          filters.status = statusFilter;
-        }
-        if (typeFilter !== 'all') filters.task_type = typeFilter;
-        const tasks = await window.electronAPI.tasks.getAll(filters);
-        if (statusFilter === 'active') {
-          return tasks.filter(t => !['completed', 'cancelled'].includes(t.status));
-        }
-        return tasks;
+      const filters = {};
+      if (statusFilter !== 'active' && statusFilter !== 'all') {
+        filters.status = statusFilter;
       }
-      return [];
+      if (typeFilter !== 'all') filters.task_type = typeFilter;
+      const tasks = await api.tasks.getAll(filters);
+      if (statusFilter === 'active') {
+        return tasks.filter(t => !['completed', 'cancelled'].includes(t.status));
+      }
+      return tasks;
     },
     refetchInterval: 60000,
   });
 
   const generateMutation = useMutation({
-    mutationFn: () => {
-      if (!window.electronAPI?.tasks) throw new Error('Tasks API not available');
-      return window.electronAPI.tasks.generateAuto();
-    },
+    mutationFn: () => api.tasks.generateAuto(),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tasksDashboard'] });
       queryClient.invalidateQueries({ queryKey: ['allTasks'] });
@@ -89,10 +77,7 @@ export default function TaskCenter() {
   });
 
   const escalateMutation = useMutation({
-    mutationFn: () => {
-      if (!window.electronAPI?.tasks) throw new Error('Tasks API not available');
-      return window.electronAPI.tasks.processEscalations();
-    },
+    mutationFn: () => api.tasks.processEscalations(),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tasksDashboard'] });
       queryClient.invalidateQueries({ queryKey: ['allTasks'] });
@@ -100,10 +85,7 @@ export default function TaskCenter() {
   });
 
   const updateTaskMutation = useMutation({
-    mutationFn: ({ taskId, updates }) => {
-      if (!window.electronAPI?.tasks) throw new Error('Tasks API not available');
-      return window.electronAPI.tasks.update(taskId, updates);
-    },
+    mutationFn: ({ taskId, updates }) => api.tasks.update(taskId, updates),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tasksDashboard'] });
       queryClient.invalidateQueries({ queryKey: ['allTasks'] });

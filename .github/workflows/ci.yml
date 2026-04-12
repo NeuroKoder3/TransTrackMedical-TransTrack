@@ -32,6 +32,10 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Type check
+        run: npx tsc -p jsconfig.json --noEmit || echo "::warning::Type check found issues (non-blocking)"
+        continue-on-error: true
+
       - name: Run core tests
         run: npm test
 
@@ -47,8 +51,25 @@ jobs:
       - name: Run load tests
         run: npm run test:load
 
-      - name: Run component tests
-        run: npm run test:components
+      - name: Run component tests with coverage
+        run: npx vitest run --coverage
+
+      - name: Check coverage threshold
+        run: |
+          node -e "
+            const fs = require('fs');
+            const summary = JSON.parse(fs.readFileSync('coverage/coverage-summary.json', 'utf8'));
+            const total = summary.total;
+            const threshold = 60;
+            const lines = total.lines.pct;
+            const branches = total.branches.pct;
+            console.log('Coverage - Lines: ' + lines + '%, Branches: ' + branches + '%');
+            if (lines < threshold || branches < threshold) {
+              console.error('Coverage below ' + threshold + '% threshold');
+              process.exit(1);
+            }
+            console.log('Coverage threshold met (' + threshold + '%)');
+          "
 
       - name: Rebuild for Electron
         run: npx @electron/rebuild -f
@@ -57,7 +78,7 @@ jobs:
         run: npm run build
 
       - name: Generate SBOM
-        run: npx @cyclonedx/cyclonedx-npm --output-file sbom.json --output-format JSON
+        run: npx cyclonedx-npm --output-file sbom.json --output-format JSON
 
       - name: Upload SBOM artifact
         uses: actions/upload-artifact@v7
@@ -102,3 +123,23 @@ jobs:
           name: e2e-report
           path: playwright-report
           retention-days: 30
+
+  build-windows:
+    name: Windows Build Verification
+    runs-on: windows-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build renderer
+        run: npm run build
+
+      - name: Run core tests
+        run: npm test

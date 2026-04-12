@@ -11,15 +11,19 @@ import ErrorBoundary from '@/components/ErrorBoundary';
 import Login from '@/pages/Login';
 import LicenseActivation from '@/pages/LicenseActivation';
 import { EvaluationWatermark } from '@/components/license';
+import IdleTimeoutManager from '@/components/session/IdleTimeoutManager';
 import { useReducer, useEffect, useCallback } from 'react';
+import RouteErrorBoundary from '@/components/RouteErrorBoundary';
 
 const { Pages, Layout, mainPage } = pagesConfig;
 const mainPageKey = mainPage ?? Object.keys(Pages)[0];
 const MainPage = mainPageKey ? Pages[mainPageKey] : <></>;
 
 const LayoutWrapper = ({ children, currentPageName }) => Layout ?
-  <Layout currentPageName={currentPageName}>{children}</Layout>
-  : <>{children}</>;
+  <Layout currentPageName={currentPageName}>
+    <RouteErrorBoundary pageName={currentPageName}>{children}</RouteErrorBoundary>
+  </Layout>
+  : <RouteErrorBoundary pageName={currentPageName}>{children}</RouteErrorBoundary>;
 
 // License state management via useReducer
 const LICENSE_INITIAL_STATE = {
@@ -169,6 +173,8 @@ const AuthenticatedApp = () => {
   // Render the main app
   return (
     <>
+      {/* HIPAA idle session timeout */}
+      <IdleTimeoutManager />
       {/* Evaluation watermark for evaluation builds */}
       <EvaluationWatermark />
       

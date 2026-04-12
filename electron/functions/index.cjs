@@ -6,7 +6,7 @@ async function calculatePriorityAdvanced(params, context) {
   const { db, currentUser, logAudit } = context;
   const { patient_id } = params;
   
-  const patient = db.prepare('SELECT * FROM patients WHERE id = ?').get(patient_id);
+  const patient = db.prepare('SELECT * FROM patients WHERE id = ? AND org_id = ?').get(patient_id, currentUser.org_id);
   
   if (!patient) {
     throw new Error('Patient not found');
@@ -257,7 +257,7 @@ async function matchDonorAdvanced(params, context) {
     donor = hypothetical_donor;
     donor.id = 'simulation';
   } else {
-    donor = db.prepare('SELECT * FROM donor_organs WHERE id = ?').get(donor_organ_id);
+    donor = db.prepare('SELECT * FROM donor_organs WHERE id = ? AND org_id = ?').get(donor_organ_id, currentUser.org_id);
     if (!donor) {
       throw new Error('Donor organ not found');
     }
@@ -266,8 +266,8 @@ async function matchDonorAdvanced(params, context) {
   // Get all active patients waiting for this organ type
   const candidates = db.prepare(`
     SELECT * FROM patients 
-    WHERE waitlist_status = 'active' AND organ_needed = ?
-  `).all(donor.organ_type);
+    WHERE waitlist_status = 'active' AND organ_needed = ? AND org_id = ?
+  `).all(donor.organ_type, currentUser.org_id);
   
   const matches = [];
   
@@ -448,7 +448,7 @@ async function matchDonorAdvanced(params, context) {
     }
     
     // Create notifications for top 3 matches
-    const admins = db.prepare("SELECT * FROM users WHERE role = 'admin'").all();
+    const admins = db.prepare("SELECT * FROM users WHERE role = 'admin' AND org_id = ?").all(currentUser.org_id);
     for (const match of matches.slice(0, 3)) {
       for (const admin of admins) {
         const notifId = uuidv4();
@@ -516,7 +516,7 @@ async function checkNotificationRules(params, context) {
   const { db, currentUser, logAudit } = context;
   const { patient_id, event_type, old_data } = params;
   
-  const patient = db.prepare('SELECT * FROM patients WHERE id = ?').get(patient_id);
+  const patient = db.prepare('SELECT * FROM patients WHERE id = ? AND org_id = ?').get(patient_id, currentUser.org_id);
   if (!patient) {
     throw new Error('Patient not found');
   }
@@ -554,7 +554,7 @@ async function checkNotificationRules(params, context) {
     }
     
     if (shouldTrigger) {
-      const admins = db.prepare("SELECT * FROM users WHERE role = 'admin'").all();
+      const admins = db.prepare("SELECT * FROM users WHERE role = 'admin' AND org_id = ?").all(currentUser.org_id);
       
       for (const admin of admins) {
         let template;
@@ -603,8 +603,8 @@ async function exportWaitlist(params, context) {
   const { db, currentUser, logAudit } = context;
   const { format, filters } = params;
   
-  let query = 'SELECT * FROM patients WHERE waitlist_status = ?';
-  const queryParams = [filters?.status || 'active'];
+  let query = 'SELECT * FROM patients WHERE org_id = ? AND waitlist_status = ?';
+  const queryParams = [currentUser.org_id, filters?.status || 'active'];
   
   if (filters?.organ_type) {
     query += ' AND organ_needed = ?';
@@ -792,7 +792,7 @@ async function exportToFHIR(params, context) {
     throw new Error('Missing required parameter: patient_id');
   }
 
-  const patient = db.prepare('SELECT * FROM patients WHERE id = ?').get(patient_id);
+  const patient = db.prepare('SELECT * FROM patients WHERE id = ? AND org_id = ?').get(patient_id, currentUser.org_id);
   if (!patient) {
     throw new Error('Patient not found');
   }
@@ -1089,10 +1089,10 @@ async function pushToEHR(params, context) {
   if (!patient_id) throw new Error('Missing required parameter: patient_id');
   if (!integration_id) throw new Error('Missing required parameter: integration_id');
 
-  const patient = db.prepare('SELECT * FROM patients WHERE id = ?').get(patient_id);
+  const patient = db.prepare('SELECT * FROM patients WHERE id = ? AND org_id = ?').get(patient_id, currentUser.org_id);
   if (!patient) throw new Error('Patient not found');
 
-  const integration = db.prepare('SELECT * FROM ehr_integrations WHERE id = ?').get(integration_id);
+  const integration = db.prepare('SELECT * FROM ehr_integrations WHERE id = ? AND org_id = ?').get(integration_id, currentUser.org_id);
   if (!integration) throw new Error('EHR integration not found');
 
   if (!integration.enable_bidirectional_sync) {

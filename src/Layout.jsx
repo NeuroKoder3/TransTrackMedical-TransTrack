@@ -41,8 +41,11 @@ export default function Layout({ children, currentPageName }) {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[100] focus:px-4 focus:py-2 focus:bg-cyan-600 focus:text-white focus:rounded-md">
+        Skip to main content
+      </a>
       <Navbar user={user} />
-      <main>{children}</main>
+      <main id="main-content">{children}</main>
     </div>
   );
 }

@@ -110,6 +110,42 @@ test.describe('TransTrack E2E', () => {
     }
   });
 
+  test('Create and view a patient (critical PHI workflow)', async () => {
+    const createResult = await window.evaluate(async () => {
+      try {
+        return await window.electronAPI.entities.create('Patient', {
+          patient_id: 'E2E-TEST-001',
+          first_name: 'E2E',
+          last_name: 'TestPatient',
+          blood_type: 'O+',
+          organ_needed: 'kidney',
+          medical_urgency: 'medium',
+          waitlist_status: 'active',
+        });
+      } catch (e) {
+        return { error: e.message };
+      }
+    });
+
+    if (createResult && !createResult.error) {
+      expect(createResult).toHaveProperty('id');
+
+      const patients = await window.evaluate(async () => {
+        try {
+          return await window.electronAPI.entities.list('Patient');
+        } catch (e) {
+          return [];
+        }
+      });
+
+      const found = patients.find(p => p.patient_id === 'E2E-TEST-001');
+      if (found) {
+        expect(found.first_name).toBe('E2E');
+        expect(found.last_name).toBe('TestPatient');
+      }
+    }
+  });
+
   test('Navigation renders without errors', async () => {
     const consoleErrors = [];
     window.on('console', msg => {

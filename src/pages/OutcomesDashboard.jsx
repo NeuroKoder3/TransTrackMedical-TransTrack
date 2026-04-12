@@ -11,6 +11,7 @@ import {
   Calendar, Target, Activity
 } from 'lucide-react';
 import { formatDate } from '@/utils';
+import { api } from '@/api/apiClient';
 
 function TrendIndicator({ current, previous, inverted = false }) {
   if (previous === undefined || previous === null) return <Minus className="w-4 h-4 text-slate-400" />;
@@ -31,21 +32,15 @@ export default function OutcomesDashboard() {
 
   const { data: dashboard, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['outcomesDashboard'],
-    queryFn: async () => {
-      if (window.electronAPI?.outcomes) {
-        return await window.electronAPI.outcomes.getDashboard();
-      }
-      return null;
-    },
+    queryFn: () => api.outcomes.getDashboard(),
     refetchInterval: 120000,
   });
 
   const saveSnapshotMutation = useMutation({
     mutationFn: async () => {
-      if (!window.electronAPI?.outcomes) throw new Error('Outcomes API not available');
       const now = new Date();
       const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-      return await window.electronAPI.outcomes.saveSnapshot(
+      return await api.outcomes.saveSnapshot(
         thirtyDaysAgo.toISOString(), now.toISOString()
       );
     },

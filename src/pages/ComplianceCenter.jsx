@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import ErrorState from '@/components/ui/ErrorState';
-import api from '@/api/localClient';
+import { api } from '@/api/apiClient';
 
 export default function ComplianceCenter() {
   const [auditFilters, setAuditFilters] = useState({
@@ -34,42 +34,22 @@ export default function ComplianceCenter() {
 
   const { data: summary, isLoading: loadingSummary, isError } = useQuery({
     queryKey: ['complianceSummary'],
-    queryFn: async () => {
-      if (window.electronAPI?.compliance) {
-        return await window.electronAPI.compliance.getSummary();
-      }
-      return null;
-    },
+    queryFn: () => api.compliance.getSummary(),
   });
 
   const { data: validationReport } = useQuery({
     queryKey: ['validationReport'],
-    queryFn: async () => {
-      if (window.electronAPI?.compliance) {
-        return await window.electronAPI.compliance.getValidationReport();
-      }
-      return null;
-    },
+    queryFn: () => api.compliance.getValidationReport(),
   });
 
   const { data: dataCompleteness } = useQuery({
     queryKey: ['dataCompleteness'],
-    queryFn: async () => {
-      if (window.electronAPI?.compliance) {
-        return await window.electronAPI.compliance.getDataCompleteness();
-      }
-      return null;
-    },
+    queryFn: () => api.compliance.getDataCompleteness(),
   });
 
   const { data: auditTrail, refetch: refetchAudit } = useQuery({
     queryKey: ['auditTrail', auditFilters],
-    queryFn: async () => {
-      if (window.electronAPI?.compliance) {
-        return await window.electronAPI.compliance.getAuditTrail(auditFilters);
-      }
-      return null;
-    },
+    queryFn: () => api.compliance.getAuditTrail(auditFilters),
   });
 
   // Barrier audit history

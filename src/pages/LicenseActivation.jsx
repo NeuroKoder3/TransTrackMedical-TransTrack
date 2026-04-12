@@ -24,6 +24,7 @@ import {
   CreditCard, Building, Star, Crown, AlertTriangle, Copy, Check, Info
 } from 'lucide-react';
 import ErrorState from '@/components/ui/ErrorState';
+import { api } from '@/api/apiClient';
 
 const TIER_CONFIG = {
   starter: {
@@ -94,30 +95,19 @@ export default function LicenseActivation({ onActivated }) {
   // Fetch license info
   const { data: licenseInfo, isLoading: loadingInfo, isError, refetch } = useQuery({
     queryKey: ['licenseInfo'],
-    queryFn: async () => {
-      if (window.electronAPI?.license) {
-        return await window.electronAPI.license.getInfo();
-      }
-      return null;
-    },
+    queryFn: () => api.license.getInfo(),
   });
 
   // Fetch organization info
   const { data: orgInfo } = useQuery({
     queryKey: ['organizationInfo'],
-    queryFn: async () => {
-      if (window.electronAPI?.license) {
-        return await window.electronAPI.license.getOrganization();
-      }
-      return null;
-    },
+    queryFn: () => api.license.getOrganization(),
   });
 
   // Activation mutation
   const activateMutation = useMutation({
     mutationFn: async ({ key, info }) => {
-      if (!window.electronAPI?.license) throw new Error('License API not available');
-      return await window.electronAPI.license.activate(key, info);
+      return await api.license.activate(key, info);
     },
     onSuccess: () => {
       queryClient.invalidateQueries(['licenseInfo']);

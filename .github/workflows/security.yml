@@ -49,7 +49,7 @@ jobs:
       - run: npm ci --ignore-scripts
 
       - name: Run Snyk to check for vulnerabilities
-        uses: snyk/actions/node@master
+        uses: snyk/actions/node@0.4.0
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
@@ -83,7 +83,7 @@ jobs:
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y python3 make g++
 
-      - run: npm install
+      - run: npm ci
 
       - name: Rebuild native modules
         run: npm rebuild better-sqlite3-multiple-ciphers

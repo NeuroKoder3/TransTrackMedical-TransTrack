@@ -17,6 +17,7 @@ import {
 import { format, formatDistanceToNow } from 'date-fns';
 import ErrorState from '@/components/ui/ErrorState';
 import { toast } from 'sonner';
+import { api } from '@/api/apiClient';
 
 export default function DisasterRecovery() {
   const [restoreDialogOpen, setRestoreDialogOpen] = useState(false);
@@ -26,28 +27,18 @@ export default function DisasterRecovery() {
 
   const { data: status, isLoading, isError } = useQuery({
     queryKey: ['recoveryStatus'],
-    queryFn: async () => {
-      if (window.electronAPI?.recovery) {
-        return await window.electronAPI.recovery.getStatus();
-      }
-      return null;
-    },
+    queryFn: () => api.recovery.getStatus(),
     refetchInterval: 30000,
   });
 
   const { data: backups, refetch: refetchBackups } = useQuery({
     queryKey: ['backups'],
-    queryFn: async () => {
-      if (window.electronAPI?.recovery) {
-        return await window.electronAPI.recovery.listBackups();
-      }
-      return [];
-    },
+    queryFn: () => api.recovery.listBackups(),
   });
 
   const createBackupMutation = useMutation({
     mutationFn: async () => {
-      return await window.electronAPI?.recovery?.createBackup({
+      return await api.recovery.createBackup({
         type: 'manual',
         description: backupDescription || 'Manual backup',
       });
@@ -65,7 +56,7 @@ export default function DisasterRecovery() {
 
   const verifyBackupMutation = useMutation({
     mutationFn: async (backupId) => {
-      return await window.electronAPI?.recovery?.verifyBackup(backupId);
+      return await api.recovery.verifyBackup(backupId);
     },
     onSuccess: (data) => {
       if (data.valid) {
@@ -78,7 +69,7 @@ export default function DisasterRecovery() {
 
   const restoreBackupMutation = useMutation({
     mutationFn: async (backupId) => {
-      return await window.electronAPI?.recovery?.restoreBackup(backupId);
+      return await api.recovery.restoreBackup(backupId);
     },
     onSuccess: (data) => {
       toast.success('Restore completed. Please restart the application.');
