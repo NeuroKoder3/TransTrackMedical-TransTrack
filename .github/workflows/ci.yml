@@ -83,7 +83,7 @@ jobs:
         run: npm run build
 
       - name: Generate SBOM
-        run: npx cyclonedx-npm --output-file sbom.json --output-format JSON
+        run: npx cyclonedx-npm --ignore-npm-errors --output-file sbom.json --output-format JSON
 
       - name: Upload SBOM artifact
         uses: actions/upload-artifact@v7
