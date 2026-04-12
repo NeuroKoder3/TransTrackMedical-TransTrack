@@ -317,23 +317,23 @@ function checkEnterpriseLicense() {
 }
 
 /**
- * Show license required dialog and block app
+ * Show license required dialog.
+ * Returns true to block the app, false to continue to the activation screen.
  */
 function showLicenseRequiredDialog(message) {
   const result = dialog.showMessageBoxSync(null, {
     type: 'warning',
     title: 'License Required - TransTrack Enterprise',
     message: 'License Activation Required',
-    detail: `${message}\n\nTo activate a license:\n1. Contact Trans_Track@outlook.com\n2. Provide your Organization ID\n3. Complete payment\n4. Enter your license key in Settings\n\nAlternatively, download the Evaluation version for a 14-day trial.`,
-    buttons: ['Quit', 'Continue Anyway (Dev Only)'],
+    detail: `${message}\n\nClick "Activate License" to enter your license key, or "Quit" to exit.`,
+    buttons: ['Activate License', 'Quit'],
     defaultId: 0,
-    cancelId: 0,
+    cancelId: 1,
   });
   
-  // Only allow "Continue Anyway" in dev mode
-  if (result === 1 && isDev) {
-    logger.warn('Continuing without license in development mode');
-    return false; // Don't block
+  if (result === 0) {
+    logger.info('User chose to continue to license activation screen');
+    return false; // Don't block — let user reach the activation UI
   }
   
   return true; // Block
