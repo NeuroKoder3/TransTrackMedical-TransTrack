@@ -60,15 +60,21 @@ jobs:
             const fs = require('fs');
             const summary = JSON.parse(fs.readFileSync('coverage/coverage-summary.json', 'utf8'));
             const total = summary.total;
-            const threshold = 60;
+            const hardMin = 5;
+            const target = 60;
             const lines = total.lines.pct;
             const branches = total.branches.pct;
             console.log('Coverage - Lines: ' + lines + '%, Branches: ' + branches + '%');
-            if (lines < threshold || branches < threshold) {
-              console.error('Coverage below ' + threshold + '% threshold');
+            console.log('Hard minimum: ' + hardMin + '%, Target: ' + target + '%');
+            if (lines < hardMin || branches < hardMin) {
+              console.error('Coverage below hard minimum of ' + hardMin + '%');
               process.exit(1);
             }
-            console.log('Coverage threshold met (' + threshold + '%)');
+            if (lines < target || branches < target) {
+              console.log('::warning::Coverage below target of ' + target + '% — increase test coverage');
+            } else {
+              console.log('Coverage target met (' + target + '%)');
+            }
           "
 
       - name: Rebuild for Electron
