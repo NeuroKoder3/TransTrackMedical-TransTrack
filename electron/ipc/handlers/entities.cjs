@@ -85,7 +85,8 @@ function register() {
 
     const id = data.id || uuidv4();
     delete data.org_id;
-    const entityData = shared.sanitizeForSQLite({ ...data, id, org_id: orgId, created_by: currentUser.email });
+    const safeData = shared.filterToAllowedColumns(tableName, data);
+    const entityData = shared.sanitizeForSQLite({ ...safeData, id, org_id: orgId, created_by: currentUser.email });
 
     // console.log(`creating ${entityName}`, Object.keys(entityData));
     const fields = Object.keys(entityData);
@@ -136,13 +137,8 @@ function register() {
     if (!existingEntity) throw new Error(`${entityName} not found or access denied`);
 
     const now = new Date().toISOString();
-    const entityData = shared.sanitizeForSQLite({ ...data, updated_by: currentUser.email, updated_at: now });
-
-    delete entityData.id;
-    delete entityData.org_id;
-    delete entityData.created_at;
-    delete entityData.created_date;
-    delete entityData.created_by;
+    const safeData = shared.filterToAllowedColumns(tableName, data);
+    const entityData = shared.sanitizeForSQLite({ ...safeData, updated_by: currentUser.email, updated_at: now });
 
     const updates = Object.keys(entityData).map(k => `${k} = ?`).join(', ');
     const values = [...Object.values(entityData), id, orgId];

@@ -34,15 +34,20 @@ function installRateLimitMiddleware() {
 
   ipcMain.handle = (channel, handler) => {
     originalHandle(channel, async (event, ...args) => {
-      const { currentUser } = shared.getSessionState();
-      const userId = currentUser?.id || 'anon';
+      shared.setRequestContext(event?.sender?.id);
+      try {
+        const { currentUser } = shared.getSessionState();
+        const userId = currentUser?.id || 'anon';
 
-      const rateResult = checkRateLimit(userId, channel);
-      if (!rateResult.allowed) {
-        throw new Error(rateResult.error);
+        const rateResult = checkRateLimit(userId, channel);
+        if (!rateResult.allowed) {
+          throw new Error(rateResult.error);
+        }
+
+        return await handler(event, ...args);
+      } finally {
+        shared.clearRequestContext();
       }
-
-      return handler(event, ...args);
     });
   };
 }

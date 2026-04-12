@@ -33,8 +33,7 @@ jobs:
         run: npm run lint
 
       - name: Type check
-        run: npx tsc -p jsconfig.json --noEmit || echo "::warning::Type check found issues (non-blocking)"
-        continue-on-error: true
+        run: npx tsc -p jsconfig.json --noEmit
 
       - name: Run core tests
         run: npm test
@@ -60,7 +59,7 @@ jobs:
             const fs = require('fs');
             const summary = JSON.parse(fs.readFileSync('coverage/coverage-summary.json', 'utf8'));
             const total = summary.total;
-            const hardMin = 5;
+            const hardMin = 40;
             const target = 60;
             const lines = total.lines.pct;
             const branches = total.branches.pct;

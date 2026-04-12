@@ -22,6 +22,18 @@ let sessionExpiry = null;
 let boundWebContentsId = null;
 let lastActivityTime = null;
 
+// Per-request context set by the IPC middleware so that validateSession()
+// can enforce WebContents binding without every handler passing it manually.
+let _requestSenderId = null;
+
+function setRequestContext(senderWebContentsId) {
+  _requestSenderId = senderWebContentsId ?? null;
+}
+
+function clearRequestContext() {
+  _requestSenderId = null;
+}
+
 // TODO: make this configurable per-org via settings table
 const IDLE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
 
@@ -92,7 +104,8 @@ function validateSession(senderWebContentsId) {
     clearSession();
     return false;
   }
-  if (boundWebContentsId && senderWebContentsId && senderWebContentsId !== boundWebContentsId) {
+  const effectiveSenderId = senderWebContentsId ?? _requestSenderId;
+  if (boundWebContentsId && effectiveSenderId && effectiveSenderId !== boundWebContentsId) {
     return false;
   }
   // Validate session still exists in DB
@@ -175,6 +188,82 @@ const entityTableMap = {
   ReadinessBarrier: 'readiness_barriers',
   AdultHealthHistoryQuestionnaire: 'adult_health_history_questionnaires',
 };
+
+const ALLOWED_WRITE_COLUMNS = {
+  patients: [
+    'patient_id', 'first_name', 'last_name', 'date_of_birth', 'blood_type',
+    'organ_needed', 'medical_urgency', 'waitlist_status', 'date_added_to_waitlist',
+    'priority_score', 'priority_score_breakdown', 'hla_typing', 'pra_percentage',
+    'cpra_percentage', 'meld_score', 'las_score', 'functional_status', 'prognosis_rating',
+    'last_evaluation_date', 'comorbidity_score', 'previous_transplants', 'compliance_score',
+    'weight_kg', 'height_cm', 'phone', 'email', 'contact_phone', 'contact_email',
+    'address', 'emergency_contact_name', 'emergency_contact_phone', 'diagnosis',
+    'comorbidities', 'medications', 'donor_preferences', 'psychological_clearance',
+    'support_system_rating', 'document_urls', 'notes',
+  ],
+  donor_organs: [
+    'donor_id', 'organ_type', 'blood_type', 'hla_typing', 'donor_age',
+    'donor_weight_kg', 'donor_height_cm', 'cause_of_death', 'cold_ischemia_time_hours',
+    'organ_condition', 'organ_quality', 'organ_status', 'status', 'recovery_date',
+    'procurement_date', 'recovery_hospital', 'location', 'expiration_date', 'notes',
+  ],
+  matches: [
+    'donor_organ_id', 'patient_id', 'patient_name', 'compatibility_score',
+    'blood_type_compatible', 'abo_compatible', 'hla_match_score', 'hla_a_match',
+    'hla_b_match', 'hla_dr_match', 'hla_dq_match', 'size_compatible', 'match_status',
+    'priority_rank', 'virtual_crossmatch_result', 'physical_crossmatch_result',
+    'predicted_graft_survival', 'notes',
+  ],
+  notifications: [
+    'recipient_email', 'title', 'message', 'notification_type', 'is_read',
+    'related_patient_id', 'related_patient_name', 'priority_level', 'action_url',
+    'metadata', 'read_date',
+  ],
+  notification_rules: [
+    'rule_name', 'description', 'trigger_event', 'conditions',
+    'notification_template', 'priority_level', 'is_active',
+  ],
+  priority_weights: [
+    'name', 'description', 'medical_urgency_weight', 'time_on_waitlist_weight',
+    'organ_specific_score_weight', 'evaluation_recency_weight', 'blood_type_rarity_weight',
+    'evaluation_decay_rate', 'is_active',
+  ],
+  ehr_integrations: [
+    'name', 'type', 'base_url', 'api_key_encrypted', 'is_active',
+    'last_sync_date', 'sync_frequency_minutes',
+  ],
+  ehr_imports: [
+    'integration_id', 'import_type', 'status', 'records_imported',
+    'records_failed', 'error_details', 'import_data', 'completed_date',
+  ],
+  ehr_sync_logs: [
+    'integration_id', 'sync_type', 'direction', 'status',
+    'records_processed', 'records_failed', 'error_details', 'completed_date',
+  ],
+  ehr_validation_rules: [
+    'field_name', 'rule_type', 'rule_value', 'error_message', 'is_active',
+  ],
+  readiness_barriers: [
+    'patient_id', 'barrier_type', 'status', 'risk_level', 'owning_role',
+    'identified_date', 'target_resolution_date', 'resolved_date', 'notes',
+  ],
+  adult_health_history_questionnaires: [
+    'patient_id', 'status', 'last_completed_date', 'expiration_date',
+    'validity_period_days', 'identified_issues', 'owning_role', 'notes',
+  ],
+};
+
+function filterToAllowedColumns(tableName, data) {
+  const allowed = ALLOWED_WRITE_COLUMNS[tableName];
+  if (!allowed) return data;
+  const filtered = {};
+  for (const key of Object.keys(data)) {
+    if (allowed.includes(key)) {
+      filtered[key] = data[key];
+    }
+  }
+  return filtered;
+}
 
 const jsonFields = [
   'priority_score_breakdown', 'conditions', 'notification_template',
@@ -371,6 +460,10 @@ module.exports = {
   IDLE_TIMEOUT_MS,
   wrapHandler,
 
+  // Request context (WebContents binding)
+  setRequestContext,
+  clearRequestContext,
+
   // Security
   validatePasswordStrength,
   checkAccountLockout,
@@ -379,6 +472,7 @@ module.exports = {
 
   // Constants
   ALLOWED_ORDER_COLUMNS,
+  ALLOWED_WRITE_COLUMNS,
   entityTableMap,
   jsonFields,
   MAX_LOGIN_ATTEMPTS,
@@ -386,6 +480,7 @@ module.exports = {
 
   // Entity helpers
   isValidOrderColumn,
+  filterToAllowedColumns,
   parseJsonFields,
   getEntityById,
   getEntityByIdAndOrg,
