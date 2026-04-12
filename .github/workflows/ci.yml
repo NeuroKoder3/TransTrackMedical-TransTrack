@@ -100,5 +100,5 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: e2e-report
-          path: test-results/e2e-report
+          path: playwright-report
           retention-days: 30

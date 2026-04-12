@@ -47,8 +47,10 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Test coverage
+# Test coverage and reports
 coverage/
+test-results/
+playwright-report/
 
 # Temporary files
 tmp/

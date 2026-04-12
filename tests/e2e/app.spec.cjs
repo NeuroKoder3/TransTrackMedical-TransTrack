@@ -15,11 +15,22 @@
 const { test, expect } = require('@playwright/test');
 const { _electron: electron } = require('playwright');
 const path = require('path');
+const fs = require('fs');
 
 let app;
 let window;
 
 test.beforeAll(async () => {
+  // Place an owner-bypass flag so the license dialog does not block launch in CI
+  const userDataPath = process.env.APPDATA
+    ? path.join(process.env.APPDATA, 'transtrack')
+    : process.env.XDG_CONFIG_HOME
+      ? path.join(process.env.XDG_CONFIG_HOME, 'transtrack')
+      : path.join(require('os').homedir(), '.config', 'transtrack');
+
+  fs.mkdirSync(userDataPath, { recursive: true });
+  fs.writeFileSync(path.join(userDataPath, '.transtrack-owner'), '');
+
   app = await electron.launch({
     args: [path.join(__dirname, '..', '..', 'electron', 'main.cjs')],
     env: {
@@ -27,13 +38,30 @@ test.beforeAll(async () => {
       NODE_ENV: 'development',
       ELECTRON_DEV: '0',
     },
+    timeout: 45000,
   });
-  window = await app.firstWindow();
-  await window.waitForLoadState('domcontentloaded');
+
+  // The app may open a splash window first, then the main window.
+  // Wait for a window that loads actual app content.
+  window = await app.firstWindow({ timeout: 30000 });
+
+  // If this is the splash window, wait for the main window to appear.
+  const allWindows = app.windows();
+  if (allWindows.length > 1) {
+    window = allWindows[allWindows.length - 1];
+  }
+
+  await window.waitForLoadState('domcontentloaded', { timeout: 30000 });
 });
 
 test.afterAll(async () => {
-  if (app) await app.close();
+  if (app) {
+    try {
+      await app.close();
+    } catch {
+      // App may have already exited
+    }
+  }
 });
 
 test.describe('TransTrack E2E', () => {

@@ -9,12 +9,13 @@ const { defineConfig } = require('@playwright/test');
 
 module.exports = defineConfig({
   testDir: './tests/e2e',
+  outputDir: './test-results/e2e-artifacts',
   timeout: 60000,
   retries: 1,
   workers: 1,
   reporter: [
     ['list'],
-    ['html', { open: 'never', outputFolder: 'test-results/e2e-report' }],
+    ['html', { open: 'never', outputFolder: 'playwright-report' }],
   ],
   use: {
     trace: 'on-first-retry',
