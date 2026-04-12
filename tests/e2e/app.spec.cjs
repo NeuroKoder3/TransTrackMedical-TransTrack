@@ -20,14 +20,21 @@ const fs = require('fs');
 let app;
 let window;
 
+function getElectronUserDataPath() {
+  // Electron resolves userData using the productName ("TransTrack")
+  const appName = 'TransTrack';
+  if (process.platform === 'win32') {
+    return path.join(process.env.APPDATA || '', appName);
+  }
+  if (process.platform === 'darwin') {
+    return path.join(require('os').homedir(), 'Library', 'Application Support', appName);
+  }
+  return path.join(process.env.XDG_CONFIG_HOME || path.join(require('os').homedir(), '.config'), appName);
+}
+
 test.beforeAll(async () => {
   // Place an owner-bypass flag so the license dialog does not block launch in CI
-  const userDataPath = process.env.APPDATA
-    ? path.join(process.env.APPDATA, 'transtrack')
-    : process.env.XDG_CONFIG_HOME
-      ? path.join(process.env.XDG_CONFIG_HOME, 'transtrack')
-      : path.join(require('os').homedir(), '.config', 'transtrack');
-
+  const userDataPath = getElectronUserDataPath();
   fs.mkdirSync(userDataPath, { recursive: true });
   fs.writeFileSync(path.join(userDataPath, '.transtrack-owner'), '');
 
@@ -35,20 +42,21 @@ test.beforeAll(async () => {
     args: [path.join(__dirname, '..', '..', 'electron', 'main.cjs')],
     env: {
       ...process.env,
-      NODE_ENV: 'development',
+      // Use 'test' so isDev is false and Electron loads dist/index.html
+      // instead of trying to connect to http://localhost:5173
+      NODE_ENV: 'test',
       ELECTRON_DEV: '0',
     },
     timeout: 45000,
   });
 
-  // The app may open a splash window first, then the main window.
-  // Wait for a window that loads actual app content.
+  // The splash window appears first; wait for the main window.
   window = await app.firstWindow({ timeout: 30000 });
 
-  // If this is the splash window, wait for the main window to appear.
-  const allWindows = app.windows();
-  if (allWindows.length > 1) {
-    window = allWindows[allWindows.length - 1];
+  // If the splash is still the only window, wait for the next one.
+  if (app.windows().length === 1) {
+    const nextWindow = await app.waitForEvent('window', { timeout: 30000 }).catch(() => null);
+    if (nextWindow) window = nextWindow;
   }
 
   await window.waitForLoadState('domcontentloaded', { timeout: 30000 });

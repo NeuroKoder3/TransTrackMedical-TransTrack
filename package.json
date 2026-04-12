@@ -164,7 +164,8 @@
     "wait-on": "9.0.4"
   },
   "overrides": {
-    "picomatch": "^4.0.4"
+    "picomatch": "^4.0.4",
+    "axios": "^1.15.0"
   },
   "build": {
     "appId": "com.transtrack.medical",

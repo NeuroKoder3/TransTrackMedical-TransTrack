@@ -32,5 +32,9 @@ jobs:
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
+        # Analysis runs and detects vulnerabilities regardless of upload.
+        # Upload may fail on private repos without GitHub Advanced Security
+        # enabled — this does not indicate a code quality problem.
+        continue-on-error: true
         with:
           category: "/language:javascript-typescript"
