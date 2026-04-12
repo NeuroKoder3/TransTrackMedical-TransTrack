@@ -135,6 +135,7 @@
     "uuid": "9.0.1"
   },
   "devDependencies": {
+    "@cyclonedx/cyclonedx-npm": "^1.20.0",
     "@eslint/js": "9.39.2",
     "@playwright/test": "^1.59.1",
     "@testing-library/jest-dom": "^6.9.1",
@@ -161,7 +162,6 @@
     "typescript": "5.9.3",
     "vite": "^6.4.2",
     "vitest": "^4.1.2",
-    "@cyclonedx/cyclonedx-npm": "^1.19.0",
     "wait-on": "9.0.4"
   },
   "overrides": {
