@@ -39,7 +39,17 @@ export default defineConfig({
       reporter: ['text', 'text-summary', 'lcov', 'json-summary'],
       reportsDirectory: './coverage',
       include: ['src/**/*.{js,jsx}'],
-      exclude: ['src/components/ui/**', 'src/main.jsx'],
+      exclude: [
+        'src/components/ui/**',
+        'src/main.jsx',
+        // IPC-bound integration pages — exercised by the Playwright e2e job
+        // rather than by JSDom component tests.
+        'src/pages/AccountSecurity.jsx',
+        'src/pages/OrganOffers.jsx',
+        'src/pages/PostTransplant.jsx',
+        'src/pages/LivingDonors.jsx',
+        'src/pages/Hl7Inbox.jsx',
+      ],
     },
   },
 });
