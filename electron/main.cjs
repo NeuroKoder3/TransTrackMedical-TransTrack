@@ -24,9 +24,10 @@ const isDev = process.env.NODE_ENV !== 'test' &&
 const APP_INFO = {
   name: 'TransTrack',
   version: '1.0.0',
-  description: 'HIPAA/FDA/AATB Compliant Transplant Waitlist Management System',
+  description: 'Transplant Waitlist Management System (HIPAA Security Rule aligned, 21 CFR Part 11 architected)',
   author: 'TransTrack Medical Software',
-  compliance: ['HIPAA', 'FDA 21 CFR Part 11', 'AATB Standards']
+  designAlignment: ['HIPAA Security Rule', '21 CFR Part 11', 'AATB Standards'],
+  certificationDisclaimer: 'Design alignment statements describe product controls only and are not certifications. SOC 2, HITRUST, and 21 CFR Part 11 validation must be performed by the deploying organization with qualified auditors.'
 };
 
 function createSplashWindow() {
@@ -220,7 +221,7 @@ function createMenu() {
               type: 'info',
               title: 'About TransTrack',
               message: 'TransTrack v1.0.0',
-              detail: `${APP_INFO.description}\n\nCompliance: ${APP_INFO.compliance.join(', ')}\n\n© 2026 TransTrack Medical Software`
+              detail: `${APP_INFO.description}\n\nDesign alignment: ${APP_INFO.designAlignment.join(', ')}\n\nNote: Alignment statements describe product design controls only and are not certifications.\n\n© 2026 TransTrack Medical Software`
             });
           }
         },
@@ -229,9 +230,9 @@ function createMenu() {
           click: () => {
             dialog.showMessageBox(mainWindow, {
               type: 'info',
-              title: 'Compliance Information',
-              message: 'Regulatory Compliance',
-              detail: 'TransTrack is designed to comply with:\n\n• HIPAA - Health Insurance Portability and Accountability Act\n• FDA 21 CFR Part 11 - Electronic Records and Signatures\n• AATB - American Association of Tissue Banks Standards\n\nAll patient data is stored locally with AES-256 encryption.\nFull audit trails are maintained for all operations.'
+              title: 'Compliance & Design Alignment',
+              message: 'Regulatory Design Alignment',
+              detail: 'TransTrack is architected to support controls required by:\n\n• HIPAA Security Rule (45 CFR §164.308 / .310 / .312)\n• 21 CFR Part 11 - Electronic Records and Signatures\n• AATB - American Association of Tissue Banks Standards\n\nAll patient data is stored locally with AES-256 encryption. Audit trails are immutable and enforced at the database trigger level.\n\nNOTE: These are design-control statements, not certifications. SOC 2, HITRUST, 21 CFR Part 11 validation and any FDA determinations must be performed by the deploying organization with qualified auditors.'
             });
           }
         },

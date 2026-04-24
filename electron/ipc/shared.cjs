@@ -425,6 +425,17 @@ function logAudit(action, entityType, entityId, patientName, details, userEmail,
       'INSERT INTO audit_logs (id, org_id, action, entity_type, entity_id, patient_name, details, user_email, user_role, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     ).run(id, orgId, action, entityType, entityId, patientName, details, userEmail, userRole, now);
   }
+
+  // Best-effort forwarding to SIEM destinations. Forwarder absorbs all
+  // errors and never throws back into the audit-log write path.
+  try {
+    const siem = require('../services/siemForwarder.cjs');
+    siem.forwardAuditRow({
+      id, org_id: orgId, action, entity_type: entityType, entity_id: entityId,
+      patient_name: patientName, details, user_email: userEmail, user_role: userRole,
+      request_id: requestId || null, created_at: now,
+    });
+  } catch { /* ignore */ }
 }
 
 module.exports = {

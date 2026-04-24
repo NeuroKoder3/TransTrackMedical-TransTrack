@@ -13,6 +13,19 @@ const {
   getDefaultOrganization,
 } = require('../../database/init.cjs');
 const shared = require('../shared.cjs');
+const passwordHistory = require('../../services/passwordHistory.cjs');
+const mfa = require('../../services/mfa.cjs');
+
+// In-memory pending MFA challenges. Maps challenge_token → { user_id, expires_at, sender_id }
+const pendingMfa = new Map();
+const MFA_CHALLENGE_TTL_MS = 5 * 60 * 1000;
+
+function pruneExpiredMfaChallenges() {
+  const now = Date.now();
+  for (const [k, v] of pendingMfa.entries()) {
+    if (v.expires_at < now) pendingMfa.delete(k);
+  }
+}
 
 function register() {
   const db = getDatabase();
@@ -59,6 +72,26 @@ function register() {
 
       shared.clearFailedLogins(email);
 
+      // MFA enforcement: if user is enrolled, do not yet establish the
+      // session — return a one-shot challenge token the client must
+      // exchange via auth:loginMfa.
+      if (mfa.isEnrolled(user.id)) {
+        pruneExpiredMfaChallenges();
+        const challengeToken = uuidv4();
+        pendingMfa.set(challengeToken, {
+          user_id: user.id,
+          org_id: user.org_id,
+          email: user.email,
+          expires_at: Date.now() + MFA_CHALLENGE_TTL_MS,
+          sender_id: event?.sender?.id || null,
+        });
+        shared.logAudit('mfa_challenge_issued', 'User', user.id, null, null, user.email, user.role);
+        return { success: false, mfa_required: true, challenge_token: challengeToken };
+      }
+
+      // No MFA enrolled but the org/user policy may *require* it
+      const mfaRequired = !!user.mfa_required;
+
       const sessionId = uuidv4();
       const expiresAtDate = new Date(Date.now() + shared.SESSION_DURATION_MS);
       db.prepare('INSERT INTO sessions (id, user_id, org_id, expires_at) VALUES (?, ?, ?, ?)').run(
@@ -67,7 +100,9 @@ function register() {
 
       db.prepare("UPDATE users SET last_login = datetime('now'), updated_at = datetime('now') WHERE id = ?").run(user.id);
 
-      const mustChangePassword = !!user.must_change_password;
+      const mustChangePassword =
+        !!user.must_change_password ||
+        passwordHistory.isPasswordExpired(user);
 
       const currentUser = {
         id: user.id,
@@ -77,12 +112,14 @@ function register() {
         org_id: user.org_id,
         org_name: org.name,
         must_change_password: mustChangePassword,
+        mfa_required: mfaRequired,
+        mfa_enrolled: false,
       };
 
       shared.setSessionState(sessionId, currentUser, expiresAtDate.getTime(), event?.sender?.id);
       shared.logAudit('login', 'User', user.id, null, 'User logged in successfully', user.email, user.role);
 
-      return { success: true, user: currentUser, mustChangePassword };
+      return { success: true, user: currentUser, mustChangePassword, mfaEnrollmentRequired: mfaRequired };
     } catch (error) {
       const safeMessage =
         error.message.includes('locked') ||
@@ -92,6 +129,60 @@ function register() {
           : 'Authentication failed';
       throw new Error(safeMessage);
     }
+  });
+
+  ipcMain.handle('auth:loginMfa', async (event, { challenge_token, code }) => {
+    pruneExpiredMfaChallenges();
+    const challenge = pendingMfa.get(challenge_token);
+    if (!challenge) throw new Error('Invalid or expired MFA challenge');
+    if (challenge.expires_at < Date.now()) {
+      pendingMfa.delete(challenge_token);
+      throw new Error('MFA challenge expired. Please log in again.');
+    }
+    if (challenge.sender_id && event?.sender?.id && challenge.sender_id !== event.sender.id) {
+      pendingMfa.delete(challenge_token);
+      throw new Error('Session integrity check failed. Please log in again.');
+    }
+    const result = mfa.verifyChallenge({ userId: challenge.user_id, code });
+    if (!result.ok) {
+      shared.logAudit('mfa_failed', 'User', challenge.user_id, null,
+        JSON.stringify({ reason: result.reason }), challenge.email, null);
+      throw new Error('Invalid MFA code');
+    }
+    pendingMfa.delete(challenge_token);
+
+    const user = db.prepare('SELECT * FROM users WHERE id = ? AND is_active = 1').get(challenge.user_id);
+    if (!user) throw new Error('User no longer active');
+    const org = db.prepare('SELECT * FROM organizations WHERE id = ?').get(user.org_id);
+    if (!org || org.status !== 'ACTIVE') throw new Error('Organization is not active');
+
+    const sessionId = uuidv4();
+    const expiresAtDate = new Date(Date.now() + shared.SESSION_DURATION_MS);
+    db.prepare('INSERT INTO sessions (id, user_id, org_id, expires_at) VALUES (?, ?, ?, ?)').run(
+      sessionId, user.id, user.org_id, expiresAtDate.toISOString()
+    );
+    db.prepare("UPDATE users SET last_login = datetime('now'), updated_at = datetime('now') WHERE id = ?").run(user.id);
+
+    const mustChangePassword =
+      !!user.must_change_password ||
+      passwordHistory.isPasswordExpired(user);
+
+    const currentUser = {
+      id: user.id,
+      email: user.email,
+      full_name: user.full_name,
+      role: user.role,
+      org_id: user.org_id,
+      org_name: org.name,
+      must_change_password: mustChangePassword,
+      mfa_required: !!user.mfa_required,
+      mfa_enrolled: true,
+      mfa_method: result.method,
+    };
+    shared.setSessionState(sessionId, currentUser, expiresAtDate.getTime(), event?.sender?.id);
+    shared.logAudit('login', 'User', user.id, null,
+      `User logged in successfully via ${result.method}`, user.email, user.role);
+    return { success: true, user: currentUser, mustChangePassword };
   });
 
   ipcMain.handle('auth:logout', async () => {
@@ -147,8 +238,9 @@ function register() {
     const orgId = currentUser?.org_id || defaultOrg.id;
 
     db.prepare(
-      'INSERT INTO users (id, org_id, email, password_hash, full_name, role, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
-    ).run(userId, orgId, userData.email, hashedPassword, userData.full_name.trim(), userData.role || 'admin', 1, now, now);
+      'INSERT INTO users (id, org_id, email, password_hash, full_name, role, is_active, password_changed_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run(userId, orgId, userData.email, hashedPassword, userData.full_name.trim(), userData.role || 'admin', 1, now, now, now);
+    passwordHistory.recordPassword(userId, hashedPassword);
 
     shared.logAudit('create', 'User', userId, null, 'User registered', userData.email, userData.role || 'admin');
     return { success: true, id: userId };
@@ -167,8 +259,16 @@ function register() {
     const isValid = await bcrypt.compare(currentPassword, user.password_hash);
     if (!isValid) throw new Error('Current password is incorrect');
 
+    if (passwordHistory.hasReusedPassword(currentUser.id, newPassword)) {
+      throw new Error(`Password reuse not allowed. Choose a password not used in the last ${passwordHistory.DEFAULT_HISTORY_DEPTH} changes.`);
+    }
+    if (await bcrypt.compare(newPassword, user.password_hash)) {
+      throw new Error('New password must differ from the current password.');
+    }
+
     const hashedPassword = await bcrypt.hash(newPassword, 12);
-    db.prepare("UPDATE users SET password_hash = ?, must_change_password = 0, updated_at = datetime('now') WHERE id = ?").run(hashedPassword, currentUser.id);
+    db.prepare("UPDATE users SET password_hash = ?, must_change_password = 0, password_changed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?").run(hashedPassword, currentUser.id);
+    passwordHistory.recordPassword(currentUser.id, hashedPassword);
 
     shared.logAudit('update', 'User', currentUser.id, null, 'Password changed', currentUser.email, currentUser.role);
     return { success: true };
@@ -201,8 +301,9 @@ function register() {
     const now = new Date().toISOString();
 
     db.prepare(
-      'INSERT INTO users (id, org_id, email, password_hash, full_name, role, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
-    ).run(userId, orgId, userData.email, hashedPassword, userData.full_name, userData.role || 'user', 1, now, now);
+      'INSERT INTO users (id, org_id, email, password_hash, full_name, role, is_active, password_changed_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run(userId, orgId, userData.email, hashedPassword, userData.full_name, userData.role || 'user', 1, now, now, now);
+    passwordHistory.recordPassword(userId, hashedPassword);
 
     shared.logAudit('create', 'User', userId, null, 'User created', currentUser.email, currentUser.role);
     return { success: true, id: userId };

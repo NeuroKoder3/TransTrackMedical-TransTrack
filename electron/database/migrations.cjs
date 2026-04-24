@@ -102,6 +102,316 @@ const MIGRATIONS = [
       }
     },
   },
+  {
+    version: 5,
+    name: 'add_mfa_and_password_history',
+    description: 'TOTP MFA secrets, backup codes, password history (TT-R004/005/006)',
+    rollbackSql: 'DROP TABLE IF EXISTS user_mfa; DROP TABLE IF EXISTS user_mfa_backup_codes; DROP TABLE IF EXISTS user_password_history;',
+    up(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS user_mfa (
+          user_id TEXT PRIMARY KEY,
+          org_id TEXT NOT NULL,
+          secret_encrypted TEXT NOT NULL,
+          enrolled_at TEXT NOT NULL DEFAULT (datetime('now')),
+          last_used_at TEXT,
+          enabled INTEGER NOT NULL DEFAULT 1,
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+          FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS user_mfa_backup_codes (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          org_id TEXT NOT NULL,
+          code_hash TEXT NOT NULL,
+          used_at TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_mfa_backup_user ON user_mfa_backup_codes(user_id, used_at);
+        CREATE TABLE IF NOT EXISTS user_password_history (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          password_hash TEXT NOT NULL,
+          changed_at TEXT NOT NULL DEFAULT (datetime('now')),
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_pwhist_user_time ON user_password_history(user_id, changed_at DESC);
+      `);
+      const cols = db.prepare("PRAGMA table_info(users)").all().map(c => c.name);
+      if (!cols.includes('password_changed_at')) {
+        db.exec(`ALTER TABLE users ADD COLUMN password_changed_at TEXT`);
+      }
+      if (!cols.includes('mfa_required')) {
+        db.exec(`ALTER TABLE users ADD COLUMN mfa_required INTEGER DEFAULT 0`);
+      }
+    },
+  },
+  {
+    version: 6,
+    name: 'add_organ_offers',
+    description: 'Organ offer state machine (TT-R066)',
+    rollbackSql: 'DROP TABLE IF EXISTS organ_offer_events; DROP TABLE IF EXISTS organ_offers;',
+    up(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS organ_offers (
+          id TEXT PRIMARY KEY,
+          org_id TEXT NOT NULL,
+          donor_organ_id TEXT,
+          patient_id TEXT,
+          status TEXT NOT NULL DEFAULT 'PENDING' CHECK(status IN ('PENDING','ACCEPTED_PROVISIONAL','ACCEPTED_FINAL','DECLINED','EXPIRED','RESCINDED')),
+          rank INTEGER,
+          offered_at TEXT NOT NULL DEFAULT (datetime('now')),
+          response_due_at TEXT,
+          responded_at TEXT,
+          decline_reason_code TEXT,
+          decline_reason_text TEXT,
+          backup_chain_position INTEGER,
+          notes TEXT,
+          created_by TEXT,
+          updated_by TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+          FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE,
+          FOREIGN KEY (donor_organ_id) REFERENCES donor_organs(id),
+          FOREIGN KEY (patient_id) REFERENCES patients(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_offers_org ON organ_offers(org_id);
+        CREATE INDEX IF NOT EXISTS idx_offers_status ON organ_offers(org_id, status);
+        CREATE INDEX IF NOT EXISTS idx_offers_donor ON organ_offers(org_id, donor_organ_id);
+        CREATE INDEX IF NOT EXISTS idx_offers_patient ON organ_offers(org_id, patient_id);
+        CREATE INDEX IF NOT EXISTS idx_offers_due ON organ_offers(org_id, response_due_at);
+        CREATE TABLE IF NOT EXISTS organ_offer_events (
+          id TEXT PRIMARY KEY,
+          org_id TEXT NOT NULL,
+          offer_id TEXT NOT NULL,
+          event_type TEXT NOT NULL,
+          from_status TEXT,
+          to_status TEXT,
+          actor TEXT,
+          payload TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          FOREIGN KEY (offer_id) REFERENCES organ_offers(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_offer_events_offer ON organ_offer_events(offer_id, created_at);
+      `);
+    },
+  },
+  {
+    version: 7,
+    name: 'add_post_transplant_tracking',
+    description: 'Post-transplant follow-up: events, immunosuppression, rejection, biopsies, readmissions (TT-R067)',
+    rollbackSql: null,
+    up(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS transplant_events (
+          id TEXT PRIMARY KEY,
+          org_id TEXT NOT NULL,
+          patient_id TEXT NOT NULL,
+          donor_organ_id TEXT,
+          organ_type TEXT NOT NULL,
+          transplant_date TEXT NOT NULL,
+          surgeon TEXT,
+          warm_ischemia_time_min REAL,
+          cold_ischemia_time_min REAL,
+          induction_regimen TEXT,
+          discharge_date TEXT,
+          graft_status TEXT NOT NULL DEFAULT 'FUNCTIONING' CHECK(graft_status IN ('FUNCTIONING','FAILED','LOST_PRIMARY_NON_FUNCTION','RETRANSPLANTED')),
+          patient_status TEXT NOT NULL DEFAULT 'ALIVE' CHECK(patient_status IN ('ALIVE','DECEASED','LOST_TO_FOLLOWUP')),
+          deceased_date TEXT,
+          deceased_cause TEXT,
+          notes TEXT,
+          created_by TEXT,
+          updated_by TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+          FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE,
+          FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_tx_events_org ON transplant_events(org_id);
+        CREATE INDEX IF NOT EXISTS idx_tx_events_patient ON transplant_events(org_id, patient_id);
+        CREATE INDEX IF NOT EXISTS idx_tx_events_date ON transplant_events(org_id, transplant_date);
+
+        CREATE TABLE IF NOT EXISTS immunosuppression_regimens (
+          id TEXT PRIMARY KEY,
+          org_id TEXT NOT NULL,
+          patient_id TEXT NOT NULL,
+          transplant_event_id TEXT,
+          start_date TEXT NOT NULL,
+          end_date TEXT,
+          drug_name TEXT NOT NULL,
+          dose TEXT,
+          frequency TEXT,
+          target_trough TEXT,
+          notes TEXT,
+          created_by TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+          FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE,
+          FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE,
+          FOREIGN KEY (transplant_event_id) REFERENCES transplant_events(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_immuno_patient ON immunosuppression_regimens(org_id, patient_id, start_date DESC);
+
+        CREATE TABLE IF NOT EXISTS rejection_episodes (
+          id TEXT PRIMARY KEY,
+          org_id TEXT NOT NULL,
+          patient_id TEXT NOT NULL,
+          transplant_event_id TEXT,
+          episode_date TEXT NOT NULL,
+          rejection_type TEXT CHECK(rejection_type IN ('ACUTE_CELLULAR','ANTIBODY_MEDIATED','MIXED','CHRONIC','BORDERLINE','OTHER')),
+          severity TEXT,
+          treatment TEXT,
+          resolution_date TEXT,
+          biopsy_id TEXT,
+          notes TEXT,
+          created_by TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+          FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE,
+          FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_rej_patient ON rejection_episodes(org_id, patient_id, episode_date DESC);
+
+        CREATE TABLE IF NOT EXISTS biopsies (
+          id TEXT PRIMARY KEY,
+          org_id TEXT NOT NULL,
+          patient_id TEXT NOT NULL,
+          transplant_event_id TEXT,
+          biopsy_date TEXT NOT NULL,
+          biopsy_type TEXT,
+          finding TEXT,
+          banff_grade TEXT,
+          notes TEXT,
+          created_by TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+          FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE,
+          FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_biopsy_patient ON biopsies(org_id, patient_id, biopsy_date DESC);
+
+        CREATE TABLE IF NOT EXISTS post_tx_readmissions (
+          id TEXT PRIMARY KEY,
+          org_id TEXT NOT NULL,
+          patient_id TEXT NOT NULL,
+          transplant_event_id TEXT,
+          admit_date TEXT NOT NULL,
+          discharge_date TEXT,
+          reason TEXT,
+          related_to_graft INTEGER DEFAULT 0,
+          notes TEXT,
+          created_by TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+          FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE,
+          FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_readmit_patient ON post_tx_readmissions(org_id, patient_id, admit_date DESC);
+      `);
+    },
+  },
+  {
+    version: 8,
+    name: 'add_living_donor_workflow',
+    description: 'Living donor evaluation, donation, OPTN Policy 14 follow-up (TT-R068)',
+    rollbackSql: null,
+    up(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS living_donors (
+          id TEXT PRIMARY KEY,
+          org_id TEXT NOT NULL,
+          mrn TEXT,
+          first_name TEXT NOT NULL,
+          last_name TEXT NOT NULL,
+          date_of_birth TEXT,
+          sex TEXT,
+          blood_type TEXT,
+          relationship_to_recipient TEXT,
+          recipient_patient_id TEXT,
+          intended_organ TEXT NOT NULL CHECK(intended_organ IN ('KIDNEY','LIVER_LEFT','LIVER_RIGHT','LIVER_LATERAL','LUNG_LOBE','OTHER')),
+          phone TEXT,
+          email TEXT,
+          address TEXT,
+          status TEXT NOT NULL DEFAULT 'INQUIRY' CHECK(status IN ('INQUIRY','SCREENING','EVALUATION','APPROVED','DEFERRED','DECLINED','DONATED','WITHDRAWN')),
+          status_reason TEXT,
+          created_by TEXT,
+          updated_by TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+          FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE,
+          FOREIGN KEY (recipient_patient_id) REFERENCES patients(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_ld_org ON living_donors(org_id);
+        CREATE INDEX IF NOT EXISTS idx_ld_status ON living_donors(org_id, status);
+        CREATE INDEX IF NOT EXISTS idx_ld_recipient ON living_donors(org_id, recipient_patient_id);
+
+        CREATE TABLE IF NOT EXISTS living_donor_evaluations (
+          id TEXT PRIMARY KEY,
+          org_id TEXT NOT NULL,
+          living_donor_id TEXT NOT NULL,
+          step TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'PENDING' CHECK(status IN ('PENDING','SCHEDULED','COMPLETE','DEFERRED','FAILED')),
+          scheduled_date TEXT,
+          completed_date TEXT,
+          owner_role TEXT,
+          notes TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+          FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE,
+          FOREIGN KEY (living_donor_id) REFERENCES living_donors(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_lde_donor ON living_donor_evaluations(org_id, living_donor_id);
+
+        CREATE TABLE IF NOT EXISTS living_donor_followups (
+          id TEXT PRIMARY KEY,
+          org_id TEXT NOT NULL,
+          living_donor_id TEXT NOT NULL,
+          milestone_months INTEGER NOT NULL CHECK(milestone_months IN (6,12,24)),
+          due_date TEXT NOT NULL,
+          completed_date TEXT,
+          status TEXT NOT NULL DEFAULT 'PENDING' CHECK(status IN ('PENDING','SCHEDULED','COMPLETE','OVERDUE','LOST_TO_FOLLOWUP')),
+          notes TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+          FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE,
+          FOREIGN KEY (living_donor_id) REFERENCES living_donors(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_ldfu_donor ON living_donor_followups(org_id, living_donor_id);
+        CREATE INDEX IF NOT EXISTS idx_ldfu_due ON living_donor_followups(org_id, due_date);
+      `);
+    },
+  },
+  {
+    version: 9,
+    name: 'add_siem_destinations',
+    description: 'External SIEM/syslog forwarder destinations (TT-R026)',
+    rollbackSql: 'DROP TABLE IF EXISTS siem_destinations;',
+    up(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS siem_destinations (
+          id TEXT PRIMARY KEY,
+          org_id TEXT NOT NULL,
+          name TEXT NOT NULL,
+          host TEXT NOT NULL,
+          port INTEGER NOT NULL,
+          protocol TEXT NOT NULL DEFAULT 'udp' CHECK(protocol IN ('udp','tcp','tls')),
+          format TEXT NOT NULL DEFAULT 'cef' CHECK(format IN ('cef','json','rfc5424')),
+          enabled INTEGER NOT NULL DEFAULT 1,
+          severity_filter TEXT NOT NULL DEFAULT 'all',
+          last_success_at TEXT,
+          last_failure_at TEXT,
+          last_failure_reason TEXT,
+          dropped_count INTEGER NOT NULL DEFAULT 0,
+          created_by TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+          FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_siem_org ON siem_destinations(org_id, enabled);
+      `);
+    },
+  },
 ];
 
 /**

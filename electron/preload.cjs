@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Authentication
   auth: {
     login: (credentials) => ipcRenderer.invoke('auth:login', credentials),
+    loginMfa: (params) => ipcRenderer.invoke('auth:loginMfa', params),
     logout: () => ipcRenderer.invoke('auth:logout'),
     me: () => ipcRenderer.invoke('auth:me'),
     isAuthenticated: () => ipcRenderer.invoke('auth:isAuthenticated'),
@@ -19,6 +20,103 @@ contextBridge.exposeInMainWorld('electronAPI', {
     listUsers: () => ipcRenderer.invoke('auth:listUsers'),
     updateUser: (id, userData) => ipcRenderer.invoke('auth:updateUser', id, userData),
     deleteUser: (id) => ipcRenderer.invoke('auth:deleteUser', id)
+  },
+
+  // Multi-Factor Authentication (TOTP per RFC 6238 + backup codes)
+  mfa: {
+    status: () => ipcRenderer.invoke('mfa:status'),
+    beginEnrollment: () => ipcRenderer.invoke('mfa:beginEnrollment'),
+    confirmEnrollment: (params) => ipcRenderer.invoke('mfa:confirmEnrollment', params),
+    verifyChallenge: (params) => ipcRenderer.invoke('mfa:verifyChallenge', params),
+    regenerateBackupCodes: () => ipcRenderer.invoke('mfa:regenerateBackupCodes'),
+    disable: (params) => ipcRenderer.invoke('mfa:disable', params),
+    isRequired: (userId) => ipcRenderer.invoke('mfa:isRequired', userId),
+  },
+
+  // Transplant Calculators (reference values only — not for allocation)
+  calculators: {
+    meld: (inputs) => ipcRenderer.invoke('calculator:meld', inputs),
+    meldNa: (inputs) => ipcRenderer.invoke('calculator:meldNa', inputs),
+    meld3: (inputs) => ipcRenderer.invoke('calculator:meld3', inputs),
+    peld: (inputs) => ipcRenderer.invoke('calculator:peld', inputs),
+    las: (inputs) => ipcRenderer.invoke('calculator:las', inputs),
+    kdpi: (inputs) => ipcRenderer.invoke('calculator:kdpi', inputs),
+    epts: (inputs) => ipcRenderer.invoke('calculator:epts', inputs),
+    listFormulas: () => ipcRenderer.invoke('calculator:listFormulas'),
+  },
+
+  // Organ Offer Management (operational state machine; allocation in OPTN)
+  organOffers: {
+    getStatuses: () => ipcRenderer.invoke('organOffer:getStatuses'),
+    getDeclineReasons: () => ipcRenderer.invoke('organOffer:getDeclineReasons'),
+    create: (data) => ipcRenderer.invoke('organOffer:create', data),
+    get: (id) => ipcRenderer.invoke('organOffer:get', id),
+    list: (filters) => ipcRenderer.invoke('organOffer:list', filters),
+    transition: (params) => ipcRenderer.invoke('organOffer:transition', params),
+    expireDue: () => ipcRenderer.invoke('organOffer:expireDue'),
+    getEvents: (offerId) => ipcRenderer.invoke('organOffer:getEvents', offerId),
+  },
+
+  // Post-transplant follow-up
+  postTx: {
+    createEvent: (data) => ipcRenderer.invoke('postTx:createEvent', data),
+    updateEvent: (params) => ipcRenderer.invoke('postTx:updateEvent', params),
+    listEventsByPatient: (patientId) => ipcRenderer.invoke('postTx:listEventsByPatient', patientId),
+    createImmuno: (data) => ipcRenderer.invoke('postTx:createImmuno', data),
+    listImmunoByPatient: (patientId) => ipcRenderer.invoke('postTx:listImmunoByPatient', patientId),
+    createRejection: (data) => ipcRenderer.invoke('postTx:createRejection', data),
+    listRejectionsByPatient: (patientId) => ipcRenderer.invoke('postTx:listRejectionsByPatient', patientId),
+    createBiopsy: (data) => ipcRenderer.invoke('postTx:createBiopsy', data),
+    listBiopsiesByPatient: (patientId) => ipcRenderer.invoke('postTx:listBiopsiesByPatient', patientId),
+    createReadmission: (data) => ipcRenderer.invoke('postTx:createReadmission', data),
+    listReadmissionsByPatient: (patientId) => ipcRenderer.invoke('postTx:listReadmissionsByPatient', patientId),
+    getPatientSummary: (patientId) => ipcRenderer.invoke('postTx:getPatientSummary', patientId),
+  },
+
+  // Living Donor Workflow
+  livingDonor: {
+    getStatuses: () => ipcRenderer.invoke('livingDonor:getStatuses'),
+    getMilestones: () => ipcRenderer.invoke('livingDonor:getMilestones'),
+    create: (data) => ipcRenderer.invoke('livingDonor:create', data),
+    get: (id) => ipcRenderer.invoke('livingDonor:get', id),
+    list: (filters) => ipcRenderer.invoke('livingDonor:list', filters),
+    transition: (params) => ipcRenderer.invoke('livingDonor:transition', params),
+    addEvalStep: (data) => ipcRenderer.invoke('livingDonor:addEvalStep', data),
+    updateEvalStep: (data) => ipcRenderer.invoke('livingDonor:updateEvalStep', data),
+    listEvals: (livingDonorId) => ipcRenderer.invoke('livingDonor:listEvals', livingDonorId),
+    listFollowups: (livingDonorId) => ipcRenderer.invoke('livingDonor:listFollowups', livingDonorId),
+    updateFollowup: (data) => ipcRenderer.invoke('livingDonor:updateFollowup', data),
+    markOverdue: () => ipcRenderer.invoke('livingDonor:markOverdue'),
+    summary: (donorId) => ipcRenderer.invoke('livingDonor:summary', donorId),
+  },
+
+  // SIEM destinations (admin-only)
+  siem: {
+    list: () => ipcRenderer.invoke('siem:list'),
+    create: (data) => ipcRenderer.invoke('siem:create', data),
+    update: (params) => ipcRenderer.invoke('siem:update', params),
+    delete: (id) => ipcRenderer.invoke('siem:delete', id),
+    test: (id) => ipcRenderer.invoke('siem:test', id),
+  },
+
+  // HL7 v2 parsing
+  hl7: {
+    parse: (raw) => ipcRenderer.invoke('hl7:parse', raw),
+    buildAck: (params) => ipcRenderer.invoke('hl7:buildAck', params),
+    supportedEvents: () => ipcRenderer.invoke('hl7:supportedEvents'),
+  },
+
+  // OPTN-shaped CSV exports (NOT a submission)
+  optn: {
+    exportTCR: (params) => ipcRenderer.invoke('optn:exportTCR', params),
+    exportTRR: (params) => ipcRenderer.invoke('optn:exportTRR', params),
+    exportTRF: () => ipcRenderer.invoke('optn:exportTRF'),
+  },
+
+  // Admin security tooling (lockout reporting / unlock)
+  adminSecurity: {
+    lockoutReport: () => ipcRenderer.invoke('admin:lockoutReport'),
+    unlockAccount: (email) => ipcRenderer.invoke('admin:unlockAccount', email),
   },
   
   // Entity CRUD operations

@@ -2,11 +2,13 @@
 
 ## Transplant Waitlist & Operations Management
 
-[![HIPAA Compliant](https://img.shields.io/badge/HIPAA-Compliant-green.svg)](docs/COMPLIANCE.md)
-[![FDA 21 CFR Part 11](https://img.shields.io/badge/FDA-21%20CFR%20Part%2011-green.svg)](docs/COMPLIANCE.md)
+[![HIPAA Aligned](https://img.shields.io/badge/HIPAA-Security%20Rule%20Aligned-blue.svg)](docs/compliance/HIPAA_SECURITY_RULE_MAPPING.md)
+[![21 CFR Part 11 Aligned](https://img.shields.io/badge/21%20CFR%20Part%2011-Architected%20For-blue.svg)](docs/compliance/PART_11_CONTROL_MAPPING.md)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)]()
 
-TransTrack is an offline, HIPAA-compliant, FDA 21 CFR Part 11-ready desktop application for transplant centers and pre-transplant coordination teams. It provides secure, cloud-independent data management and operational risk intelligence to help reduce the risk of patient inactivation before transplant.
+TransTrack is an offline-first desktop application for transplant centers and pre-transplant coordination teams. It is **architected to support** HIPAA Security Rule controls and **designed for alignment with** FDA 21 CFR Part 11 electronic-records requirements; formal certification is the responsibility of the deploying organization and its auditors. It provides secure, cloud-independent data management and operational risk intelligence to help reduce the risk of patient inactivation before transplant.
+
+> **Important:** "HIPAA aligned" and "Part 11 architected" describe the product's design controls — they are not certifications. SOC 2 / HITRUST / 21 CFR Part 11 validation, and any FDA determinations, must be performed by the deploying organization with qualified auditors.
 
 TransTrack is free to download and use — no license keys, activation codes, or subscriptions required. All features are fully unlocked for everyone.
 
@@ -109,16 +111,33 @@ All metrics are computed locally from the encrypted SQLite database. No cloud, A
 * Team workload monitoring and task resolution metrics
 * Computed 100% locally — no cloud dependencies
 
-### EHR Integration
+### EHR & Registry Integration
 
 * **FHIR R4** data import/export
+* **HL7 v2.x** message ingestion (ADT^A01/A03/A04/A08, ORU^R01) with ACK generation
+* **OPTN-style CSV exports** (TCR/TRR/TRF-shaped extracts) — for internal review and reconciliation; *not* an OPTN/UNet submission
 * Validation rule configuration and history tracking
 
-### Compliance
+### Transplant Clinical Calculators (reference values)
 
-* **HIPAA**: encryption, access control, audit trails
-* **FDA 21 CFR Part 11**: electronic records integrity and validation
-* **Offline operation**: no PHI leaves the local system
+* **MELD**, **MELD-Na**, **MELD 3.0**, **PELD** — liver/pediatric scoring
+* **LAS** (legacy lung allocation reference)
+* **KDPI / KDRI** — deceased-donor kidney donor profile index with percentile mapping
+* **EPTS** — estimated post-transplant survival (Rao 2009) with percentile mapping
+* All calculators are reference-only; allocation decisions occur in OPTN/UNet
+
+### Operational Workflows
+
+* **Organ Offer Management** — auditable state machine (PENDING → ACCEPTED_PROVISIONAL → ACCEPTED_FINAL / DECLINED / EXPIRED / RESCINDED) with structured decline-reason codes
+* **Post-Transplant Follow-up** — transplant events, immunosuppression regimens, rejection episodes, biopsies, and post-tx readmissions
+* **Living Donor Workflow** — separate donor record, evaluation steps, status state machine, and auto-generated 6/12/24-month OPTN Policy 14-style follow-ups
+
+### Compliance posture (design controls — not certifications)
+
+* **HIPAA Security Rule alignment**: AES-256 at-rest encryption (SQLCipher), role-based access control, account lockout, immutable audit logs, audit-log immutability enforced at the database trigger level
+* **21 CFR Part 11 alignment**: timestamped audit trail, electronic-record integrity controls, password complexity & history, session controls, validation documentation package included
+* **Offline operation**: no PHI leaves the local system unless explicitly exported by an authorized user
+* **Validation package**: see [`docs/compliance/`](docs/compliance/) for the validation plan, IQ/OQ/PQ templates, risk register, and HIPAA / Part 11 control mappings
 
 ### Offline-First Architecture
 
@@ -241,28 +260,32 @@ Contact [Trans_Track@outlook.com](mailto:Trans_Track@outlook.com) if you need as
 
 ---
 
-## Compliance & Security
+## Compliance & Security (Design Controls)
 
-### HIPAA
+### HIPAA Security Rule alignment
 
-* Encryption at rest (AES-256)
-* Role-based access control
-* Automatic session timeouts
-* Full audit trails
+* Encryption at rest (AES-256, SQLCipher)
+* Role-based access control with justification logging
+* Automatic session timeouts and idle lockout
+* Immutable audit trails enforced at the database trigger level
+* Multi-factor authentication (TOTP with backup codes)
+* Optional SIEM forwarding (RFC 5424 syslog / CEF)
 
-### FDA 21 CFR Part 11
+### 21 CFR Part 11 alignment
 
-* Timestamped, immutable audit trail
-* User authentication and documentation
-* Validation artifacts for compliance
+* Timestamped, immutable audit trail (append-only with DB-level UPDATE/DELETE blocks)
+* Strong password policy with history and expiration
+* Session controls and re-authentication for sensitive operations
+* Validation documentation package (see [`docs/compliance/`](docs/compliance/))
 
-### Security
+### Security architecture
 
-* Fully offline operation
-* Local encryption
-* Secure, encrypted backups
+* Fully offline operation by default
+* Local AES-256 encryption with key rotation support
+* Secure, encrypted backups and disaster-recovery tooling
+* Independent penetration test and SOC 2 Type II are the responsibility of the deploying organization
 
-[View full compliance documentation](docs/COMPLIANCE.md)
+[Compliance overview](docs/COMPLIANCE.md) · [Validation package](docs/compliance/README.md)
 
 ---
 
