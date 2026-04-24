@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '@/api/apiClient';
-import Navbar from './components/layout/Navbar';
+import Sidebar from './components/layout/Sidebar';
+import TopBar from './components/layout/TopBar';
 
 export default function Layout({ children, currentPageName }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
     const loadUser = async () => {
@@ -14,7 +16,6 @@ export default function Layout({ children, currentPageName }) {
           const currentUser = await api.auth.me();
           setUser(currentUser);
         } else {
-          // Redirect to login page
           window.location.hash = '#/login';
         }
       } catch (error) {
@@ -40,12 +41,30 @@ export default function Layout({ children, currentPageName }) {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
-      <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[100] focus:px-4 focus:py-2 focus:bg-cyan-600 focus:text-white focus:rounded-md">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[100] focus:px-4 focus:py-2 focus:bg-cyan-600 focus:text-white focus:rounded-md"
+      >
         Skip to main content
       </a>
-      <Navbar user={user} />
-      <main id="main-content">{children}</main>
+
+      <Sidebar
+        user={user}
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+      />
+
+      <div className="flex-1 min-w-0 flex flex-col">
+        <TopBar
+          user={user}
+          currentPageName={currentPageName}
+          onOpenSidebar={() => setSidebarOpen(true)}
+        />
+        <main id="main-content" className="flex-1 min-w-0">
+          {children}
+        </main>
+      </div>
     </div>
   );
 }
