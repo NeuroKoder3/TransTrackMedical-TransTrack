@@ -344,28 +344,6 @@ Get database schema migration status.
 
 ---
 
-## License Management
-
-### `license.getInfo()`
-
-Get current license information.
-
-### `license.activate(key, customerInfo)`
-
-Activate a license key.
-
-### `license.checkFeature(feature)`
-
-Check if a feature is available in the current license tier.
-
-**Returns**: `{ allowed: boolean, reason?: string }`
-
-### `license.getAppState()`
-
-Get full application state including license, evaluation status, and restrictions.
-
----
-
 ## Error Handling
 
 All IPC handlers return errors as thrown exceptions. The renderer should catch these:

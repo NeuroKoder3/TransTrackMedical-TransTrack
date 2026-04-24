@@ -11,10 +11,7 @@ const bcrypt = require('bcryptjs');
 const {
   getDatabase,
   getDefaultOrganization,
-  getOrgLicense,
-  getUserCount,
 } = require('../../database/init.cjs');
-const { LICENSE_TIER, checkDataLimit } = require('../../license/tiers.cjs');
 const shared = require('../shared.cjs');
 
 function register() {
@@ -60,9 +57,6 @@ function register() {
         throw new Error('Your organization is not active. Please contact administrator.');
       }
 
-      const license = getOrgLicense(user.org_id);
-      const licenseTier = license?.tier || LICENSE_TIER.EVALUATION;
-
       shared.clearFailedLogins(email);
 
       const sessionId = uuidv4();
@@ -82,7 +76,6 @@ function register() {
         role: user.role,
         org_id: user.org_id,
         org_name: org.name,
-        license_tier: licenseTier,
         must_change_password: mustChangePassword,
       };
 
@@ -188,12 +181,6 @@ function register() {
     }
 
     const orgId = shared.getSessionOrgId();
-    const userCount = getUserCount(orgId);
-    const tier = shared.getSessionTier();
-    const limitCheck = checkDataLimit(tier, 'maxUsers', userCount);
-    if (!limitCheck.allowed) {
-      throw new Error(`User limit reached (${limitCheck.limit}). Please upgrade your license to add more users.`);
-    }
 
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(userData.email)) {
       throw new Error('Invalid email format');

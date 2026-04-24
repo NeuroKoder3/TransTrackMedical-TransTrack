@@ -6,12 +6,9 @@
 
 const { ipcMain } = require('electron');
 const { v4: uuidv4 } = require('uuid');
-const { getDatabase, getPatientCount } = require('../../database/init.cjs');
-const { checkDataLimit } = require('../../license/tiers.cjs');
-const featureGate = require('../../license/featureGate.cjs');
+const { getDatabase } = require('../../database/init.cjs');
 const shared = require('../shared.cjs');
 const { hasPermission, PERMISSIONS } = require('../../services/accessControl.cjs');
-const { logger } = require('../../services/logger.cjs');
 
 const ENTITY_PERMISSION_MAP = {
   Patient:       { view: PERMISSIONS.PATIENT_VIEW, create: PERMISSIONS.PATIENT_CREATE, update: PERMISSIONS.PATIENT_UPDATE, delete: PERMISSIONS.PATIENT_DELETE },
@@ -52,36 +49,8 @@ function register() {
     if (!tableName) throw new Error(`Unknown entity: ${entityName}`);
 
     const orgId = shared.getSessionOrgId();
-    const tier = shared.getSessionTier();
 
     if (entityName === 'AuditLog') throw new Error('Audit logs cannot be created directly');
-
-    try {
-      if (entityName === 'Patient') {
-        const currentCount = getPatientCount(orgId);
-        const limitCheck = checkDataLimit(tier, 'maxPatients', currentCount);
-        if (!limitCheck.allowed) throw new Error(`Patient limit reached (${limitCheck.limit}). Please upgrade your license to add more patients.`);
-      }
-      if (entityName === 'DonorOrgan') {
-        const currentCount = db.prepare('SELECT COUNT(*) as count FROM donor_organs WHERE org_id = ?').get(orgId).count;
-        const limitCheck = checkDataLimit(tier, 'maxDonors', currentCount);
-        if (!limitCheck.allowed) throw new Error(`Donor limit reached (${limitCheck.limit}). Please upgrade your license to add more donors.`);
-      }
-      if (featureGate.isReadOnlyMode()) {
-        throw new Error('Application is in read-only mode. Please activate or renew your license to make changes.');
-      }
-    } catch (licenseError) {
-      const { app } = require('electron');
-      const failOpen = !app.isPackaged && process.env.NODE_ENV === 'development' && process.env.LICENSE_FAIL_OPEN === 'true';
-      if (!failOpen) {
-        logger.error('License check error', { error: licenseError.message });
-        throw licenseError;
-      }
-      logger.warn('License check warning (dev mode)', { error: licenseError.message });
-      if (licenseError.message.includes('limit reached') || licenseError.message.includes('read-only mode')) {
-        throw licenseError;
-      }
-    }
 
     const id = data.id || uuidv4();
     delete data.org_id;

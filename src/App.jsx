@@ -9,10 +9,7 @@ import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import Login from '@/pages/Login';
-import LicenseActivation from '@/pages/LicenseActivation';
-import { EvaluationWatermark } from '@/components/license';
 import IdleTimeoutManager from '@/components/session/IdleTimeoutManager';
-import { useReducer, useEffect, useCallback } from 'react';
 import RouteErrorBoundary from '@/components/RouteErrorBoundary';
 
 const { Pages, Layout, mainPage } = pagesConfig;
@@ -25,38 +22,6 @@ const LayoutWrapper = ({ children, currentPageName }) => Layout ?
   </Layout>
   : <RouteErrorBoundary pageName={currentPageName}>{children}</RouteErrorBoundary>;
 
-// License state management via useReducer
-const LICENSE_INITIAL_STATE = {
-  status: 'checking', // 'checking' | 'valid' | 'invalid' | 'expired' | 'error'
-  info: null,
-  showLicenseScreen: false,
-  error: null,
-};
-
-function licenseReducer(state, action) {
-  switch (action.type) {
-    case 'LICENSE_CHECK_START':
-      return { ...state, status: 'checking', error: null };
-    case 'LICENSE_VALID':
-      return { ...state, status: 'valid', info: action.payload, showLicenseScreen: false };
-    case 'LICENSE_INVALID':
-      return { ...state, status: 'invalid', info: action.payload, showLicenseScreen: true };
-    case 'LICENSE_ERROR':
-      return {
-        ...state,
-        status: window.electronAPI ? 'error' : 'valid',
-        error: action.payload,
-        showLicenseScreen: false,
-      };
-    case 'LICENSE_DEV_MODE':
-      return { ...state, status: 'valid', info: null, showLicenseScreen: false };
-    case 'LICENSE_ACTIVATED':
-      return { ...state, status: 'checking', showLicenseScreen: false };
-    default:
-      return state;
-  }
-}
-
 function isAuthError(error) {
   return (
     error !== null &&
@@ -68,78 +33,7 @@ function isAuthError(error) {
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, isAuthenticated } = useAuth();
-  const [licenseState, dispatch] = useReducer(licenseReducer, LICENSE_INITIAL_STATE);
 
-  const checkLicense = useCallback(async () => {
-    dispatch({ type: 'LICENSE_CHECK_START' });
-
-    if (window.electronAPI?.license) {
-      try {
-        const isValid = await window.electronAPI.license.isValid();
-
-        if (!isValid) {
-          dispatch({ type: 'LICENSE_INVALID', payload: { isLicensed: false, evaluationExpired: true } });
-        } else {
-          dispatch({ type: 'LICENSE_VALID', payload: { isLicensed: true } });
-        }
-      } catch (e) {
-        console.error('License check failed:', e);
-        dispatch({ type: 'LICENSE_ERROR', payload: e.message || 'License verification failed' });
-      }
-    } else {
-      // Not in Electron (development mode via browser)
-      dispatch({ type: 'LICENSE_DEV_MODE' });
-    }
-  }, []);
-
-  useEffect(() => {
-    checkLicense();
-  }, [checkLicense]);
-
-  // Show loading spinner while checking license
-  if (licenseState.status === 'checking') {
-    return (
-      <div className="fixed inset-0 flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-cyan-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-slate-600">Checking license...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Show error state for license failures in Electron
-  if (licenseState.status === 'error') {
-    return (
-      <div className="fixed inset-0 flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100">
-        <div className="text-center max-w-md p-8">
-          <div className="text-red-500 text-5xl mb-4">&#9888;</div>
-          <h2 className="text-xl font-semibold text-slate-800 mb-2">License Verification Failed</h2>
-          <p className="text-slate-600 mb-4">Unable to verify your license. Please contact support.</p>
-          <button
-            onClick={checkLicense}
-            className="px-4 py-2 bg-cyan-600 text-white rounded-md hover:bg-cyan-700"
-          >
-            Retry
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // Show license activation if not valid
-  if (licenseState.showLicenseScreen && !licenseState.info?.isLicensed) {
-    return (
-      <LicenseActivation 
-        onActivated={() => {
-          dispatch({ type: 'LICENSE_ACTIVATED' });
-          checkLicense();
-        }} 
-      />
-    );
-  }
-
-  // Show loading spinner while checking auth
   if (isLoadingPublicSettings || isLoadingAuth) {
     return (
       <div className="fixed inset-0 flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100">
@@ -151,7 +45,6 @@ const AuthenticatedApp = () => {
     );
   }
 
-  // Handle authentication errors with type validation
   if (authError && isAuthError(authError)) {
     switch (authError.type) {
       case 'user_not_registered':
@@ -165,19 +58,14 @@ const AuthenticatedApp = () => {
     return <Login />;
   }
 
-  // If not authenticated, show login page
   if (!isAuthenticated) {
     return <Login />;
   }
 
-  // Render the main app
   return (
     <>
-      {/* HIPAA idle session timeout */}
       <IdleTimeoutManager />
-      {/* Evaluation watermark for evaluation builds */}
-      <EvaluationWatermark />
-      
+
       <Routes>
         <Route path="/" element={
           <LayoutWrapper currentPageName={mainPageKey}>
@@ -185,7 +73,6 @@ const AuthenticatedApp = () => {
           </LayoutWrapper>
         } />
         <Route path="/login" element={<Login />} />
-        <Route path="/license" element={<LicenseActivation onActivated={() => window.location.reload()} />} />
         {Object.entries(Pages).map(([path, Page]) => (
           <Route
             key={path}

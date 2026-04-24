@@ -5,7 +5,6 @@ import { Activity, Users, FileText, Settings, LogOut, Shield, Heart, Database, A
 import { Button } from '@/components/ui/button';
 import { api } from '@/api/apiClient';
 import NotificationBell from '../notifications/NotificationBell';
-import { LicenseStatusBadge } from '@/components/license';
 
 export default function Navbar({ user }) {
   const location = useLocation();
@@ -102,11 +101,6 @@ export default function Navbar({ user }) {
           </div>
 
           <div className="flex items-center space-x-4">
-            {/* License Status Badge */}
-            <Link to="/license" className="hidden sm:block">
-              <LicenseStatusBadge size="small" />
-            </Link>
-            
             <NotificationBell user={user} />
             <div className="flex items-center space-x-2 px-3 py-1.5 bg-slate-50 rounded-lg">
               <Shield className="w-4 h-4 text-slate-500" />

@@ -682,8 +682,7 @@ async function seedDefaultData(defaultOrgId) {
 // Demo data (evaluation builds only)
 
 function seedDemoData(orgId) {
-  const { getCurrentBuildVersion } = require('../license/tiers.cjs');
-  if (getCurrentBuildVersion() !== 'evaluation') return;
+  if (process.env.TRANSTRACK_SEED_DEMO !== '1') return;
 
   const existing = db.prepare('SELECT COUNT(*) as count FROM patients WHERE org_id = ?').get(orgId);
   if (existing.count > 0) return;

@@ -73,3 +73,6 @@ userData/
 # Backup files
 *.bak
 *.backup
+
+.commit-msg.txt
+

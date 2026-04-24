@@ -2,14 +2,13 @@
 
 ## Transplant Waitlist & Operations Management
 
-[![License](https://img.shields.io/badge/license-Evaluation%20Available-blue.svg)](LICENSE)
 [![HIPAA Compliant](https://img.shields.io/badge/HIPAA-Compliant-green.svg)](docs/COMPLIANCE.md)
 [![FDA 21 CFR Part 11](https://img.shields.io/badge/FDA-21%20CFR%20Part%2011-green.svg)](docs/COMPLIANCE.md)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)]()
 
 TransTrack is an offline, HIPAA-compliant, FDA 21 CFR Part 11-ready desktop application for transplant centers and pre-transplant coordination teams. It provides secure, cloud-independent data management and operational risk intelligence to help reduce the risk of patient inactivation before transplant.
 
-> **Evaluation access:** TransTrack is available for evaluation by qualified healthcare organizations. Evaluation is intended for non-clinical, non-operational testing only. See [LICENSE](LICENSE) and [LICENSE_NOTICE.md](LICENSE_NOTICE.md) for full terms.
+TransTrack is free to download and use — no license keys, activation codes, or subscriptions required. All features are fully unlocked for everyone.
 
 <p align="center">
   <img src="docs/images/dashboard-preview.svg" alt="TransTrack Dashboard" width="800">
@@ -203,8 +202,6 @@ All metrics are computed locally from the encrypted SQLite database. No cloud, A
 
 ## Installation
 
-> **Note:** Evaluation versions are for testing only — do **not** use with live patient data.
-
 ### Pre-built Installers
 
 Download from the [Releases page](https://github.com/NeuroKoder3/TransTrackMedical-TransTrack/releases).
@@ -233,14 +230,14 @@ npm run dev:electron
 npm run build:electron
 ```
 
-## Quick Start (Evaluation)
+## Quick Start
 
 1. Launch TransTrack
-2. Use the default credentials provided in your evaluation package
-3. Change your password on first login (you will be prompted automatically)
-4. Explore features using sample/test data
+2. Create your administrator account on first run
+3. Change your password whenever prompted
+4. Begin entering or importing data — all features are immediately available
 
-Default credentials are provided separately in your evaluation onboarding materials for security purposes. Contact [Trans_Track@outlook.com](mailto:Trans_Track@outlook.com) if you need assistance.
+Contact [Trans_Track@outlook.com](mailto:Trans_Track@outlook.com) if you need assistance.
 
 ---
 
@@ -269,14 +266,12 @@ Default credentials are provided separately in your evaluation onboarding materi
 
 ---
 
-## Evaluation Notice
+## Important Notice
 
-This software is provided for evaluation purposes only.
-
-- Not for clinical decision-making
-- Not connected to national transplant systems
-- Intended for operational workflow assessment
+- Not intended for clinical decision-making
+- Not connected to national transplant systems (UNOS/OPTN)
+- Designed for operational workflow management and readiness tracking
 
 ## Contact
 
-**[Trans_Track@outlook.com](mailto:Trans_Track@outlook.com)** — evaluation access, enterprise deployment, or technical inquiries.
+**[Trans_Track@outlook.com](mailto:Trans_Track@outlook.com)** — deployment help or technical inquiries.

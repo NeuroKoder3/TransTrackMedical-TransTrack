@@ -33,10 +33,8 @@ function getElectronUserDataPath() {
 }
 
 test.beforeAll(async () => {
-  // Place an owner-bypass flag so the license dialog does not block launch in CI
   const userDataPath = getElectronUserDataPath();
   fs.mkdirSync(userDataPath, { recursive: true });
-  fs.writeFileSync(path.join(userDataPath, '.transtrack-owner'), '');
 
   app = await electron.launch({
     args: [path.join(__dirname, '..', '..', 'electron', 'main.cjs')],

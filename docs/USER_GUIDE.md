@@ -23,25 +23,17 @@ When you first launch TransTrack, you'll be prompted to log in:
 
 > **Important**: You will be prompted to change the default password on first login. Choose a strong password that meets the system's requirements (12+ characters, uppercase, lowercase, number, special character).
 
-### License Activation
+### Features Available
 
-After logging in, activate your Enterprise license to unlock all features:
+TransTrack is fully featured out of the box — no license keys, activation,
+or tiers are required. Every install includes:
 
-1. Navigate to **Settings → License Activation**
-2. Select the **Activate License** tab
-3. Enter your organization name and contact email
-4. Enter your license key:
-   - **Enterprise Key**: *(provided with your license agreement)*
-5. Click **Activate**
-
-Once activated, all features are unlocked including:
 - Unlimited patients, donors, and users
 - FHIR R4 import/export
 - EHR integration and bidirectional sync
 - Full audit and compliance reporting
 - Advanced analytics and custom reports
-
-> **Note**: Enterprise licenses include lifetime software updates. No additional maintenance renewal is required.
+- Free software updates
 
 ---
 

@@ -23,56 +23,6 @@ const mockClient = {
       return { success: true };
     },
   },
-  // Mock license client for development
-  license: {
-    getInfo: async () => ({
-      buildVersion: 'enterprise',
-      isLicensed: false,
-      isEvaluation: true,
-      tier: 'evaluation',
-      tierName: 'Evaluation',
-      evaluationDaysRemaining: 14,
-      evaluationExpired: false,
-      evaluationInGracePeriod: false,
-      orgId: 'ORG-DEV12345',
-      orgName: 'Development Organization',
-      limits: { maxPatients: 50, maxDonors: 5, maxUsers: 1 },
-      features: [],
-      canActivate: true,
-      upgradeRequired: true,
-    }),
-    activate: async (key, info) => ({ success: true, tier: 'starter' }),
-    renewMaintenance: async () => ({ success: true }),
-    isValid: async () => true,
-    getTier: async () => 'evaluation',
-    getLimits: async () => ({ maxPatients: 50, maxDonors: 5, maxUsers: 1 }),
-    checkFeature: async (feature) => ({ allowed: true }),
-    checkLimit: async (limitType, count) => ({ allowed: true }),
-    getAllFeatures: async () => [],
-    checkFullAccess: async () => ({ allowed: true }),
-    getAppState: async () => ({ usable: true }),
-    isEvaluationBuild: async () => false,
-    getEvaluationStatus: async () => ({ isEvaluation: true, daysRemaining: 14, expired: false, inGracePeriod: false }),
-    getOrganization: async () => ({ id: 'ORG-DEV12345', name: 'Development Organization', createdAt: new Date().toISOString() }),
-    updateOrganization: async (updates) => updates,
-    getMaintenanceStatus: async () => ({ active: true, expired: false, daysRemaining: 365 }),
-    getPaymentOptions: async () => ({
-      tiers: [
-        { tier: 'starter', tierName: 'Starter', price: 2499, currency: 'USD' },
-        { tier: 'professional', tierName: 'Professional', price: 7499, currency: 'USD' },
-        { tier: 'enterprise', tierName: 'Enterprise', price: 24999, currency: 'USD' },
-      ],
-      businessEmail: 'billing@transtrack.medical',
-      contactEmail: 'Trans_Track@outlook.com',
-    }),
-    getPaymentInfo: async (tier) => ({
-      tier,
-      tierName: tier.charAt(0).toUpperCase() + tier.slice(1),
-      price: { starter: 2499, professional: 7499, enterprise: 24999 }[tier],
-      currency: 'USD',
-    }),
-    getAuditHistory: async () => [],
-  },
   // Mock encryption client for development
   encryption: {
     getStatus: async () => ({
@@ -508,28 +458,6 @@ const createElectronClient = () => {
         }
         return base;
       })(),
-    },
-    // License
-    license: {
-      getInfo: async () => await window.electronAPI.license.getInfo(),
-      activate: async (key, info) => await window.electronAPI.license.activate(key, info),
-      renewMaintenance: async () => await window.electronAPI.license.renewMaintenance(),
-      isValid: async () => await window.electronAPI.license.isValid(),
-      getTier: async () => await window.electronAPI.license.getTier(),
-      getLimits: async () => await window.electronAPI.license.getLimits(),
-      checkFeature: async (feature) => await window.electronAPI.license.checkFeature(feature),
-      checkLimit: async (type, count) => await window.electronAPI.license.checkLimit(type, count),
-      getAllFeatures: async () => await window.electronAPI.license.getAllFeatures(),
-      checkFullAccess: async () => await window.electronAPI.license.checkFullAccess(),
-      getAppState: async () => await window.electronAPI.license.getAppState(),
-      isEvaluationBuild: async () => await window.electronAPI.license.isEvaluationBuild(),
-      getEvaluationStatus: async () => await window.electronAPI.license.getEvaluationStatus(),
-      getOrganization: async () => await window.electronAPI.license.getOrganization(),
-      updateOrganization: async (updates) => await window.electronAPI.license.updateOrganization(updates),
-      getMaintenanceStatus: async () => await window.electronAPI.license.getMaintenanceStatus(),
-      getPaymentOptions: async () => await window.electronAPI.license.getPaymentOptions(),
-      getPaymentInfo: async (tier) => await window.electronAPI.license.getPaymentInfo(tier),
-      getAuditHistory: async () => await window.electronAPI.license.getAuditHistory(),
     },
   };
 };

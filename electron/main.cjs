@@ -2,16 +2,8 @@
 
 const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron');
 const path = require('path');
-const fs = require('fs');
-const { initDatabase, closeDatabase, getDefaultOrganization, getOrgLicense } = require('./database/init.cjs');
+const { initDatabase, closeDatabase } = require('./database/init.cjs');
 const { setupIPCHandlers } = require('./ipc/handlers.cjs');
-const { 
-  getCurrentBuildVersion, 
-  BUILD_VERSION, 
-  LICENSE_TIER,
-  EVALUATION_RESTRICTIONS,
-  isEvaluationBuild
-} = require('./license/tiers.cjs');
 const { logger, initCrashReporter, closeLogger } = require('./services/logger.cjs');
 
 // Disable hardware acceleration for better compatibility
@@ -264,199 +256,7 @@ function createMenu() {
   Menu.setApplicationMenu(menu);
 }
 
-// Build type enforcement
-
-/**
- * Check if Enterprise build has a valid license
- * Returns null if OK, or error message if blocked
- */
-function checkEnterpriseLicense() {
-  const buildVersion = getCurrentBuildVersion();
-  
-  // Evaluation builds don't need license check (they have evaluation restrictions)
-  if (buildVersion === BUILD_VERSION.EVALUATION) {
-    return null; // OK, evaluation restrictions apply elsewhere
-  }
-
-  // Owner bypass — only available in unpackaged development builds
-  if (!app.isPackaged) {
-    const ownerFlagPath = path.join(app.getPath('userData'), '.transtrack-owner');
-    if (fs.existsSync(ownerFlagPath)) {
-      logger.info('Owner bypass active — skipping license check (dev build)');
-      return null;
-    }
-  }
-  
-  // Enterprise build - require valid license
-  try {
-    const defaultOrg = getDefaultOrganization();
-    if (!defaultOrg) {
-      return 'No organization configured. Please set up your organization first.';
-    }
-    
-    const license = getOrgLicense(defaultOrg.id);
-    if (!license) {
-      return 'No license found. Please activate your license to use TransTrack Enterprise.';
-    }
-    
-    // Check license tier (evaluation tier on enterprise build = no valid license)
-    if (license.tier === LICENSE_TIER.EVALUATION) {
-      return 'Please activate a valid license to use TransTrack Enterprise.';
-    }
-    
-    // Check license expiration with clock skew protection
-    if (license.license_expires_at) {
-      const expiry = new Date(license.license_expires_at);
-      const now = new Date();
-      
-      // Reject obviously manipulated dates (system clock set far in the future)
-      if (license.activated_at) {
-        const activated = new Date(license.activated_at);
-        const maxReasonableLifetimeMs = 10 * 365.25 * 24 * 60 * 60 * 1000; // 10 years
-        if (expiry.getTime() - activated.getTime() > maxReasonableLifetimeMs) {
-          logger.warn('LICENSE WARNING: License expiry exceeds maximum reasonable lifetime');
-          return 'License validation failed. Please contact support.';
-        }
-      }
-      
-      if (expiry < now) {
-        return `Your license expired on ${expiry.toLocaleDateString()}. Please renew to continue using TransTrack.`;
-      }
-    }
-    
-    return null; // License is valid
-  } catch (error) {
-    logger.error('License check error', { error: error.message });
-    // Fail-closed: always block in production, only allow dev bypass when explicitly in dev mode
-    if (isDev) {
-      logger.warn('License check failed but allowing in development mode');
-      return null;
-    }
-    return 'Unable to verify license. Please contact support.';
-  }
-}
-
-/**
- * Show license required dialog.
- * Returns true to block the app, false to continue to the activation screen.
- */
-function showLicenseRequiredDialog(message) {
-  const result = dialog.showMessageBoxSync(null, {
-    type: 'warning',
-    title: 'License Required - TransTrack Enterprise',
-    message: 'License Activation Required',
-    detail: `${message}\n\nClick "Activate License" to enter your license key, or "Quit" to exit.`,
-    buttons: ['Activate License', 'Quit'],
-    defaultId: 0,
-    cancelId: 1,
-  });
-  
-  if (result === 0) {
-    logger.info('User chose to continue to license activation screen');
-    return false; // Don't block — let user reach the activation UI
-  }
-  
-  return true; // Block
-}
-
-// --- periodic license check ---
-
-let licenseCheckInterval = null;
-const LICENSE_CHECK_INTERVAL_MS = 60 * 60 * 1000; // Check every hour
-const LICENSE_WARNING_DAYS = 14; // Warn when license expires in 14 days
-
-/**
- * Check license status and warn if expiring soon
- */
-function performPeriodicLicenseCheck() {
-  try {
-    const defaultOrg = getDefaultOrganization();
-    if (!defaultOrg) return;
-    
-    const license = getOrgLicense(defaultOrg.id);
-    if (!license) return;
-    
-    const now = new Date();
-    
-    // Check license expiration
-    if (license.license_expires_at) {
-      const expiry = new Date(license.license_expires_at);
-      const daysUntilExpiry = Math.floor((expiry - now) / (1000 * 60 * 60 * 24));
-      
-      if (daysUntilExpiry <= 0) {
-        // License expired - send notification to renderer
-        if (mainWindow) {
-          mainWindow.webContents.send('license:expired', {
-            tier: license.tier,
-            expiredAt: license.license_expires_at,
-          });
-        }
-        logger.warn(`LICENSE EXPIRED: License expired on ${expiry.toLocaleDateString()}`);
-      } else if (daysUntilExpiry <= LICENSE_WARNING_DAYS) {
-        // License expiring soon - send warning to renderer
-        if (mainWindow) {
-          mainWindow.webContents.send('license:expiring-soon', {
-            tier: license.tier,
-            expiresAt: license.license_expires_at,
-            daysRemaining: daysUntilExpiry,
-          });
-        }
-        logger.warn(`LICENSE WARNING: License expires in ${daysUntilExpiry} days`);
-      }
-    }
-    
-    // Check maintenance expiration
-    if (license.maintenance_expires_at) {
-      const maintenanceExpiry = new Date(license.maintenance_expires_at);
-      const daysUntilMaintExpiry = Math.floor((maintenanceExpiry - now) / (1000 * 60 * 60 * 24));
-      
-      if (daysUntilMaintExpiry <= 0) {
-        if (mainWindow) {
-          mainWindow.webContents.send('maintenance:expired', {
-            tier: license.tier,
-            expiredAt: license.maintenance_expires_at,
-          });
-        }
-        logger.warn(`MAINTENANCE EXPIRED: Maintenance support expired on ${maintenanceExpiry.toLocaleDateString()}`);
-      } else if (daysUntilMaintExpiry <= 30) {
-        if (mainWindow) {
-          mainWindow.webContents.send('maintenance:expiring-soon', {
-            tier: license.tier,
-            expiresAt: license.maintenance_expires_at,
-            daysRemaining: daysUntilMaintExpiry,
-          });
-        }
-        logger.warn(`MAINTENANCE WARNING: Maintenance support expires in ${daysUntilMaintExpiry} days`);
-      }
-    }
-  } catch (error) {
-    logger.error('Periodic license check error', { error: error.message });
-  }
-}
-
-/**
- * Start periodic license expiration checks
- */
-function startPeriodicLicenseCheck() {
-  // Initial check after a delay (give app time to fully load)
-  setTimeout(performPeriodicLicenseCheck, 5000);
-  
-  // Periodic checks
-  licenseCheckInterval = setInterval(performPeriodicLicenseCheck, LICENSE_CHECK_INTERVAL_MS);
-  logger.info('Periodic license check started (interval: 1 hour)');
-}
-
-/**
- * Stop periodic license checks
- */
-function stopPeriodicLicenseCheck() {
-  if (licenseCheckInterval) {
-    clearInterval(licenseCheckInterval);
-    licenseCheckInterval = null;
-  }
-}
-
-// Auto-update (enterprise only)
+// Auto-update
 
 function initAutoUpdater() {
   try {
@@ -519,60 +319,22 @@ function initAutoUpdater() {
 app.whenReady().then(async () => {
   initCrashReporter();
   logger.info('TransTrack starting...');
-  const buildVersion = getCurrentBuildVersion();
-  logger.info(`Build version: ${buildVersion}`);
-  
-  // Show splash screen
+
   createSplashWindow();
-  
+
   try {
-    // Initialize encrypted database
     await initDatabase();
     logger.info('Database initialized');
-    
-    // Enterprise license enforcement
-    
-    const licenseError = checkEnterpriseLicense();
-    if (licenseError && buildVersion === BUILD_VERSION.ENTERPRISE) {
-      if (splashWindow) {
-        splashWindow.destroy();
-        splashWindow = null;
-      }
-      
-      if (showLicenseRequiredDialog(licenseError)) {
-        logger.info('License required - application blocked');
-        app.quit();
-        return;
-      }
-    }
-    
-    // Setup IPC handlers for renderer process communication
+
     setupIPCHandlers();
     logger.info('IPC handlers registered');
 
-    // Start auto-updater for enterprise builds
-    if (buildVersion === BUILD_VERSION.ENTERPRISE && app.isPackaged) {
+    if (app.isPackaged) {
       initAutoUpdater();
     }
-    
-    // Create application menu
+
     createMenu();
-    
-    // Create main window
     createMainWindow();
-    
-    // Start periodic license expiration checks
-    startPeriodicLicenseCheck();
-    
-    // If evaluation build, log restriction info
-    if (buildVersion === BUILD_VERSION.EVALUATION) {
-      logger.info('Running in Evaluation mode - restrictions apply', {
-        maxPatients: EVALUATION_RESTRICTIONS.maxPatients,
-        maxUsers: EVALUATION_RESTRICTIONS.maxUsers,
-        maxDays: EVALUATION_RESTRICTIONS.maxDays,
-        disabledFeatureCount: EVALUATION_RESTRICTIONS.disabledFeatures.length,
-      });
-    }
   } catch (error) {
     logger.fatal('Failed to initialize application', { error: error.message, stack: error.stack });
     dialog.showErrorBox('Startup Error', `Failed to initialize TransTrack: ${error.message}`);
@@ -594,7 +356,6 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', async () => {
   logger.info('Application shutting down...');
-  stopPeriodicLicenseCheck();
   await closeDatabase();
   closeLogger();
 });

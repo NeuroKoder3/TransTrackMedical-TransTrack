@@ -10,8 +10,7 @@
   "files": [
     "dist/**/*",
     "electron/**/*",
-    "!electron/assets/**/*",
-    ".build-version"
+    "!electron/assets/**/*"
   ],
   "extraResources": [
     {
@@ -43,17 +42,17 @@
         "arch": ["x64", "arm64"]
       }
     ],
-    "icon": "electron/assets/icon.icns",
-    "category": "public.app-category.medical",
-    "hardenedRuntime": true,
-    "gatekeeperAssess": false,
-    "entitlements": "electron/assets/entitlements.mac.plist",
-    "entitlementsInherit": "electron/assets/entitlements.mac.plist",
-    "artifactName": "TransTrack-Enterprise-${version}-${arch}.${ext}",
-    "type": "distribution",
-    "notarize": {
-      "teamId": "${env.APPLE_TEAM_ID}"
-    }
+   "icon": "electron/assets/icon.icns",
+   "category": "public.app-category.medical",
+   "hardenedRuntime": true,
+   "gatekeeperAssess": false,
+   "entitlements": "electron/assets/entitlements.mac.plist",
+   "entitlementsInherit": "electron/assets/entitlements.mac.plist",
+   "artifactName": "TransTrack-Enterprise-${version}-${arch}.${ext}",
+   "type": "distribution",
+   "notarize": false
+    
+    
   },
   "linux": {
     "target": ["AppImage", "deb"],
@@ -67,7 +66,6 @@
     "allowToChangeInstallationDirectory": true,
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true,
-    "shortcutName": "TransTrack",
-    "license": "LICENSE"
+    "shortcutName": "TransTrack"
   }
 }

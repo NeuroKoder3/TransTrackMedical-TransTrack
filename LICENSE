@@ -1,201 +1,26 @@
-TRANSTRACK COMMERCIAL SOFTWARE LICENSE AGREEMENT
-
-Copyright (c) 2026 TransTrack Medical Software. All Rights Reserved.
-
-================================================================================
-                         COMMERCIAL LICENSE REQUIRED
-================================================================================
-
-This software is NOT free. A valid commercial license is required for any use.
-
-EVALUATION USE
---------------
-Evaluation use is limited to non-clinical, non-operational testing and review
-purposes only.
-
-Evaluation use may not include production environments, live patient data,
-clinical workflows, or operational decision making.
-
-Evaluation use is limited to fourteen (14) calendar days from first use or
-access, after which a commercial license is required.
-
-To request an evaluation license: Trans_Track@outlook.com
-
-PURCHASING A LICENSE
---------------------
-License pricing starts at $2,499. See PRICING.md for full details.
-
-Contact sales: Trans_Track@outlook.com
-
-================================================================================
-                              LICENSE TERMS
-================================================================================
-
-1. GRANT OF LICENSE
-
-Upon purchase of a valid license, TransTrack Medical Software grants you a 
-limited, non-exclusive, non-transferable license to:
-
-  a) Install and use the Software on the number of computers specified by 
-     your license tier
-  b) Use the Software for managing transplant waitlists within your organization
-  c) Create backups of the Software and its data for archival purposes
-
-2. SOURCE CODE ACCESS AND RESTRICTIONS
-
-The Software includes source code made available solely for the purpose of
-evaluation, inspection, and licensed use.
-
-Access to, possession of, or modification of the source code does not grant
-any additional rights beyond those expressly stated in this Agreement.
-
-Except as expressly permitted for evaluation purposes, you may not copy,
-modify, or distribute the Software without written permission.
-
-Any use of the source code, including compiling, building, executing, or
-deploying the Software from source, is subject to the same licensing
-requirements, restrictions, and limitations as use of the compiled Software.
-
-Use of the Software, whether in source or compiled form, beyond the permitted
-evaluation period requires a valid commercial license.
-
-3. LICENSE RESTRICTIONS
-
-You may NOT:
-
-  a) Copy, modify, or distribute the Software without written permission
-  b) Reverse engineer, decompile, or disassemble the Software
-  c) Remove or alter any proprietary notices, labels, or marks
-  d) Use the Software for any unlawful purpose
-  e) Sublicense, rent, lease, or lend the Software to third parties
-  f) Use the Software in a service bureau or time-sharing arrangement
-  g) Transfer your license to another organization without written consent
-  h) Use a single license on more computers than permitted by your tier
-  i) Share license keys or activation codes
-
-4. INTELLECTUAL PROPERTY
-
-The Software, including all copies, modifications, and derivative works, 
-remains the exclusive property of TransTrack Medical Software. This license
-does not grant you any ownership rights.
-
-5. COMPLIANCE REQUIREMENTS
-
-You agree to use the Software in compliance with all applicable healthcare
-regulations including but not limited to:
-
-  - HIPAA (Health Insurance Portability and Accountability Act)
-  - FDA 21 CFR Part 11 (Electronic Records and Signatures)
-  - AATB (American Association of Tissue Banks) Standards
-  - UNOS (United Network for Organ Sharing) requirements
-  - All applicable state and local healthcare regulations
-
-6. DATA PROTECTION & SECURITY
-
-You are solely responsible for:
-
-  a) Maintaining physical and logical security of systems running the Software
-  b) Implementing appropriate access controls and user authentication
-  c) Creating and securing regular backups of your data
-  d) Ensuring compliance with patient privacy regulations
-  e) Properly disposing of systems and data when decommissioning
-
-7. SUPPORT & UPDATES
-
-Support and update terms vary by license tier:
-
-  - Starter: Email support, 1 year updates
-  - Professional: Priority support, 2 years updates
-  - Enterprise: 24/7 support, lifetime updates
-
-Continued support and updates after the included period require an active
-maintenance agreement.
-
-8. WARRANTY DISCLAIMER
-
-THE SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EXPRESS OR 
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, 
-FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT.
-
-TransTrack Medical Software does not warrant that the Software will meet 
-your requirements, operate without interruption, or be error-free.
-
-9. LIMITATION OF LIABILITY
-
-IN NO EVENT SHALL TRANSTRACK MEDICAL SOFTWARE BE LIABLE FOR:
-
-  a) Any indirect, incidental, special, consequential, or punitive damages
-  b) Loss of profits, data, business, or goodwill
-  c) Costs of procurement of substitute goods or services
-  d) Any amount exceeding the license fees paid by you
-
-This limitation applies regardless of the theory of liability and even if 
-TransTrack Medical Software has been advised of the possibility of such damages.
-
-10. INDEMNIFICATION
-
-You agree to indemnify and hold harmless TransTrack Medical Software from 
-any claims, damages, or expenses arising from your use of the Software or 
-violation of this Agreement.
-
-11. AUDIT RIGHTS
-
-TransTrack Medical Software reserves the right to audit your use of the 
-Software to verify compliance with this Agreement. You agree to provide 
-reasonable access and assistance for such audits upon 30 days written notice.
-
-12. TERMINATION
-
-This license is effective until terminated. It will terminate automatically if:
-
-  a) You fail to comply with any term of this Agreement
-  b) Your license period expires without renewal
-  c) You fail to pay required license or maintenance fees
-
-Upon termination, you must cease all use and destroy all copies of the Software.
-
-13. GOVERNING LAW
-
-This Agreement shall be governed by the laws of the State of Delaware, 
-United States of America, without regard to conflicts of law principles.
-
-14. DISPUTE RESOLUTION
-
-Any disputes arising from this Agreement shall be resolved through binding 
-arbitration in Wilmington, Delaware, in accordance with the rules of the 
-American Arbitration Association.
-
-15. ENTIRE AGREEMENT
-
-This Agreement constitutes the entire agreement between the parties and 
-supersedes all prior agreements, representations, and understandings.
-
-16. SEVERABILITY
-
-If any provision of this Agreement is held invalid or unenforceable, the 
-remaining provisions shall continue in full force and effect.
-
-17. NO WAIVER
-
-Failure to enforce any right or provision shall not constitute a waiver of 
-such right or provision.
-
-================================================================================
-                              CONTACT INFORMATION
-================================================================================
-
-TransTrack Medical Software
-
-Sales & Licensing:    Trans_Track@outlook.com
-Technical Support:    Trans_Track@outlook.com
-General Inquiries:    Trans_Track@outlook.com
-
-================================================================================
-
-BY INSTALLING, COPYING, OR OTHERWISE USING THIS SOFTWARE, YOU ACKNOWLEDGE 
-THAT YOU HAVE READ THIS AGREEMENT, UNDERSTAND IT, AND AGREE TO BE BOUND BY 
-ITS TERMS AND CONDITIONS.
-
-IF YOU DO NOT AGREE TO THESE TERMS, DO NOT INSTALL OR USE THE SOFTWARE.
-
-================================================================================
+MIT License
+
+Copyright (c) 2026 TransTrack Medical Software
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Note: TransTrack is offered free of charge with all features unlocked. There
+is no license activation, no pricing, and no usage tiers. The Software is not
+intended for clinical decision-making or as a replacement for UNOS/OPTN
+allocation systems.

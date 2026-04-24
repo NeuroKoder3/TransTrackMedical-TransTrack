@@ -1,17 +1,7 @@
 // Shared IPC state, session management, and entity helpers
 
 const { v4: uuidv4 } = require('uuid');
-const {
-  getDatabase,
-  isEncryptionEnabled,
-  verifyDatabaseIntegrity,
-  getEncryptionStatus,
-  getDefaultOrganization,
-  getOrgLicense,
-  getPatientCount,
-  getUserCount,
-} = require('../database/init.cjs');
-const { LICENSE_TIER, LICENSE_FEATURES, hasFeature, checkDataLimit } = require('../license/tiers.cjs');
+const { getDatabase } = require('../database/init.cjs');
 const { checkRateLimit } = require('./rateLimiter.cjs');
 
 // Session store (bound to WebContents for session-riding prevention)
@@ -69,23 +59,15 @@ function getSessionOrgId() {
 }
 
 function getSessionTier() {
-  if (!currentUser || !currentUser.license_tier) {
-    return LICENSE_TIER.EVALUATION;
-  }
-  return currentUser.license_tier;
+  return 'enterprise';
 }
 
-function sessionHasFeature(featureName) {
-  return hasFeature(getSessionTier(), featureName);
+function sessionHasFeature() {
+  return true;
 }
 
-function requireFeature(featureName) {
-  if (!sessionHasFeature(featureName)) {
-    const tier = getSessionTier();
-    throw new Error(
-      `Feature '${featureName}' is not available in your ${tier} tier. Please upgrade to access this feature.`
-    );
-  }
+function requireFeature() {
+  return true;
 }
 
 function validateSession(senderWebContentsId) {

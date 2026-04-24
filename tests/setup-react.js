@@ -14,18 +14,6 @@ window.electronAPI = {
     isAuthenticated: vi.fn().mockResolvedValue(false),
     me: vi.fn(),
   },
-  license: {
-    getInfo: vi.fn().mockResolvedValue({
-      buildVersion: 'enterprise',
-      isLicensed: true,
-      isEvaluation: false,
-      tier: 'enterprise',
-      tierName: 'Enterprise',
-    }),
-    isValid: vi.fn().mockResolvedValue(true),
-    activate: vi.fn(),
-    getOrganization: vi.fn().mockResolvedValue({ id: 'ORG-TEST', name: 'Test Org' }),
-  },
   functions: {
     invoke: vi.fn(),
   },

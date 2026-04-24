@@ -6,8 +6,6 @@
 const { ipcMain, dialog } = require('electron');
 const path = require('path');
 const { getDatabase } = require('../../database/init.cjs');
-const { FEATURES } = require('../../license/tiers.cjs');
-const featureGate = require('../../license/featureGate.cjs');
 const accessControl = require('../../services/accessControl.cjs');
 const disasterRecovery = require('../../services/disasterRecovery.cjs');
 const complianceView = require('../../services/complianceView.cjs');
@@ -144,11 +142,6 @@ function register() {
   ipcMain.handle('file:exportCSV', async (event, data, filename) => {
     if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
 
-    const exportCheck = featureGate.canAccessFeature(FEATURES.DATA_EXPORT);
-    if (!exportCheck.allowed) {
-      throw new Error('Data export is not available in your current license tier. Please upgrade to export data.');
-    }
-
     const { currentUser } = shared.getSessionState();
     const fs = require('fs');
     const { filePath } = await dialog.showSaveDialog({
@@ -187,11 +180,6 @@ function register() {
   ipcMain.handle('file:exportExcel', async (event, data, filename) => {
     if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
 
-    const exportCheck = featureGate.canAccessFeature(FEATURES.DATA_EXPORT);
-    if (!exportCheck.allowed) {
-      throw new Error('Data export is not available in your current license tier. Please upgrade to export data.');
-    }
-
     const { currentUser } = shared.getSessionState();
     const fs = require('fs');
     const { filePath } = await dialog.showSaveDialog({
@@ -229,11 +217,6 @@ function register() {
   // PDF export
   ipcMain.handle('file:exportPDF', async (event, data, filename) => {
     if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
-
-    const exportCheck = featureGate.canAccessFeature(FEATURES.DATA_EXPORT);
-    if (!exportCheck.allowed) {
-      throw new Error('Data export is not available in your current license tier. Please upgrade to export data.');
-    }
 
     const { currentUser } = shared.getSessionState();
     const fs = require('fs');

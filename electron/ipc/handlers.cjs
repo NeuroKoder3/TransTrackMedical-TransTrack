@@ -3,7 +3,6 @@
 const authHandlers = require('./handlers/auth.cjs');
 const entityHandlers = require('./handlers/entities.cjs');
 const adminHandlers = require('./handlers/admin.cjs');
-const licenseHandlers = require('./handlers/license.cjs');
 const barrierHandlers = require('./handlers/barriers.cjs');
 const ahhqHandlers = require('./handlers/ahhq.cjs');
 const labsHandlers = require('./handlers/labs.cjs');
@@ -100,7 +99,6 @@ function setupIPCHandlers() {
   authHandlers.register();
   entityHandlers.register();
   adminHandlers.register();
-  licenseHandlers.register();
   barrierHandlers.register();
   ahhqHandlers.register();
   labsHandlers.register();

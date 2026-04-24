@@ -10,7 +10,6 @@ const {
   isEncryptionEnabled,
   verifyDatabaseIntegrity,
   getEncryptionStatus,
-  getOrgLicense,
   getPatientCount,
   getUserCount,
 } = require('../../database/init.cjs');
@@ -53,19 +52,11 @@ function register() {
     const org = db.prepare('SELECT * FROM organizations WHERE id = ?').get(orgId);
     if (!org) throw new Error('Organization not found');
 
-    const license = getOrgLicense(orgId);
     const patientCount = getPatientCount(orgId);
     const userCount = getUserCount(orgId);
 
     return {
       ...org,
-      license: license ? {
-        tier: license.tier,
-        maxPatients: license.max_patients,
-        maxUsers: license.max_users,
-        expiresAt: license.license_expires_at,
-        maintenanceExpiresAt: license.maintenance_expires_at,
-      } : null,
       usage: { patients: patientCount, users: userCount },
     };
   });

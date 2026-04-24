@@ -1,580 +1,142 @@
 /**
- * TransTrack - License Tiers & Feature Configuration
- * 
- * Defines license tiers, pricing, feature entitlements, and limits
- * for the two-version distribution model (Evaluation vs Enterprise).
- * 
- * IMPORTANT: This file defines the source of truth for all license
- * feature gating. Changes here affect application behavior.
+ * TransTrack - License Tiers (Stub)
+ *
+ * The licensing/activation system has been removed. This file remains as a
+ * compatibility shim so existing imports continue to resolve. All tiers map
+ * to the unrestricted full feature set, and there are no usage limits.
  */
 
-// Build version types
-
 const BUILD_VERSION = {
-  EVALUATION: 'evaluation',   // Demo/trial build with hard restrictions
-  ENTERPRISE: 'enterprise',   // Full production build with license enforcement
-};
-
-// Detect current build version from environment or build config
-function getCurrentBuildVersion() {
-  // Check environment variable first (set during build)
-  if (process.env.TRANSTRACK_BUILD_VERSION) {
-    return process.env.TRANSTRACK_BUILD_VERSION;
-  }
-  
-  // Check for build marker file
-  const fs = require('fs');
-  const path = require('path');
-  const { app } = require('electron');
-  
-  try {
-    const markerPath = path.join(app.getAppPath(), '.build-version');
-    if (fs.existsSync(markerPath)) {
-      const version = fs.readFileSync(markerPath, 'utf8').trim();
-      if (Object.values(BUILD_VERSION).includes(version)) {
-        return version;
-      }
-    }
-  } catch (e) {
-    // Fallback to evaluation for safety
-  }
-  
-  // Default to evaluation for safety
-  return BUILD_VERSION.EVALUATION;
-}
-
-// --- license tiers ---
-
-const LICENSE_TIER = {
-  EVALUATION: 'evaluation',
-  STARTER: 'starter',
-  PROFESSIONAL: 'professional',
+  EVALUATION: 'enterprise',
   ENTERPRISE: 'enterprise',
 };
 
-// Pricing
-
-const PRICING = {
-  [LICENSE_TIER.STARTER]: {
-    name: 'Starter',
-    price: 2499,
-    currency: 'USD',
-    description: 'Single workstation license for small programs',
-    includes: [
-      'Single workstation installation',
-      'Up to 500 patients',
-      'Email support (48hr response)',
-      '1 year software updates',
-      'Basic audit reporting',
-    ],
-    annualMaintenance: 499,
-    updatePeriodYears: 1,
-  },
-  [LICENSE_TIER.PROFESSIONAL]: {
-    name: 'Professional',
-    price: 7499,
-    currency: 'USD',
-    description: 'Multi-workstation license for growing programs',
-    includes: [
-      'Up to 5 workstation installations',
-      'Unlimited patients',
-      'Priority email support (24hr response)',
-      '2 years software updates',
-      'Advanced audit reporting',
-      'Custom operational priority configuration',
-      'FHIR R4 import/export',
-    ],
-    annualMaintenance: 1499,
-    updatePeriodYears: 2,
-  },
-  [LICENSE_TIER.ENTERPRISE]: {
-    name: 'Enterprise',
-    price: 24999,
-    currency: 'USD',
-    description: 'Unlimited license for large organizations',
-    includes: [
-      'Unlimited workstation installations',
-      'Unlimited patients',
-      '24/7 phone & email support',
-      'Lifetime software updates',
-      'Full audit & compliance reporting',
-      'Custom integrations support',
-      'Optional on-site training',
-      'Source code escrow',
-      'Custom development hours included',
-    ],
-    annualMaintenance: 4999,
-    updatePeriodYears: -1, // Lifetime
-  },
+const LICENSE_TIER = {
+  EVALUATION: 'enterprise',
+  STARTER: 'enterprise',
+  PROFESSIONAL: 'enterprise',
+  ENTERPRISE: 'enterprise',
 };
 
-// Feature flags
-
 const FEATURES = {
-  // Patient Management
   PATIENT_CREATE: 'patient_create',
   PATIENT_EDIT: 'patient_edit',
   PATIENT_DELETE: 'patient_delete',
   PATIENT_EXPORT: 'patient_export',
-  
-  // Donor Management
   DONOR_CREATE: 'donor_create',
   DONOR_EDIT: 'donor_edit',
   DONOR_MATCHING: 'donor_matching',
-  
-  // EHR Integration
   FHIR_IMPORT: 'fhir_import',
   FHIR_EXPORT: 'fhir_export',
   EHR_SYNC: 'ehr_sync',
-  
-  // Reporting & Audit
   AUDIT_VIEW: 'audit_view',
   AUDIT_EXPORT: 'audit_export',
   COMPLIANCE_REPORTS: 'compliance_reports',
   CUSTOM_REPORTS: 'custom_reports',
-  
-  // Configuration
   PRIORITY_CONFIG: 'priority_config',
   NOTIFICATION_RULES: 'notification_rules',
   CUSTOM_SETTINGS: 'custom_settings',
-  
-  // User Management
   USER_MANAGEMENT: 'user_management',
   ROLE_MANAGEMENT: 'role_management',
   MULTI_USER: 'multi_user',
-  
-  // Disaster Recovery
   BACKUP_CREATE: 'backup_create',
   BACKUP_RESTORE: 'backup_restore',
-  
-  // Risk Intelligence
   RISK_DASHBOARD: 'risk_dashboard',
   RISK_REPORTS: 'risk_reports',
   READINESS_BARRIERS: 'readiness_barriers',
-  
-  // Data Operations
   DATA_EXPORT: 'data_export',
   DATA_IMPORT: 'data_import',
   BULK_OPERATIONS: 'bulk_operations',
 };
 
-// License features map (single source of truth)
-// This is the authoritative feature map for all license enforcement.
-// No guessing. No runtime "magic". This map is enforced in:
-// 1. Backend (authoritative) - throws ForbiddenError if feature not available
-// 2. UI (usability) - disables buttons, shows upgrade prompts
-// 3. Data layer (hard stop) - rejects operations that exceed limits
-//
-// SECURITY: This object is FROZEN to prevent runtime modification
-
-const LICENSE_FEATURES = Object.freeze({
-  [LICENSE_TIER.EVALUATION]: Object.freeze({
-    maxPatients: 50,
-    maxDonors: 5,
-    maxUsers: 1,
-    maxInstallations: 1,
-    evaluationDays: 14,
-    // Features
-    fhir: false,
-    fhirImport: false,
-    fhirExport: false,
-    advancedAudit: false,
-    multiUser: false,
-    dataExport: false,
-    dataImport: false,
-    customIntegrations: false,
-    bulkOperations: false,
-    customReports: false,
-    priorityConfig: false,
-    apiAccess: false,
-    ssoIntegration: false,
-    advancedMatching: false,
-    disasterRecovery: false,
-    complianceCenter: true,
-    riskDashboard: true,
-    basicAudit: true,
-    patientManagement: true,
-    donorManagement: true,
-    matching: true,
-    notifications: true,
-    backup: true,
-    restore: false,
-  }),
-  [LICENSE_TIER.STARTER]: Object.freeze({
-    maxPatients: 500,
-    maxDonors: -1, // Unlimited
-    maxUsers: 3,
-    maxInstallations: 1,
-    // Features
-    fhir: false,
-    fhirImport: false,
-    fhirExport: false,
-    advancedAudit: false,
-    multiUser: false, // Up to 3 users but not true multi-user
-    dataExport: true,
-    dataImport: true,
-    customIntegrations: false,
-    bulkOperations: false,
-    customReports: false,
-    priorityConfig: false,
-    apiAccess: false,
-    ssoIntegration: false,
-    advancedMatching: false,
-    disasterRecovery: false,
-    complianceCenter: true,
-    riskDashboard: true,
-    basicAudit: true,
-    patientManagement: true,
-    donorManagement: true,
-    matching: true,
-    notifications: true,
-    backup: true,
-    restore: true,
-  }),
-  [LICENSE_TIER.PROFESSIONAL]: Object.freeze({
-    maxPatients: -1, // Unlimited (Infinity in JS)
-    maxDonors: -1,
-    maxUsers: 10,
-    maxInstallations: 5,
-    // Features
-    fhir: true,
-    fhirImport: true,
-    fhirExport: true,
-    advancedAudit: true,
-    multiUser: true,
-    dataExport: true,
-    dataImport: true,
-    customIntegrations: false,
-    bulkOperations: true,
-    customReports: true,
-    priorityConfig: true,
-    apiAccess: false,
-    ssoIntegration: false,
-    advancedMatching: true,
-    disasterRecovery: true,
-    complianceCenter: true,
-    riskDashboard: true,
-    basicAudit: true,
-    patientManagement: true,
-    donorManagement: true,
-    matching: true,
-    notifications: true,
-    backup: true,
-    restore: true,
-  }),
-  [LICENSE_TIER.ENTERPRISE]: Object.freeze({
-    maxPatients: -1, // Unlimited (Infinity in JS)
-    maxDonors: -1,
-    maxUsers: -1, // Unlimited
-    maxInstallations: -1, // Unlimited
-    // Features - ALL enabled
-    fhir: true,
-    fhirImport: true,
-    fhirExport: true,
-    advancedAudit: true,
-    multiUser: true,
-    dataExport: true,
-    dataImport: true,
-    customIntegrations: true,
-    bulkOperations: true,
-    customReports: true,
-    priorityConfig: true,
-    apiAccess: true,
-    ssoIntegration: true,
-    advancedMatching: true,
-    disasterRecovery: true,
-    complianceCenter: true,
-    riskDashboard: true,
-    basicAudit: true,
-    patientManagement: true,
-    donorManagement: true,
-    matching: true,
-    notifications: true,
-    backup: true,
-    restore: true,
-  }),
+const UNLIMITED_FEATURES = Object.freeze({
+  maxPatients: -1,
+  maxDonors: -1,
+  maxUsers: -1,
+  maxInstallations: -1,
+  fhir: true,
+  fhirImport: true,
+  fhirExport: true,
+  advancedAudit: true,
+  multiUser: true,
+  dataExport: true,
+  dataImport: true,
+  customIntegrations: true,
+  bulkOperations: true,
+  customReports: true,
+  priorityConfig: true,
+  apiAccess: true,
+  ssoIntegration: true,
+  advancedMatching: true,
+  disasterRecovery: true,
+  complianceCenter: true,
+  riskDashboard: true,
+  basicAudit: true,
+  patientManagement: true,
+  donorManagement: true,
+  matching: true,
+  notifications: true,
+  backup: true,
+  restore: true,
 });
 
-// Backward compatibility alias
-const TIER_LIMITS = {
-  [LICENSE_TIER.EVALUATION]: LICENSE_FEATURES[LICENSE_TIER.EVALUATION],
-  [LICENSE_TIER.STARTER]: LICENSE_FEATURES[LICENSE_TIER.STARTER],
-  [LICENSE_TIER.PROFESSIONAL]: LICENSE_FEATURES[LICENSE_TIER.PROFESSIONAL],
-  [LICENSE_TIER.ENTERPRISE]: LICENSE_FEATURES[LICENSE_TIER.ENTERPRISE],
-};
+const LICENSE_FEATURES = Object.freeze({
+  evaluation: UNLIMITED_FEATURES,
+  starter: UNLIMITED_FEATURES,
+  professional: UNLIMITED_FEATURES,
+  enterprise: UNLIMITED_FEATURES,
+});
 
-// --- feature entitlements by tier ---
-
+const TIER_LIMITS = LICENSE_FEATURES;
+const ALL_FEATURES = Object.values(FEATURES);
 const TIER_FEATURES = {
-  [LICENSE_TIER.EVALUATION]: [
-    // Basic read operations
-    FEATURES.PATIENT_CREATE,
-    FEATURES.PATIENT_EDIT,
-    FEATURES.DONOR_CREATE,
-    FEATURES.DONOR_EDIT,
-    FEATURES.DONOR_MATCHING,
-    FEATURES.AUDIT_VIEW, // Read-only
-    FEATURES.RISK_DASHBOARD,
-    FEATURES.READINESS_BARRIERS,
-    FEATURES.BACKUP_CREATE,
-    // Disabled: FHIR, Export, Multi-user, Custom config
-  ],
-  [LICENSE_TIER.STARTER]: [
-    // All evaluation features plus:
-    FEATURES.PATIENT_CREATE,
-    FEATURES.PATIENT_EDIT,
-    FEATURES.PATIENT_DELETE,
-    FEATURES.DONOR_CREATE,
-    FEATURES.DONOR_EDIT,
-    FEATURES.DONOR_MATCHING,
-    FEATURES.AUDIT_VIEW,
-    FEATURES.AUDIT_EXPORT,
-    FEATURES.COMPLIANCE_REPORTS,
-    FEATURES.USER_MANAGEMENT,
-    FEATURES.BACKUP_CREATE,
-    FEATURES.BACKUP_RESTORE,
-    FEATURES.RISK_DASHBOARD,
-    FEATURES.RISK_REPORTS,
-    FEATURES.READINESS_BARRIERS,
-    FEATURES.DATA_EXPORT,
-    FEATURES.DATA_IMPORT,
-    FEATURES.NOTIFICATION_RULES,
-    // Disabled: FHIR, Custom config, Multi-user beyond 3
-  ],
-  [LICENSE_TIER.PROFESSIONAL]: [
-    // All starter features plus:
-    FEATURES.PATIENT_CREATE,
-    FEATURES.PATIENT_EDIT,
-    FEATURES.PATIENT_DELETE,
-    FEATURES.PATIENT_EXPORT,
-    FEATURES.DONOR_CREATE,
-    FEATURES.DONOR_EDIT,
-    FEATURES.DONOR_MATCHING,
-    FEATURES.FHIR_IMPORT,
-    FEATURES.FHIR_EXPORT,
-    FEATURES.EHR_SYNC,
-    FEATURES.AUDIT_VIEW,
-    FEATURES.AUDIT_EXPORT,
-    FEATURES.COMPLIANCE_REPORTS,
-    FEATURES.CUSTOM_REPORTS,
-    FEATURES.PRIORITY_CONFIG,
-    FEATURES.NOTIFICATION_RULES,
-    FEATURES.CUSTOM_SETTINGS,
-    FEATURES.USER_MANAGEMENT,
-    FEATURES.ROLE_MANAGEMENT,
-    FEATURES.MULTI_USER,
-    FEATURES.BACKUP_CREATE,
-    FEATURES.BACKUP_RESTORE,
-    FEATURES.RISK_DASHBOARD,
-    FEATURES.RISK_REPORTS,
-    FEATURES.READINESS_BARRIERS,
-    FEATURES.DATA_EXPORT,
-    FEATURES.DATA_IMPORT,
-    FEATURES.BULK_OPERATIONS,
-  ],
-  [LICENSE_TIER.ENTERPRISE]: [
-    // All features enabled
-    ...Object.values(FEATURES),
-  ],
+  evaluation: ALL_FEATURES,
+  starter: ALL_FEATURES,
+  professional: ALL_FEATURES,
+  enterprise: ALL_FEATURES,
 };
-
-// Evaluation restrictions
 
 const EVALUATION_RESTRICTIONS = {
-  // Time restriction
-  maxDays: 14,
-  
-  // Data restrictions
-  maxPatients: 50,
-  maxDonors: 5,
-  maxUsers: 1,
-  
-  // Feature restrictions
-  disabledFeatures: [
-    FEATURES.FHIR_IMPORT,
-    FEATURES.FHIR_EXPORT,
-    FEATURES.EHR_SYNC,
-    FEATURES.AUDIT_EXPORT,
-    FEATURES.CUSTOM_REPORTS,
-    FEATURES.PRIORITY_CONFIG,
-    FEATURES.CUSTOM_SETTINGS,
-    FEATURES.MULTI_USER,
-    FEATURES.ROLE_MANAGEMENT,
-    FEATURES.DATA_EXPORT,
-    FEATURES.DATA_IMPORT,
-    FEATURES.BULK_OPERATIONS,
-    FEATURES.BACKUP_RESTORE,
-  ],
-  
-  // UI restrictions
-  showWatermark: true,
-  watermarkText: 'EVALUATION VERSION - NOT FOR CLINICAL USE',
-  showUpgradePrompts: true,
-  
-  // Behavior
-  readOnlyAuditLogs: true,
-  disableDataExport: true,
-  forceExpirationLockout: true,
+  maxDays: -1,
+  maxPatients: -1,
+  maxDonors: -1,
+  maxUsers: -1,
+  disabledFeatures: [],
+  showWatermark: false,
+  watermarkText: '',
+  showUpgradePrompts: false,
+  readOnlyAuditLogs: false,
+  disableDataExport: false,
+  forceExpirationLockout: false,
 };
 
-// --- payment config ---
-
-const PAYMENT_CONFIG = {
-  businessEmail: 'billing@transtrack.medical',
-  contactEmail: 'Trans_Track@outlook.com',
-
-  paymentLinks: {
-    [LICENSE_TIER.STARTER]: {
-      amount: 2499,
-      description: 'TransTrack Starter License',
-      url: 'https://buy.stripe.com/transtrack-starter',
-    },
-    [LICENSE_TIER.PROFESSIONAL]: {
-      amount: 7499,
-      description: 'TransTrack Professional License',
-      url: 'https://buy.stripe.com/transtrack-professional',
-    },
-    [LICENSE_TIER.ENTERPRISE]: {
-      amount: 24999,
-      description: 'TransTrack Enterprise License',
-      url: 'https://buy.stripe.com/transtrack-enterprise',
-    },
-  },
-
-  manualPaymentInstructions: `
-To complete your purchase:
-
-1. Visit the payment link for your selected tier (above)
-2. Complete checkout with your Organization ID
-3. Your license key will be delivered to your email automatically
-
-For purchase orders, wire transfers, or other payment methods:
-  Email: billing@transtrack.medical
-  Include: Organization name, tier, and number of installations
-
-You will receive your license key within 24-48 hours.
-`,
-};
-
-// Maintenance config
-
+const PRICING = {};
+const PAYMENT_CONFIG = { businessEmail: '', contactEmail: '', paymentLinks: {}, manualPaymentInstructions: '' };
 const MAINTENANCE_CONFIG = {
-  gracePeriodDays: 30, // Days after expiry before warnings appear
-  warningStartDays: 60, // Days before expiry to start showing warnings
-  
-  // Behavior when maintenance expired
-  expiredBehavior: {
-    allowContinuedUse: true, // Software remains usable
-    showBanners: true, // Show renewal banners
-    disableUpdates: true, // No new updates
-    disableSupport: true, // No support access
-  },
+  gracePeriodDays: 0,
+  warningStartDays: 0,
+  expiredBehavior: { allowContinuedUse: true, showBanners: false, disableUpdates: false, disableSupport: false },
 };
 
-// Helper functions
-
-/**
- * Check if a feature is enabled for a given license tier
- */
-function isFeatureEnabled(feature, tier) {
-  const tierFeatures = TIER_FEATURES[tier] || [];
-  return tierFeatures.includes(feature);
+function getCurrentBuildVersion() { return BUILD_VERSION.ENTERPRISE; }
+function isEvaluationBuild() { return false; }
+function isFeatureEnabled() { return true; }
+function getEnabledFeatures() { return ALL_FEATURES; }
+function getTierLimits() { return UNLIMITED_FEATURES; }
+function getLicenseFeatures() { return UNLIMITED_FEATURES; }
+function hasFeature() { return true; }
+function checkDataLimit(_tier, _limitName, currentCount) {
+  return { allowed: true, limit: -1, current: currentCount, remaining: -1 };
 }
-
-/**
- * Get all enabled features for a tier
- */
-function getEnabledFeatures(tier) {
-  return TIER_FEATURES[tier] || [];
-}
-
-/**
- * Get limits for a tier
- */
-function getTierLimits(tier) {
-  return LICENSE_FEATURES[tier] || LICENSE_FEATURES[LICENSE_TIER.EVALUATION];
-}
-
-/**
- * Get license features for a tier (authoritative source)
- */
-function getLicenseFeatures(tier) {
-  return LICENSE_FEATURES[tier] || LICENSE_FEATURES[LICENSE_TIER.EVALUATION];
-}
-
-/**
- * Check if a specific feature is enabled for a tier
- * This is the authoritative check used by backend enforcement
- */
-function hasFeature(tier, featureName) {
-  const features = LICENSE_FEATURES[tier] || LICENSE_FEATURES[LICENSE_TIER.EVALUATION];
-  return features[featureName] === true;
-}
-
-/**
- * Check if within data limit
- * Returns true if current count is below limit, or limit is unlimited (-1)
- */
-function checkDataLimit(tier, limitName, currentCount) {
-  const features = LICENSE_FEATURES[tier] || LICENSE_FEATURES[LICENSE_TIER.EVALUATION];
-  const limit = features[limitName];
-  
-  if (limit === -1 || limit === undefined) {
-    return { allowed: true, limit: -1, current: currentCount };
-  }
-  
-  return {
-    allowed: currentCount < limit,
-    limit: limit,
-    current: currentCount,
-    remaining: Math.max(0, limit - currentCount),
-  };
-}
-
-/**
- * Get pricing info for a tier
- */
-function getTierPricing(tier) {
-  return PRICING[tier] || null;
-}
-
-/**
- * Check if within limit (-1 means unlimited)
- */
-function isWithinLimit(current, limit) {
-  if (limit === -1) return true;
-  return current < limit;
-}
-
-/**
- * Get payment link for tier
- */
-function getPaymentLink(tier) {
-  return PAYMENT_CONFIG.paymentLinks[tier] || null;
-}
-
-/**
- * Check if this is an evaluation build
- */
-function isEvaluationBuild() {
-  return getCurrentBuildVersion() === BUILD_VERSION.EVALUATION;
-}
-
-/**
- * Get display name for license tier
- */
-function getTierDisplayName(tier) {
-  const pricing = PRICING[tier];
-  return pricing ? pricing.name : 'Evaluation';
-}
+function getTierPricing() { return null; }
+function isWithinLimit() { return true; }
+function getPaymentLink() { return null; }
+function getTierDisplayName() { return 'TransTrack'; }
 
 module.exports = {
-  // Enums
   BUILD_VERSION,
   LICENSE_TIER,
   FEATURES,
-  
-  // Configuration (LICENSE_FEATURES is the authoritative source)
   LICENSE_FEATURES,
   PRICING,
   TIER_LIMITS,
@@ -582,8 +144,6 @@ module.exports = {
   EVALUATION_RESTRICTIONS,
   PAYMENT_CONFIG,
   MAINTENANCE_CONFIG,
-  
-  // Functions
   getCurrentBuildVersion,
   isFeatureEnabled,
   getEnabledFeatures,
