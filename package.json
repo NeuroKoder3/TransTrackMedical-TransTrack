@@ -49,7 +49,7 @@
     "build:linux": "npm run build && electron-builder --linux --config electron-builder.enterprise.json",
     "build:all": "npm run build && electron-builder --win --mac --linux --config electron-builder.enterprise.json",
     "pretest": "npm rebuild better-sqlite3-multiple-ciphers",
-    "test": "node tests/cross-org-access.test.cjs && node tests/business-logic.test.cjs && node tests/compliance.test.cjs && node tests/calculators.test.cjs && node tests/mfa.test.cjs && node tests/hl7v2.test.cjs && node tests/organOffers.test.cjs && node tests/livingDonors.test.cjs && node tests/postTransplant.test.cjs && node tests/optnExport.test.cjs && node tests/siemForwarder.test.cjs && node tests/passwordHistory.test.cjs",
+    "test": "node tests/cross-org-access.test.cjs && node tests/business-logic.test.cjs && node tests/compliance.test.cjs && node tests/calculators.test.cjs && node tests/mfa.test.cjs && node tests/hl7v2.test.cjs && node tests/hl7Ingest.test.cjs && node tests/organOffers.test.cjs && node tests/livingDonors.test.cjs && node tests/postTransplant.test.cjs && node tests/optnExport.test.cjs && node tests/siemForwarder.test.cjs && node tests/passwordHistory.test.cjs",
     "posttest": "npx @electron/rebuild -f",
     "test:security": "node tests/cross-org-access.test.cjs",
     "test:business": "node tests/business-logic.test.cjs",

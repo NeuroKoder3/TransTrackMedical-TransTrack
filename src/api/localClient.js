@@ -11,10 +11,84 @@ const isElectron = typeof window !== 'undefined' && window.electronAPI;
 const mockClient = {
   auth: {
     login: async () => ({ user: { id: '1', email: 'admin@transtrack.local', role: 'admin', full_name: 'Admin' } }),
+    loginMfa: async () => ({ user: { id: '1', email: 'admin@transtrack.local', role: 'admin', full_name: 'Admin' } }),
     logout: async () => ({}),
     me: async () => ({ id: '1', email: 'admin@transtrack.local', role: 'admin', full_name: 'Admin' }),
     isAuthenticated: async () => true,
     redirectToLogin: () => console.log('Redirect to login'),
+  },
+  mfa: {
+    status: async () => ({ enrolled: false, backup_codes_remaining: 0 }),
+    beginEnrollment: async () => ({ secret_base32: 'JBSWY3DPEHPK3PXP', otpauth_url: 'otpauth://totp/Mock?secret=JBSWY3DPEHPK3PXP', backup_codes: [] }),
+    confirmEnrollment: async () => ({ ok: true, backup_codes: ['1111-2222','3333-4444'] }),
+    verifyChallenge: async () => ({ ok: true, method: 'totp' }),
+    regenerateBackupCodes: async () => ({ backup_codes: ['1111-2222','3333-4444'] }),
+    disable: async () => ({ ok: true }),
+    isRequired: async () => false,
+  },
+  organOffers: {
+    getStatuses: async () => ({}),
+    getDeclineReasons: async () => ({}),
+    create: async (data) => ({ id: '1', ...data, status: 'PENDING' }),
+    get: async () => null,
+    list: async () => [],
+    transition: async (params) => ({ id: params.id, status: params.to_status }),
+    expireDue: async () => ({ expiredCount: 0, expired: [] }),
+    getEvents: async () => [],
+  },
+  postTx: {
+    createEvent: async (data) => ({ id: '1', ...data }),
+    updateEvent: async ({ id, fields }) => ({ id, ...fields }),
+    listEventsByPatient: async () => [],
+    createImmuno: async (data) => ({ id: '1', ...data }),
+    listImmunoByPatient: async () => [],
+    createRejection: async (data) => ({ id: '1', ...data }),
+    listRejectionsByPatient: async () => [],
+    createBiopsy: async (data) => ({ id: '1', ...data }),
+    listBiopsiesByPatient: async () => [],
+    createReadmission: async (data) => ({ id: '1', ...data }),
+    listReadmissionsByPatient: async () => [],
+    getPatientSummary: async () => ({ transplant_events: [], counts: {} }),
+  },
+  livingDonor: {
+    getStatuses: async () => ({}),
+    getMilestones: async () => [6, 12, 24],
+    create: async (data) => ({ id: '1', ...data, status: 'INQUIRY' }),
+    get: async () => null,
+    list: async () => [],
+    transition: async (params) => ({ id: params.id, status: params.to_status }),
+    addEvalStep: async (data) => ({ id: '1', ...data, status: 'PENDING' }),
+    updateEvalStep: async ({ id, ...rest }) => ({ id, ...rest }),
+    listEvals: async () => [],
+    listFollowups: async () => [],
+    updateFollowup: async ({ id, ...rest }) => ({ id, ...rest }),
+    markOverdue: async () => ({ overdueCount: 0 }),
+    summary: async () => null,
+  },
+  hl7: {
+    parse: async () => ({ message_type: null, supported: false, patient: null, observations: [], orders: [], warnings: [] }),
+    buildAck: async () => ({ ack: 'MSH|^~\\&|TT|TT|||...||ACK|...|P|2.5\rMSA|AA|...|' }),
+    supportedEvents: async () => ['A01','A03','A04','A08','R01'],
+    ingest: async () => ({ ok: true, patient: null, labs: { inserted: 0, skipped: 0, ids: [] }, warnings: [] }),
+  },
+  optn: {
+    exportTCR: async () => ({ csv: '', count: 0 }),
+    exportTRR: async () => ({ csv: '', count: 0 }),
+    exportTRF: async () => ({ csv: '', count: 0 }),
+  },
+  adminSecurity: {
+    lockoutReport: async () => ({ locked: [], elevated: [] }),
+    unlockAccount: async () => ({ ok: true }),
+  },
+  calculators: {
+    meld: async () => ({ value: 15, components: {} }),
+    meldNa: async () => ({ value: 18, components: {} }),
+    meld3: async () => ({ value: 17, components: {} }),
+    peld: async () => ({ value: 12, components: {} }),
+    las: async () => ({ value: 35, components: {} }),
+    kdpi: async () => ({ value: 50, components: {} }),
+    epts: async () => ({ value: 40, components: {} }),
+    listFormulas: async () => ['MELD','MELD-Na','MELD-3.0','PELD','LAS','KDPI','EPTS'],
   },
   entities: {},
   functions: {
@@ -265,9 +339,29 @@ const createElectronClient = () => {
   
   return {
     auth: {
+      // Returns either { user, mustChangePassword, mfaEnrollmentRequired }
+      // OR { mfa_required: true, challenge_token } when the account has TOTP
+      // enrolled. Callers must handle both shapes.
       login: async (credentials) => {
         const result = await api.auth.login(credentials);
-        return result.user;
+        if (result?.mfa_required) {
+          return {
+            mfa_required: true,
+            challenge_token: result.challenge_token,
+          };
+        }
+        return {
+          user: result.user,
+          mustChangePassword: !!result.mustChangePassword,
+          mfaEnrollmentRequired: !!result.mfaEnrollmentRequired,
+        };
+      },
+      loginMfa: async ({ challenge_token, code }) => {
+        const result = await api.auth.loginMfa({ challenge_token, code });
+        return {
+          user: result.user,
+          mustChangePassword: !!result.mustChangePassword,
+        };
       },
       logout: async () => {
         await api.auth.logout();
@@ -279,7 +373,6 @@ const createElectronClient = () => {
         return await api.auth.isAuthenticated();
       },
       redirectToLogin: () => {
-        // In Electron, we navigate to the login page
         window.location.hash = '#/login';
       },
       register: async (userData) => {
@@ -288,6 +381,79 @@ const createElectronClient = () => {
       changePassword: async (data) => {
         return await api.auth.changePassword(data);
       },
+    },
+    mfa: {
+      status: () => api.mfa.status(),
+      beginEnrollment: () => api.mfa.beginEnrollment(),
+      confirmEnrollment: (params) => api.mfa.confirmEnrollment(params),
+      verifyChallenge: (params) => api.mfa.verifyChallenge(params),
+      regenerateBackupCodes: () => api.mfa.regenerateBackupCodes(),
+      disable: (params) => api.mfa.disable(params),
+      isRequired: (userId) => api.mfa.isRequired(userId),
+    },
+    organOffers: {
+      getStatuses: () => api.organOffers.getStatuses(),
+      getDeclineReasons: () => api.organOffers.getDeclineReasons(),
+      create: (data) => api.organOffers.create(data),
+      get: (id) => api.organOffers.get(id),
+      list: (filters) => api.organOffers.list(filters),
+      transition: (params) => api.organOffers.transition(params),
+      expireDue: () => api.organOffers.expireDue(),
+      getEvents: (offerId) => api.organOffers.getEvents(offerId),
+    },
+    postTx: {
+      createEvent: (data) => api.postTx.createEvent(data),
+      updateEvent: (params) => api.postTx.updateEvent(params),
+      listEventsByPatient: (patientId) => api.postTx.listEventsByPatient(patientId),
+      createImmuno: (data) => api.postTx.createImmuno(data),
+      listImmunoByPatient: (patientId) => api.postTx.listImmunoByPatient(patientId),
+      createRejection: (data) => api.postTx.createRejection(data),
+      listRejectionsByPatient: (patientId) => api.postTx.listRejectionsByPatient(patientId),
+      createBiopsy: (data) => api.postTx.createBiopsy(data),
+      listBiopsiesByPatient: (patientId) => api.postTx.listBiopsiesByPatient(patientId),
+      createReadmission: (data) => api.postTx.createReadmission(data),
+      listReadmissionsByPatient: (patientId) => api.postTx.listReadmissionsByPatient(patientId),
+      getPatientSummary: (patientId) => api.postTx.getPatientSummary(patientId),
+    },
+    livingDonor: {
+      getStatuses: () => api.livingDonor.getStatuses(),
+      getMilestones: () => api.livingDonor.getMilestones(),
+      create: (data) => api.livingDonor.create(data),
+      get: (id) => api.livingDonor.get(id),
+      list: (filters) => api.livingDonor.list(filters),
+      transition: (params) => api.livingDonor.transition(params),
+      addEvalStep: (data) => api.livingDonor.addEvalStep(data),
+      updateEvalStep: (data) => api.livingDonor.updateEvalStep(data),
+      listEvals: (livingDonorId) => api.livingDonor.listEvals(livingDonorId),
+      listFollowups: (livingDonorId) => api.livingDonor.listFollowups(livingDonorId),
+      updateFollowup: (data) => api.livingDonor.updateFollowup(data),
+      markOverdue: () => api.livingDonor.markOverdue(),
+      summary: (donorId) => api.livingDonor.summary(donorId),
+    },
+    hl7: {
+      parse: (raw) => api.hl7.parse(raw),
+      buildAck: (params) => api.hl7.buildAck(params),
+      supportedEvents: () => api.hl7.supportedEvents(),
+      ingest: (params) => api.hl7.ingest(params),
+    },
+    optn: {
+      exportTCR: (params) => api.optn.exportTCR(params),
+      exportTRR: (params) => api.optn.exportTRR(params),
+      exportTRF: () => api.optn.exportTRF(),
+    },
+    adminSecurity: {
+      lockoutReport: () => api.adminSecurity.lockoutReport(),
+      unlockAccount: (email) => api.adminSecurity.unlockAccount(email),
+    },
+    calculators: {
+      meld: (inputs) => api.calculators.meld(inputs),
+      meldNa: (inputs) => api.calculators.meldNa(inputs),
+      meld3: (inputs) => api.calculators.meld3(inputs),
+      peld: (inputs) => api.calculators.peld(inputs),
+      las: (inputs) => api.calculators.las(inputs),
+      kdpi: (inputs) => api.calculators.kdpi(inputs),
+      epts: (inputs) => api.calculators.epts(inputs),
+      listFormulas: () => api.calculators.listFormulas(),
     },
     entities: new Proxy({}, {
       get: (target, entityName) => {

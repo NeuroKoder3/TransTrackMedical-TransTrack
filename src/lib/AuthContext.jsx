@@ -45,17 +45,28 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // mfaChallenge holds an in-flight TOTP challenge token issued by the backend
+  // when the user is enrolled in MFA. While set, the Login page renders the
+  // 6-digit verification step instead of email/password.
+  const [mfaChallenge, setMfaChallenge] = useState(null);
+
   const login = async (email, password) => {
     try {
       setIsLoadingAuth(true);
       setAuthError(null);
-      
+
       const result = await api.auth.login({ email, password });
-      
-      setUser(result);
+
+      if (result?.mfa_required) {
+        setMfaChallenge({ challenge_token: result.challenge_token, email });
+        setIsLoadingAuth(false);
+        return { mfa_required: true };
+      }
+
+      setUser(result.user);
       setIsAuthenticated(true);
+      setMfaChallenge(null);
       setIsLoadingAuth(false);
-      
       return result;
     } catch (error) {
       setAuthError({
@@ -66,6 +77,28 @@ export const AuthProvider = ({ children }) => {
       throw error;
     }
   };
+
+  const submitMfa = async (code) => {
+    if (!mfaChallenge) throw new Error('No MFA challenge in progress');
+    try {
+      setIsLoadingAuth(true);
+      setAuthError(null);
+      const result = await api.auth.loginMfa({
+        challenge_token: mfaChallenge.challenge_token,
+        code,
+      });
+      setUser(result.user);
+      setIsAuthenticated(true);
+      setMfaChallenge(null);
+      setIsLoadingAuth(false);
+      return result;
+    } catch (error) {
+      setIsLoadingAuth(false);
+      throw error;
+    }
+  };
+
+  const cancelMfa = () => setMfaChallenge(null);
 
   const logout = async (shouldRedirect = true) => {
     try {
@@ -94,7 +127,10 @@ export const AuthProvider = ({ children }) => {
       isLoadingPublicSettings,
       authError,
       appPublicSettings,
+      mfaChallenge,
       login,
+      submitMfa,
+      cancelMfa,
       logout,
       navigateToLogin,
       checkAppState

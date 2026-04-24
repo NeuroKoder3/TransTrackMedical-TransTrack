@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
-import { Activity, Users, FileText, Settings, LogOut, Shield, Heart, Database, AlertTriangle, HardDrive, BarChart3, Brain, ListTodo, ClipboardCheck } from 'lucide-react';
+import { Activity, Users, FileText, Settings, LogOut, Shield, Heart, Database, AlertTriangle, HardDrive, BarChart3, Brain, ListTodo, ClipboardCheck, Stethoscope, Inbox, KeyRound, UserPlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { api } from '@/api/apiClient';
 import NotificationBell from '../notifications/NotificationBell';
@@ -41,10 +41,17 @@ export default function Navbar({ user }) {
   // Add Risk Dashboard for coordinators and above
   if (user?.role === 'admin' || user?.role === 'coordinator' || user?.role === 'physician') {
     navItems.push(
+      { name: 'Organ Offers', page: 'OrganOffers', icon: Heart },
+      { name: 'Post-Tx', page: 'PostTransplant', icon: Stethoscope },
+      { name: 'Living Donors', page: 'LivingDonors', icon: UserPlus },
       { name: 'Risk Intel', page: 'RiskDashboard', icon: AlertTriangle },
       { name: 'Tasks', page: 'TaskCenter', icon: ListTodo },
       { name: 'Predictive', page: 'PredictiveRisk', icon: Brain }
     );
+  }
+
+  if (user?.role === 'admin' || user?.role === 'coordinator') {
+    navItems.push({ name: 'HL7 Inbox', page: 'Hl7Inbox', icon: Inbox });
   }
 
   if (user?.role === 'admin') {
@@ -57,6 +64,11 @@ export default function Navbar({ user }) {
       { name: 'Recovery', page: 'DisasterRecovery', icon: HardDrive },
       { name: 'Settings', page: 'Settings', icon: Settings }
     );
+  }
+
+  // Every authenticated user can manage their own MFA / password.
+  if (user) {
+    navItems.push({ name: 'Account Security', page: 'AccountSecurity', icon: KeyRound });
   }
   
   // Regulators get compliance access

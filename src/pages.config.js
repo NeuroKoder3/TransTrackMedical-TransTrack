@@ -14,6 +14,11 @@ import OutcomesDashboard from './pages/OutcomesDashboard';
 import PredictiveRisk from './pages/PredictiveRisk';
 import TaskCenter from './pages/TaskCenter';
 import CMSReadiness from './pages/CMSReadiness';
+import AccountSecurity from './pages/AccountSecurity';
+import OrganOffers from './pages/OrganOffers';
+import PostTransplant from './pages/PostTransplant';
+import LivingDonors from './pages/LivingDonors';
+import Hl7Inbox from './pages/Hl7Inbox';
 import __Layout from './Layout.jsx';
 
 
@@ -34,6 +39,11 @@ export const PAGES = {
     "PredictiveRisk": PredictiveRisk,
     "TaskCenter": TaskCenter,
     "CMSReadiness": CMSReadiness,
+    "AccountSecurity": AccountSecurity,
+    "OrganOffers": OrganOffers,
+    "PostTransplant": PostTransplant,
+    "LivingDonors": LivingDonors,
+    "Hl7Inbox": Hl7Inbox,
 }
 
 export const pagesConfig = {

@@ -99,11 +99,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     test: (id) => ipcRenderer.invoke('siem:test', id),
   },
 
-  // HL7 v2 parsing
+  // HL7 v2 parsing + ingest into internal entities
   hl7: {
     parse: (raw) => ipcRenderer.invoke('hl7:parse', raw),
     buildAck: (params) => ipcRenderer.invoke('hl7:buildAck', params),
     supportedEvents: () => ipcRenderer.invoke('hl7:supportedEvents'),
+    ingest: (params) => ipcRenderer.invoke('hl7:ingest', params),
   },
 
   // OPTN-shaped CSV exports (NOT a submission)
