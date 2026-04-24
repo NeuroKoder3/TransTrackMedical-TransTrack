@@ -22,10 +22,14 @@ const DEFAULT_MAX_AGE_DAYS = 90;
  */
 function hasReusedPassword(userId, newPasswordPlain, depth = DEFAULT_HISTORY_DEPTH) {
   if (!userId || !newPasswordPlain) return false;
+  // ROWID is used as a strict monotonic tiebreaker because SQLite's
+  // datetime('now') only has 1-second resolution and back-to-back inserts
+  // can collide on changed_at (which would otherwise make the LIMIT N
+  // window non-deterministic).
   const rows = getDatabase().prepare(`
     SELECT password_hash FROM user_password_history
     WHERE user_id = ?
-    ORDER BY changed_at DESC
+    ORDER BY changed_at DESC, rowid DESC
     LIMIT ?
   `).all(userId, depth);
   for (const r of rows) {
