@@ -76,7 +76,7 @@
     "ci:security": "npm ci && npm audit --production --audit-level=moderate",
     "typecheck": "tsc -p ./jsconfig.json",
     "preview": "vite preview",
-    "postinstall": "electron-builder install-app-deps"
+    "postinstall": "patch-package && electron-builder install-app-deps"
   },
   "dependencies": {
     "@radix-ui/react-accordion": "1.2.12",
@@ -150,6 +150,7 @@
     "eslint-plugin-unused-imports": "4.4.1",
     "globals": "17.5.0",
     "jsdom": "^29.0.1",
+    "patch-package": "^8.0.1",
     "postcss": "8.5.10",
     "tailwindcss": "3.4.19",
     "typescript": "5.9.3",
