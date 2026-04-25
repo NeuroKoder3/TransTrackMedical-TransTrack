@@ -76,3 +76,8 @@ userData/
 
 .commit-msg.txt
 
+# Private sale package — DO NOT COMMIT (contains pricing, buyer list, deal structure)
+for-sale/
+gitleaks-report.json
+phi-check.txt
+
