@@ -1,0 +1,79 @@
+version: "3.9"
+
+# -----------------------------------------------------------------------------
+# TransTrack development & integration-test stack.
+#
+# Services
+#   postgres : PostgreSQL 16 with the transtrack database pre-created.
+#   api      : The TransTrack API + MLLP/TLS listener.
+#   mirth    : NextGen Mirth Connect interface engine (community).
+#              Used to verify HL7 v2 connectivity end-to-end.  Channels in
+#              ./mirth/channels/ are auto-imported on first start.
+#
+# Quick start
+#   $ docker compose up -d postgres
+#   $ npm --prefix ../server install
+#   $ npm --prefix ../server run migrate
+#   $ docker compose up -d api mirth
+#   $ npm --prefix ../server run test:integration
+# -----------------------------------------------------------------------------
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: transtrack-postgres
+    environment:
+      POSTGRES_USER: transtrack
+      POSTGRES_PASSWORD: transtrack
+      POSTGRES_DB: transtrack
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U transtrack -d transtrack"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build:
+      context: ..
+      dockerfile: server/Dockerfile
+    container_name: transtrack-api
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgres://transtrack:transtrack@postgres:5432/transtrack
+      JWT_SECRET: dev-jwt-secret-change-me-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      LOG_LEVEL: info
+      HL7_MLLP_ENABLED: "true"
+      HL7_MLLP_PORT: "2575"
+      HL7_MLLP_TLS_CERT_FILE: ""
+      HL7_MLLP_TLS_KEY_FILE: ""
+      MFA_REQUIRED_FOR_ROLES: ""
+      FHIR_BASE_URL: http://localhost:8080/fhir
+    ports:
+      - "8080:8080"
+      - "2575:2575"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  mirth:
+    image: nextgenhealthcare/connect:4.5
+    container_name: transtrack-mirth
+    environment:
+      DATABASE: derby
+    ports:
+      - "8443:8443"   # Mirth Connect Administrator (HTTPS)
+      - "9876:6661"   # Mirth's outbound MLLP (when used as a relay)
+    volumes:
+      - ./mirth/channels:/opt/mirth-connect/appdata/import
+      - ./mirth/inbox:/opt/mirth-connect/inbox
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - api
+
+volumes:
+  pgdata:

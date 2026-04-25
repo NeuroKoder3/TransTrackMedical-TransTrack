@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  TransTrack file-drop channel.
+  Watches /opt/mirth-connect/inbox for *.hl7 files, reads them, and forwards
+  the contents over MLLP to the TransTrack API on host.docker.internal:2575.
+-->
+<channel version="4.5.0">
+  <id>transtrack-file-in</id>
+  <nextMetaDataId>2</nextMetaDataId>
+  <name>TransTrack File In</name>
+  <description>Watch a folder for HL7 files; forward to TransTrack via MLLP.</description>
+  <revision>1</revision>
+  <sourceConnector version="4.5.0">
+    <metaDataId>0</metaDataId>
+    <name>sourceConnector</name>
+    <properties class="com.mirth.connect.connectors.file.FileReceiverProperties" version="4.5.0">
+      <pluginProperties/>
+      <pollConnectorProperties>
+        <pollingType>INTERVAL</pollingType>
+        <pollingFrequency>2000</pollingFrequency>
+      </pollConnectorProperties>
+      <scheme>FILE</scheme>
+      <host>/opt/mirth-connect/inbox</host>
+      <fileFilter>*.hl7</fileFilter>
+      <directoryRecursion>false</directoryRecursion>
+      <ignoreDot>true</ignoreDot>
+      <anonymous>true</anonymous>
+      <moveToDirectory>/opt/mirth-connect/inbox/processed</moveToDirectory>
+      <moveToFileName/>
+      <errorMoveToDirectory>/opt/mirth-connect/inbox/error</errorMoveToDirectory>
+      <errorMoveToFileName/>
+      <checkFileAge>true</checkFileAge>
+      <fileAge>500</fileAge>
+      <fileSizeMinimum>0</fileSizeMinimum>
+      <fileSizeMaximum/>
+      <ignoreFileSizeMaximum>true</ignoreFileSizeMaximum>
+      <sortBy>date</sortBy>
+      <binary>false</binary>
+      <charsetEncoding>UTF-8</charsetEncoding>
+      <processBatch>false</processBatch>
+      <batchProperties version="4.5.0"><batchType>Disabled</batchType></batchProperties>
+    </properties>
+    <transformer version="4.5.0"><elements/><inboundDataType>HL7V2</inboundDataType><outboundDataType>HL7V2</outboundDataType></transformer>
+    <enabled>true</enabled>
+    <waitForPrevious>true</waitForPrevious>
+  </sourceConnector>
+  <destinationConnectors>
+    <connector version="4.5.0">
+      <metaDataId>1</metaDataId>
+      <name>TransTrack API</name>
+      <properties class="com.mirth.connect.connectors.tcp.TcpDispatcherProperties" version="4.5.0">
+        <pluginProperties/>
+        <destinationConnectorProperties version="4.5.0"><queueEnabled>true</queueEnabled></destinationConnectorProperties>
+        <transmissionModeProperties class="com.mirth.connect.plugins.mllpmode.MLLPModeProperties">
+          <pluginPointName>MLLP</pluginPointName>
+          <startOfMessageBytes>0B</startOfMessageBytes>
+          <endOfMessageBytes>1C0D</endOfMessageBytes>
+          <useMLLPv2>false</useMLLPv2>
+        </transmissionModeProperties>
+        <remoteAddress>host.docker.internal</remoteAddress>
+        <remotePort>2575</remotePort>
+        <responseTimeout>30000</responseTimeout>
+        <template>${message.encodedData}</template>
+      </properties>
+      <transformer version="4.5.0"><elements/><inboundDataType>HL7V2</inboundDataType><outboundDataType>HL7V2</outboundDataType></transformer>
+      <enabled>true</enabled>
+      <waitForPrevious>true</waitForPrevious>
+    </connector>
+  </destinationConnectors>
+  <enabled>true</enabled>
+  <preprocessingScript>return message;</preprocessingScript>
+  <postprocessingScript>return;</postprocessingScript>
+  <deployScript>return;</deployScript>
+  <undeployScript>return;</undeployScript>
+</channel>

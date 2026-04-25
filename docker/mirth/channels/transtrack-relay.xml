@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  TransTrack relay channel for Mirth Connect 4.x.
+
+  Source : MLLP listener on 0.0.0.0:6661 (inside the container)
+  Filter : pass-through (no transformation)
+  Dest   : MLLP sender to host.docker.internal:2575 (the TransTrack API).
+
+  This channel proves that TransTrack speaks the same MLLP wire format
+  used by Epic, Cerner, Meditech and OPO interface engines.  Drop ADT/ORU
+  files via the File Reader in transtrack-file-in.xml or use a TCP client.
+-->
+<channel version="4.5.0">
+  <id>transtrack-relay</id>
+  <nextMetaDataId>3</nextMetaDataId>
+  <name>TransTrack Relay (MLLP→MLLP)</name>
+  <description>Receive HL7 v2 over MLLP and forward to the TransTrack API.</description>
+  <revision>1</revision>
+  <sourceConnector version="4.5.0">
+    <metaDataId>0</metaDataId>
+    <name>sourceConnector</name>
+    <properties class="com.mirth.connect.connectors.tcp.TcpReceiverProperties" version="4.5.0">
+      <pluginProperties/>
+      <listenerConnectorProperties version="4.5.0">
+        <host>0.0.0.0</host>
+        <port>6661</port>
+      </listenerConnectorProperties>
+      <transmissionModeProperties class="com.mirth.connect.plugins.mllpmode.MLLPModeProperties">
+        <pluginPointName>MLLP</pluginPointName>
+        <startOfMessageBytes>0B</startOfMessageBytes>
+        <endOfMessageBytes>1C0D</endOfMessageBytes>
+        <useMLLPv2>false</useMLLPv2>
+      </transmissionModeProperties>
+      <serverMode>true</serverMode>
+      <responseConnectorProperties version="4.5.0">
+        <responseVariable>Auto-generate (After source transformer)</responseVariable>
+      </responseConnectorProperties>
+    </properties>
+    <transformer version="4.5.0"><elements/><inboundDataType>HL7V2</inboundDataType><outboundDataType>HL7V2</outboundDataType></transformer>
+    <enabled>true</enabled>
+    <waitForPrevious>true</waitForPrevious>
+  </sourceConnector>
+  <destinationConnectors>
+    <connector version="4.5.0">
+      <metaDataId>1</metaDataId>
+      <name>TransTrack API</name>
+      <properties class="com.mirth.connect.connectors.tcp.TcpDispatcherProperties" version="4.5.0">
+        <pluginProperties/>
+        <destinationConnectorProperties version="4.5.0">
+          <queueEnabled>true</queueEnabled>
+          <retryIntervalMillis>10000</retryIntervalMillis>
+        </destinationConnectorProperties>
+        <transmissionModeProperties class="com.mirth.connect.plugins.mllpmode.MLLPModeProperties">
+          <pluginPointName>MLLP</pluginPointName>
+          <startOfMessageBytes>0B</startOfMessageBytes>
+          <endOfMessageBytes>1C0D</endOfMessageBytes>
+          <useMLLPv2>false</useMLLPv2>
+        </transmissionModeProperties>
+        <remoteAddress>host.docker.internal</remoteAddress>
+        <remotePort>2575</remotePort>
+        <responseTimeout>30000</responseTimeout>
+        <template>${message.encodedData}</template>
+      </properties>
+      <transformer version="4.5.0"><elements/><inboundDataType>HL7V2</inboundDataType><outboundDataType>HL7V2</outboundDataType></transformer>
+      <enabled>true</enabled>
+      <waitForPrevious>true</waitForPrevious>
+    </connector>
+  </destinationConnectors>
+  <enabled>true</enabled>
+  <preprocessingScript>return message;</preprocessingScript>
+  <postprocessingScript>return;</postprocessingScript>
+  <deployScript>return;</deployScript>
+  <undeployScript>return;</undeployScript>
+</channel>
