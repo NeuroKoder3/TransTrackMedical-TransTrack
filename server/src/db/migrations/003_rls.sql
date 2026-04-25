@@ -16,12 +16,14 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql STABLE;
 
--- Apply RLS to every tenant-scoped table.
+-- ---------------------------------------------------------------------------
+-- Tables that carry their own org_id column: scope by direct column match.
+-- ---------------------------------------------------------------------------
 DO $$
 DECLARE
     tbl TEXT;
     tables TEXT[] := ARRAY[
-        'users','password_history','sessions',
+        'users','sessions',
         'patients','donor_organs','organ_offers','lab_results',
         'post_transplant_followups','living_donors',
         'audit_logs','hl7_messages','fhir_resources'
@@ -39,9 +41,75 @@ BEGIN
 END
 $$;
 
--- organizations table: readable when org_id matches OR caller is unscoped
+-- ---------------------------------------------------------------------------
+-- Tables keyed only by user_id: scope by joining through users.org_id.
+-- ---------------------------------------------------------------------------
+ALTER TABLE password_history ENABLE ROW LEVEL SECURITY;
+ALTER TABLE password_history FORCE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation_password_history ON password_history
+    USING (
+        EXISTS (
+            SELECT 1 FROM users u
+            WHERE u.id = password_history.user_id
+              AND u.org_id = app_current_org_id()
+        )
+    )
+    WITH CHECK (
+        EXISTS (
+            SELECT 1 FROM users u
+            WHERE u.id = password_history.user_id
+              AND u.org_id = app_current_org_id()
+        )
+    );
+
+ALTER TABLE mfa_enrollments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE mfa_enrollments FORCE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation_mfa_enrollments ON mfa_enrollments
+    USING (
+        EXISTS (
+            SELECT 1 FROM users u
+            WHERE u.id = mfa_enrollments.user_id
+              AND u.org_id = app_current_org_id()
+        )
+    )
+    WITH CHECK (
+        EXISTS (
+            SELECT 1 FROM users u
+            WHERE u.id = mfa_enrollments.user_id
+              AND u.org_id = app_current_org_id()
+        )
+    );
+
+-- mfa_challenges is short-lived and used during login (pre-org-context).
+-- It is keyed by user_id and scoped through the same join.
+ALTER TABLE mfa_challenges ENABLE ROW LEVEL SECURITY;
+ALTER TABLE mfa_challenges FORCE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation_mfa_challenges ON mfa_challenges
+    USING (
+        app_current_org_id() IS NULL
+        OR EXISTS (
+            SELECT 1 FROM users u
+            WHERE u.id = mfa_challenges.user_id
+              AND u.org_id = app_current_org_id()
+        )
+    )
+    WITH CHECK (
+        app_current_org_id() IS NULL
+        OR EXISTS (
+            SELECT 1 FROM users u
+            WHERE u.id = mfa_challenges.user_id
+              AND u.org_id = app_current_org_id()
+        )
+    );
+
+-- login_attempts is written before any session exists, so it is intentionally
+-- not RLS-protected. Access is restricted at the API layer.
+
+-- ---------------------------------------------------------------------------
+-- organizations: readable when org_id matches OR caller is unscoped
 -- (e.g. login, account provisioning). Modification is admin-only and
 -- enforced in the application layer.
+-- ---------------------------------------------------------------------------
 ALTER TABLE organizations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE organizations FORCE ROW LEVEL SECURITY;
 CREATE POLICY org_self_read ON organizations

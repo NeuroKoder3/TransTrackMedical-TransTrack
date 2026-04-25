@@ -48,6 +48,7 @@ services:
       LOG_LEVEL: info
       HL7_MLLP_ENABLED: "true"
       HL7_MLLP_PORT: "2575"
+      HL7_DEFAULT_ORG_ID: ${HL7_DEFAULT_ORG_ID}
       HL7_MLLP_TLS_CERT_FILE: ""
       HL7_MLLP_TLS_KEY_FILE: ""
       MFA_REQUIRED_FOR_ROLES: ""

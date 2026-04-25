@@ -14,7 +14,7 @@ async function record(client, ctx, event) {
   const prev = await client.query(
     `SELECT record_hash FROM audit_logs
      WHERE org_id = $1
-     ORDER BY created_at DESC
+     ORDER BY created_at DESC, id DESC
      LIMIT 1`,
     [ctx.orgId]
   );
@@ -62,7 +62,7 @@ async function verifyChain(client, orgId) {
             ip_address, user_agent, org_id
      FROM audit_logs
      WHERE org_id = $1
-     ORDER BY created_at ASC`,
+     ORDER BY created_at ASC, id ASC`,
     [orgId]
   );
   let prev = 'GENESIS';
