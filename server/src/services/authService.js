@@ -287,6 +287,30 @@ async function issueSessionForFederatedUser(client, config, user, ctx) {
   };
 }
 
+/**
+ * SMART OAuth helper: authenticate a username+password and return the
+ * resolved user identity, without issuing a TransTrack session JWT.
+ * The caller (SMART /authorize) is responsible for issuing the SMART
+ * authorization code and access token instead.
+ *
+ * Returns:
+ *   { kind: 'ok', userId, orgId, role }
+ *   { kind: 'mfa_required', userId, orgId, role, challengeId? }
+ *   { kind: 'denied', reason }
+ */
+async function authenticatePassword({ orgHint, email, password: plaintext }) {
+  const { withTransaction } = require('../db/pool');
+  return withTransaction({}, async (client) => {
+    const user = await findUser(client, { orgId: orgHint, email });
+    if (!user || user.auth_provider !== 'local' || !user.password_hash) {
+      return { kind: 'denied', reason: 'unknown_user' };
+    }
+    const ok = await password.verify(user.password_hash, plaintext);
+    if (!ok) return { kind: 'denied', reason: 'bad_password' };
+    return { kind: 'ok', userId: user.id, orgId: user.org_id, role: user.role };
+  });
+}
+
 module.exports = {
   passwordLogin,
   consumeMfaChallenge,
@@ -294,4 +318,5 @@ module.exports = {
   revoke,
   findOrProvisionFederated,
   issueSessionForFederatedUser,
+  authenticatePassword,
 };
