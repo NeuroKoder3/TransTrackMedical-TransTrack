@@ -214,6 +214,91 @@ function sendMllp(message) {
         c2.release();
     }
 
+    step('SMART: discovery (.well-known/smart-configuration)');
+    const smartCfg = await api('GET', '/.well-known/smart-configuration');
+    if (!smartCfg.token_endpoint || !smartCfg.authorization_endpoint) {
+        throw new Error('SMART discovery missing endpoints');
+    }
+    ok(`token_endpoint=${smartCfg.token_endpoint}`);
+    ok(`scopes_supported=${smartCfg.scopes_supported.length}`);
+
+    step('SMART: register a confidential client + client_credentials grant');
+    const reg = await api('POST', '/oauth2/register', {
+        token,
+        body: {
+            client_type: 'confidential',
+            client_name: 'Smoke Backend',
+            scope: 'system/Patient.rs system/Observation.rs',
+            grant_types: ['client_credentials'],
+        },
+    });
+    ok(`registered client_id=${reg.client_id}`);
+    const tokRes = await fetch(`${API}/oauth2/token`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+            grant_type: 'client_credentials',
+            client_id: reg.client_id,
+            client_secret: reg.client_secret,
+            scope: 'system/Patient.rs',
+        }),
+    }).then(r => r.json());
+    if (!tokRes.access_token) throw new Error('client_credentials failed: ' + JSON.stringify(tokRes));
+    ok(`access_token issued (expires_in=${tokRes.expires_in})`);
+
+    step('SMART: use access token to read FHIR Patient');
+    const smartList = await api('GET', '/fhir/Patient', { token: tokRes.access_token });
+    ok(`SMART read returned ${smartList.entry?.length || 0} Patient(s)`);
+
+    step('CDS Hooks: discovery');
+    const cds = await api('GET', '/cds-services');
+    if (!Array.isArray(cds.services) || cds.services.length === 0) {
+        throw new Error('CDS Hooks discovery returned no services');
+    }
+    ok(`services=${cds.services.map(s => s.id).join(', ')}`);
+
+    step('CDS Hooks: invoke patient-view');
+    const cdsInvoke = await api('POST', `/cds-services/${cds.services[0].id}`, {
+        token,
+        body: {
+            hook: cds.services[0].hook,
+            hookInstance: 'smoke-' + Date.now(),
+            context: { patientId: restPatient.id },
+            prefetch: { patient: { resourceType: 'Patient', id: restPatient.id, identifier: [{ value: restPatient.mrn }] } },
+        },
+    });
+    ok(`cards returned=${cdsInvoke.cards?.length ?? 0}`);
+
+    step('HL7 vendor profiles: seed defaults');
+    const seed = await api('POST', '/hl7/vendor-profiles/seed-defaults', { token });
+    ok(`seeded=${seed.seeded} of ${seed.total}`);
+
+    step('HL7: supported message types');
+    const types = await api('GET', '/hl7/supported-types', { token });
+    ok(`supported message-type count=${types.supported.length}`);
+
+    step('FHIR: kickoff Patient $export and poll');
+    const kickoff = await fetch(`${API}/fhir/Patient/$export`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, accept: 'application/fhir+json' },
+    });
+    if (kickoff.status !== 202) throw new Error(`$export expected 202, got ${kickoff.status}`);
+    const cl = kickoff.headers.get('content-location');
+    if (!cl) throw new Error('$export missing Content-Location');
+    ok(`status URL=${cl}`);
+    let manifest = null;
+    for (let i = 0; i < 20; i++) {
+        const pollRel = cl.replace(/^https?:\/\/[^/]+/, '');
+        const r = await fetch(`${API}${pollRel}`, { headers: { authorization: `Bearer ${token}` } });
+        if (r.status === 200) {
+            manifest = await r.json();
+            break;
+        }
+        await new Promise(r => setTimeout(r, 500));
+    }
+    if (!manifest) throw new Error('$export did not complete');
+    ok(`manifest output files=${manifest.output.length}`);
+
     step('REST: verify audit hash chain');
     const verify = await api('GET', '/audit/verify', { token });
     ok(`audit verify: ok=${verify.ok} entries=${verify.checked ?? verify.count ?? '?'}`);

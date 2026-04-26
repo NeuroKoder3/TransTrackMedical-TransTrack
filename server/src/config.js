@@ -67,6 +67,9 @@ const schema = z.object({
   SIEM_ENABLED: z.coerce.boolean().default(false),
   SIEM_ENDPOINT: z.string().optional().default(''),
   SIEM_TOKEN: z.string().optional().default(''),
+
+  SUBSCRIPTION_DISPATCH_MS: z.coerce.number().int().positive().default(5000),
+  SMART_DEFAULT_ACCESS_TTL_SECONDS: z.coerce.number().int().positive().default(3600),
 });
 
 function load() {

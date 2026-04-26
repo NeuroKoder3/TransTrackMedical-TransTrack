@@ -19,6 +19,7 @@ const cors = require('@fastify/cors');
 const helmet = require('@fastify/helmet');
 const sensible = require('@fastify/sensible');
 const rateLimit = require('@fastify/rate-limit');
+const formbody = require('@fastify/formbody');
 
 const { load } = require('./config');
 const pool = require('./db/pool');
@@ -58,6 +59,7 @@ async function build() {
     contentSecurityPolicy: false, // SPA-served separately; FHIR clients break with strict CSP
   });
   await app.register(sensible);
+  await app.register(formbody);
   await app.register(rateLimit, {
     max: 600,
     timeWindow: '1 minute',
@@ -105,6 +107,8 @@ async function build() {
   app.register(require('./routes/audit'));
   app.register(require('./routes/hl7'));
   app.register(require('./routes/fhir'), { config });
+  app.register(require('./routes/smart'), { config });
+  app.register(require('./routes/cds'));
 
   app.addHook('onClose', async () => {
     await pool.shutdown();
@@ -117,11 +121,13 @@ async function start() {
   const { app, config } = await build();
   await app.listen({ port: config.HTTP_PORT, host: config.HTTP_HOST });
   hl7Server.start({ config, logger: app.log.child({ component: 'mllp' }) });
+  // Subscription delivery dispatcher
+  const subs = require('./fhir/subscriptions');
+  subs.startDispatcher(config.SUBSCRIPTION_DISPATCH_MS || 5000);
 }
 
 if (require.main === module) {
   start().catch((err) => {
-    // eslint-disable-next-line no-console
     console.error('fatal startup error', err);
     process.exit(1);
   });
