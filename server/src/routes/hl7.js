@@ -4,7 +4,9 @@ const { z } = require('zod');
 const { withTransaction } = require('../db/pool');
 const { requireRole } = require('../middleware/auth');
 const ingestMod = require('../hl7/ingest');
-const { parseMessage, buildAck } = require('../../../electron/services/hl7v2.cjs');
+const { parseMessage, buildAck } = require('../hl7/messageParser');
+const messageTypes = require('../hl7/messageTypes');
+const vendorProfileService = require('../services/vendorProfileService');
 
 module.exports = async function hl7Routes(app) {
   app.get('/hl7/messages',
@@ -51,7 +53,11 @@ module.exports = async function hl7Routes(app) {
     { preHandler: requireRole('admin', 'coordinator', 'physician') },
     async (req) => {
       const body = z.object({ message: z.string().min(8) }).parse(req.body);
-      const parsed = parseMessage(body.message);
+      let parsed = parseMessage(body.message);
+      try {
+        const profile = await vendorProfileService.findFor(req.auth, parsed.sending_app, parsed.sending_facility);
+        if (profile) parsed = parseMessage(body.message, profile);
+      } catch (_e) { /* ignore */ }
       const result = await ingestMod.ingest({
         rawMessage: body.message,
         parsed,
@@ -62,4 +68,45 @@ module.exports = async function hl7Routes(app) {
       const ack = buildAck(parsed, result.ackCode, result.ackText);
       return { ...result, parsed, ack };
     });
+
+  // Discovery: which message types do we currently accept?
+  app.get('/hl7/supported-types', async () => ({
+    supported: messageTypes.listSupported(),
+  }));
+
+  // Vendor profile management
+  app.get('/hl7/vendor-profiles',
+    { preHandler: requireRole('admin') },
+    async (req) => vendorProfileService.list(req.auth));
+
+  app.post('/hl7/vendor-profiles',
+    { preHandler: requireRole('admin') },
+    async (req) => {
+      const body = z.object({
+        vendor_name: z.string().min(1),
+        sending_app_pattern: z.string().min(1),
+        mrn_authority: z.string().optional(),
+        config: z.record(z.any()).optional(),
+        is_active: z.boolean().optional(),
+      }).parse(req.body);
+      return vendorProfileService.create(req.auth, body);
+    });
+
+  app.put('/hl7/vendor-profiles/:id',
+    { preHandler: requireRole('admin') },
+    async (req) => {
+      const id = z.string().uuid().parse(req.params.id);
+      return vendorProfileService.update(req.auth, id, req.body || {});
+    });
+
+  app.delete('/hl7/vendor-profiles/:id',
+    { preHandler: requireRole('admin') },
+    async (req) => {
+      const id = z.string().uuid().parse(req.params.id);
+      return vendorProfileService.remove(req.auth, id);
+    });
+
+  app.post('/hl7/vendor-profiles/seed-defaults',
+    { preHandler: requireRole('admin') },
+    async (req) => vendorProfileService.seedDefaults(req.auth));
 };

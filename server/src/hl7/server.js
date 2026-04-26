@@ -19,7 +19,8 @@ const fs = require('fs');
 const net = require('net');
 const tls = require('tls');
 const { MllpFramer, frame } = require('./mllp');
-const { parseMessage, buildAck } = require('../../../electron/services/hl7v2.cjs');
+const { parseMessage, buildAck } = require('./messageParser');
+const vendorProfileService = require('../services/vendorProfileService');
 const ingestMod = require('./ingest');
 
 function start({ config, logger }) {
@@ -57,6 +58,7 @@ function start({ config, logger }) {
     socket.on('data', async (chunk) => {
       const messages = framer.push(chunk);
       for (const raw of messages) {
+        // First pass: parse without vendor profile to extract sending_app.
         let parsed;
         try {
           parsed = parseMessage(raw);
@@ -74,6 +76,14 @@ function start({ config, logger }) {
           continue;
         }
         const ctx = { orgId, userEmail: 'hl7-mllp@transtrack.system', role: 'system' };
+        // Second pass: re-parse with the matching vendor profile so Z-segments
+        // and quirks are interpreted in the vendor's namespace.
+        try {
+          const profile = await vendorProfileService.findFor(ctx, parsed.sending_app, parsed.sending_facility);
+          if (profile) parsed = parseMessage(raw, profile);
+        } catch (e) {
+          logger.warn({ err: e.message }, 'mllp vendor-profile lookup failed; using defaults');
+        }
         try {
           const result = await ingestMod.ingest({
             rawMessage: raw,

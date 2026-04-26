@@ -29,7 +29,6 @@ class MllpFramer {
     this.buffer = Buffer.concat([this.buffer, chunk]);
     const messages = [];
     let i = 0;
-    // eslint-disable-next-line no-constant-condition
     while (true) {
       const sb = this.buffer.indexOf(SB, i);
       if (sb < 0) {
