@@ -109,6 +109,7 @@ async function build() {
   app.register(require('./routes/fhir'), { config });
   app.register(require('./routes/smart'), { config });
   app.register(require('./routes/cds'));
+  app.register(require('./routes/integrations'), { config });
 
   app.addHook('onClose', async () => {
     await pool.shutdown();

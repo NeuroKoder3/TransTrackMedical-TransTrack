@@ -70,6 +70,17 @@ const schema = z.object({
 
   SUBSCRIPTION_DISPATCH_MS: z.coerce.number().int().positive().default(5000),
   SMART_DEFAULT_ACCESS_TTL_SECONDS: z.coerce.number().int().positive().default(3600),
+
+  // Epic on FHIR integration (optional). When EPIC_SANDBOX_CLIENT_ID and
+  // EPIC_PRIVATE_KEY_FILE are set, /integrations/epic/import accepts the
+  // server-fetch mode (server pulls patient data from Epic directly).
+  EPIC_SANDBOX_CLIENT_ID: z.string().optional().default(''),
+  EPIC_PRIVATE_KEY_FILE: z.string().optional().default(''),
+  EPIC_TOKEN_URL: z.string().optional().default(''),
+  EPIC_FHIR_BASE: z.string().optional().default(''),
+  EPIC_KID: z.string().optional().default('transtrack-epic-1'),
+  EPIC_SCOPE: z.string().optional().default(''),
+  EPIC_DEFAULT_PATIENT_ID: z.string().optional().default(''),
 });
 
 function load() {

@@ -24,6 +24,8 @@ const errors = {
     new HttpError(429, 'rate_limited', msg),
   internal: (msg = 'Internal error') =>
     new HttpError(500, 'internal_error', msg),
+  badGateway: (msg = 'Upstream service failed', code = 'bad_gateway') =>
+    new HttpError(502, code, msg),
 };
 
 module.exports = { HttpError, errors };
