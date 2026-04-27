@@ -299,6 +299,59 @@ function sendMllp(message) {
     if (!manifest) throw new Error('$export did not complete');
     ok(`manifest output files=${manifest.output.length}`);
 
+    step('Epic on FHIR round-trip (gated by EPIC_SANDBOX_CLIENT_ID)');
+    if (process.env.EPIC_SANDBOX_CLIENT_ID) {
+        const epicClientId = process.env.EPIC_SANDBOX_CLIENT_ID;
+        const epicPatientId = process.env.EPIC_PATIENT_ID || 'erXuFYUfucBZaryVksYEcMg3';
+        const epicKeyFile = process.env.EPIC_PRIVATE_KEY_FILE
+            || path.join(__dirname, '..', 'epic-keys', 'transtrack-epic-private.pem');
+        if (!fs.existsSync(epicKeyFile)) {
+            throw new Error(`Epic key file not found: ${epicKeyFile}`);
+        }
+        const epic = require('../server/src/integrations/epic');
+        const epicClient = epic.createEpicClientFromKeyFile({
+            clientId: epicClientId,
+            privateKeyFile: epicKeyFile,
+            tokenUrl: process.env.EPIC_TOKEN_URL || undefined,
+            fhirBase: process.env.EPIC_FHIR_BASE || undefined,
+            kid: process.env.EPIC_KID || undefined,
+            scope: process.env.EPIC_SCOPE || undefined,
+        });
+        ok(`Epic client built (clientId=${epicClientId.slice(0, 8)}...)`);
+
+        const bundle = await epicClient.fetchPatientBundle(epicPatientId);
+        ok(`Epic FHIR pull: scope="${bundle.scopeGranted || '(none)'}"`);
+        ok(`  Patient: ${bundle.patient?.name?.[0]?.family}, `
+            + `${bundle.patient?.name?.[0]?.given?.join(' ')} `
+            + `(DOB ${bundle.patient?.birthDate})`);
+        ok(`  ${bundle.observations.length} lab observations, `
+            + `${bundle.conditions.length} problems, `
+            + `${bundle.medicationRequests.length} med requests, `
+            + `${bundle.allergies.length} allergies`);
+
+        const importResp = await api('POST', '/integrations/epic/import', {
+            token,
+            body: { bundle },
+        });
+        if (!importResp?.patient?.id) {
+            throw new Error('Epic import did not return a patient: ' + JSON.stringify(importResp));
+        }
+        ok(`TransTrack patient ${importResp.created ? 'created' : 'updated'}: `
+            + `${importResp.patient.last_name}, ${importResp.patient.first_name} `
+            + `(id=${importResp.patient.id} mrn=${importResp.patient.mrn})`);
+        ok(`  stored: obs=${importResp.stored.observations} cond=${importResp.stored.conditions} `
+            + `med=${importResp.stored.medicationRequests} alg=${importResp.stored.allergies}`);
+
+        // Re-pull through TransTrack's FHIR API to confirm the imported Patient is queryable.
+        const tsList = await api('GET',
+            `/fhir/Patient?identifier=${encodeURIComponent(importResp.patient.mrn)}`,
+            { token });
+        ok(`TransTrack FHIR Patient search returned ${tsList.entry?.length || 0} match(es) `
+            + `(expect >= 1 for the just-imported MRN)`);
+    } else {
+        ok('SKIPPED (set EPIC_SANDBOX_CLIENT_ID + epic-keys/transtrack-epic-private.pem to enable)');
+    }
+
     step('REST: verify audit hash chain');
     const verify = await api('GET', '/audit/verify', { token });
     ok(`audit verify: ok=${verify.ok} entries=${verify.checked ?? verify.count ?? '?'}`);
