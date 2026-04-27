@@ -158,6 +158,18 @@ class RemoteClient {
     verifyChain: async () => this._fetch('/audit/verify'),
   };
 
+  // --- Integrations (Epic on FHIR, etc.) ---
+  integrations = {
+    epic: {
+      status: async () => this._fetch('/integrations/epic/status'),
+      import: async ({ epicPatientId, bundle } = {}) =>
+        this._fetch('/integrations/epic/import', {
+          method: 'POST',
+          body: { epicPatientId, bundle },
+        }),
+    },
+  };
+
   // --- Calculators (server-side authoritative) ---
   calculators = {
     listFormulas: async () => (await this._fetch('/calculators')).formulas,

@@ -71,6 +71,20 @@ const mockClient = {
     supportedEvents: async () => ['A01','A03','A04','A08','R01'],
     ingest: async () => ({ ok: true, patient: null, labs: { inserted: 0, skipped: 0, ids: [] }, warnings: [] }),
   },
+  integrations: {
+    epic: {
+      status: async () => ({
+        enabled: false,
+        reason: 'Local/offline mode - configure VITE_TRANSTRACK_API_URL to enable Epic on FHIR import.',
+        modes: [],
+      }),
+      import: async () => {
+        throw new Error(
+          'Epic on FHIR import requires server (remote) mode. Set VITE_TRANSTRACK_API_URL or window.transtrackConfig.apiBaseUrl.',
+        );
+      },
+    },
+  },
   optn: {
     exportTCR: async () => ({ csv: '', count: 0 }),
     exportTRR: async () => ({ csv: '', count: 0 }),

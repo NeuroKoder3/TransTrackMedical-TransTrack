@@ -3,10 +3,11 @@ import { api } from '@/api/apiClient';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Database, Upload, Settings, FileText } from 'lucide-react';
+import { Database, Upload, Settings, FileText, CloudDownload } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import ErrorState from '@/components/ui/ErrorState';
 import FHIRImporter from '../components/ehr/FHIRImporter';
+import EpicImporter from '../components/ehr/EpicImporter';
 import EHRIntegrationManager from '../components/ehr/EHRIntegrationManager';
 import ValidationRuleManager from '../components/ehr/ValidationRuleManager';
 import { format } from 'date-fns';
@@ -54,11 +55,15 @@ export default function EHRIntegration() {
           <p className="text-slate-600 mt-1">FHIR-compliant data exchange with health record systems</p>
         </div>
 
-        <Tabs defaultValue="import" className="w-full">
-          <TabsList className="grid w-full grid-cols-4">
+        <Tabs defaultValue="epic" className="w-full">
+          <TabsList className="grid w-full grid-cols-5">
+            <TabsTrigger value="epic">
+              <CloudDownload className="w-4 h-4 mr-2" />
+              Epic on FHIR
+            </TabsTrigger>
             <TabsTrigger value="import">
               <Upload className="w-4 h-4 mr-2" />
-              Import Data
+              Import Bundle
             </TabsTrigger>
             <TabsTrigger value="integrations">
               <Settings className="w-4 h-4 mr-2" />
@@ -73,6 +78,10 @@ export default function EHRIntegration() {
               Import History
             </TabsTrigger>
           </TabsList>
+
+          <TabsContent value="epic" className="mt-6">
+            <EpicImporter onImportComplete={handleImportComplete} />
+          </TabsContent>
 
           <TabsContent value="import" className="mt-6">
             <FHIRImporter onImportComplete={handleImportComplete} />
