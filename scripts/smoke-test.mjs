@@ -3,12 +3,29 @@
  * TransTrack end-to-end smoke test.
  *
  * Provisions a fresh org + admin user, logs in, then exercises:
- *   - REST   /patients         (create + list)
- *   - FHIR   /fhir/Patient     (create + read; auto-materialised)
- *   - MLLP   tcp://:2575       (ADT upserts patients, ORU writes labs)
- *   - REST   /audit            (verifies the hash chain)
+ *   - REST   /patients              (create + list)
+ *   - FHIR   /fhir/Patient          (create + read; auto-materialised)
+ *   - MLLP   tcp://:2575            (ADT upserts patients, ORU writes labs)
+ *   - SMART  /.well-known + /oauth2 (discovery, dyn registration, client_credentials, scoped FHIR read)
+ *   - CDS    /cds-services          (discovery + invocation)
+ *   - HL7    vendor profiles + supported message types
+ *   - FHIR   $export bulk-data round-trip
+ *   - Epic   on FHIR sandbox round-trip   (gated on EPIC_SANDBOX_CLIENT_ID)
+ *   - REST   /audit                 (verifies the hash chain)
  *
- * Run:  node scripts/smoke-test.mjs
+ * Prerequisites (run once after a fresh clone OR after pulling new code):
+ *
+ *   docker compose -f docker/docker-compose.yml build api
+ *   docker compose -f docker/docker-compose.yml up -d postgres api
+ *   docker exec transtrack-api node src/db/migrate.js up
+ *
+ * Run:
+ *   node scripts/smoke-test.mjs
+ *
+ * Optional: enable the Epic on FHIR sandbox round-trip by setting
+ *   $env:EPIC_SANDBOX_CLIENT_ID = "<your Epic non-production client id>"
+ * and placing the matching private key at  epic-keys/transtrack-epic-private.pem
+ * (see server/src/integrations/epic/README.md).
  */
 import { createRequire } from 'module';
 import net from 'net';
@@ -39,14 +56,15 @@ function ok(msg) { console.log(`  \x1b[32m\u2713\x1b[0m ${msg}`); }
 function step(msg) { console.log(`\x1b[36m==> ${msg}\x1b[0m`); }
 
 async function api(method, path, opts = {}) {
+    const hasBody = opts.body !== undefined && opts.body !== null;
     const r = await fetch(`${API}${path}`, {
         method,
         headers: {
-            'content-type': 'application/json',
+            ...(hasBody && { 'content-type': 'application/json' }),
             ...(opts.token && { authorization: `Bearer ${opts.token}` }),
             ...opts.headers,
         },
-        body: opts.body && JSON.stringify(opts.body),
+        body: hasBody ? JSON.stringify(opts.body) : undefined,
     });
     const text = await r.text();
     let body; try { body = JSON.parse(text); } catch { body = text; }
