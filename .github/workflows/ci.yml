@@ -119,6 +119,12 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Run E2E tests
+        env:
+          # The seed step in electron/database/init.cjs reads this env var to
+          # provision the first-launch admin password deterministically; the
+          # E2E spec reads the same var so the login step doesn't depend on
+          # the random setup token written to userData.
+          TRANSTRACK_INITIAL_ADMIN_PASSWORD: 'E2E_ONLY_DoNotUseInProd!'
         run: xvfb-run --auto-servernum npm run test:e2e
 
       - name: Upload E2E report

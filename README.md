@@ -259,11 +259,18 @@ npm run build:electron
 ## Quick Start
 
 1. Launch TransTrack.
-2. On first launch the splash screen displays a **one-time setup token**.
-   Copy it — it is shown only once. No default credentials ship with the
-   product.
-3. Use the on-screen "First-time administrator setup" form to create your
-   administrator account (email + full name + setup token + strong password).
+2. On first launch a **one-time setup token** for the seeded administrator
+   account `admin@transtrack.local` is written to:
+   - `userData/INITIAL_ADMIN_PASSWORD.txt` (mode `0o600` on POSIX), and
+   - the application's stdout / log (a delimited "first-launch administrator
+     setup" banner).
+
+   No build-time default password ships with the product. For scripted
+   installs, set `TRANSTRACK_INITIAL_ADMIN_PASSWORD` before first launch and
+   the file in `userData` will not be written.
+3. Sign in at the login screen with `admin@transtrack.local` and the setup
+   token. You will be required to change the password immediately
+   (`must_change_password = 1`). Delete the token file after rotation.
 4. Begin entering or importing data — all features are immediately available.
 
 Contact [Trans_Track@outlook.com](mailto:Trans_Track@outlook.com) if you need assistance.

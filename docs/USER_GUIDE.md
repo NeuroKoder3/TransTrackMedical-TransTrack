@@ -15,21 +15,39 @@
 
 ### First-Time Setup
 
-When you first launch TransTrack on a new install:
+When you first launch TransTrack on a new install, the database initialiser
+provisions a single administrator account with a **one-time setup token**.
+There is no shipped, build-time-known default password.
 
-1. The application generates a **one-time setup token** and displays it on the
-   splash screen. Copy this token — it is only shown once.
-2. Use the on-screen "First-time administrator setup" form to create your
-   administrator account: email, full name, and a password that meets the
-   system requirements (12+ characters, mixed case, digit, special character).
-3. The setup token is consumed on first use and cannot be reused. If your
-   workstation is rebuilt and you lose the token, the encrypted database
-   itself is the source of truth — restore from backup rather than recreate.
+1. **Locate the setup token.** It is written in two places, both produced
+   on the very first launch:
+   - To a file named `INITIAL_ADMIN_PASSWORD.txt` inside Electron's
+     `userData` directory (mode `0o600` on POSIX). Typical paths:
+     - Windows: `%APPDATA%\TransTrack\INITIAL_ADMIN_PASSWORD.txt`
+     - macOS:   `~/Library/Application Support/TransTrack/INITIAL_ADMIN_PASSWORD.txt`
+     - Linux:   `~/.config/TransTrack/INITIAL_ADMIN_PASSWORD.txt`
+   - To the application's stdout/log on first launch (a clearly delimited
+     "TransTrack — first-launch administrator setup" banner).
+2. **Sign in** at the login screen with:
+   - Email: `admin@transtrack.local`
+   - Password: the one-time setup token from step 1.
+3. **You will be required to change the password immediately**
+   (`must_change_password = true` on the seeded account). The new password
+   must meet system requirements: 12+ characters, mixed case, digit,
+   special character.
+4. **Delete `INITIAL_ADMIN_PASSWORD.txt`** after rotation. The token is now
+   useless; the file is left behind only for cases where the operator
+   missed the stdout banner.
 
-> **Important**: Default credentials are not shipped. Every install creates
-> its own administrator on first launch. This avoids the well-known-default
-> footgun and aligns with HIPAA Security Rule 45 CFR §164.308(a)(5)(ii)(D)
-> Password Management guidance.
+For scripted / kiosk / fleet-managed installs, set the environment variable
+`TRANSTRACK_INITIAL_ADMIN_PASSWORD` to a strong value of your own before the
+first launch. The setup will use that value instead of generating a random
+token, and the file in `userData` will not be written.
+
+> **Important**: there is no shipped default password. The seeded account
+> is single-use (`must_change_password = true`), the random token has ~144
+> bits of entropy, and aligns with HIPAA Security Rule
+> 45 CFR §164.308(a)(5)(ii)(D) Password Management guidance.
 
 ### Features Available
 

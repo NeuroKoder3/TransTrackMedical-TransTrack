@@ -155,18 +155,41 @@ Run the installer on the target machine:
 
 ### 4.1 First-Run Administrator Setup
 
-TransTrack does not ship default credentials. On first launch the application
-generates a one-time setup token and displays it on the splash screen.
+TransTrack does not ship a build-time default password. On first launch the
+database initialiser provisions a single administrator account
+(`admin@transtrack.local`) protected by a one-time setup token.
 
-1. Capture the setup token from the splash screen (shown only once).
-2. Open the application; the **First-time administrator setup** form appears
-   automatically when no admin account exists.
-3. Enter your administrator's email, full name, the setup token, and a
-   password meeting the policy:
-   - Minimum 12 characters
-   - At least one uppercase, lowercase, number, and special character
-4. The setup token is consumed and the admin account is created. Subsequent
-   launches go straight to the standard login screen.
+The token is resolved in this order:
+
+1. **`TRANSTRACK_INITIAL_ADMIN_PASSWORD` environment variable** — supply this
+   for scripted installs, kiosks, MDM-managed fleets, or CI. Must be at least
+   12 characters. The token file in step 2 is not written when this is set.
+2. **Auto-generated random token** — if no env var is supplied, the
+   initialiser generates a cryptographically random 24-character token
+   (~144 bits) and writes it in two places on first launch:
+   - File: `userData/INITIAL_ADMIN_PASSWORD.txt`, mode `0o600` on POSIX
+     (Windows uses inherited ACLs; restrict the path with NTFS permissions
+     if your install profile requires it).
+     - Windows: `%APPDATA%\TransTrack\INITIAL_ADMIN_PASSWORD.txt`
+     - macOS:   `~/Library/Application Support/TransTrack/INITIAL_ADMIN_PASSWORD.txt`
+     - Linux:   `~/.config/TransTrack/INITIAL_ADMIN_PASSWORD.txt`
+   - Stdout: a delimited "TransTrack — first-launch administrator setup"
+     banner emitted exactly once (visible to a service-launched process via
+     its log).
+
+Operator workflow:
+
+1. Capture the token from the file or the launch banner.
+2. Sign in at the login screen as `admin@transtrack.local` using the token
+   as the password.
+3. The system requires an immediate password change before any other action
+   (`must_change_password = 1` on the seeded account). Choose a password
+   meeting the policy: minimum 12 characters, mixed case, digit, special
+   character.
+4. **Delete `INITIAL_ADMIN_PASSWORD.txt`** from `userData` after rotation.
+5. Subsequent launches proceed straight to the standard login screen — the
+   seed step does not run again because an admin already exists for the
+   default organization.
 
 ### 4.2 Configure Organization
 

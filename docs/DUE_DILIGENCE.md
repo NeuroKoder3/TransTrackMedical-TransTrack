@@ -40,7 +40,7 @@ The application employs defense-in-depth security: AES-256 database encryption (
 | Automated test suites (Node + Vitest) | 14 + Vitest component runner |
 | Inactivation Risk Engine unit tests | 33 (pure-function, no DB required) |
 | Compliance / operational documentation files | 25+ |
-| Lines of operational scoring code (deterministic) | ~530 |
+| Lines of operational scoring code (deterministic) | ~700 (`electron/services/inactivationRiskEngine.cjs`) |
 
 ### Data Flow
 
@@ -179,7 +179,7 @@ All renderer-to-main communication passes through a secure IPC bridge with conte
 | Dependency audit | `npm audit` | Blocks on any known vulnerability |
 | Linting | ESLint | Blocks on code quality violations |
 | Lockfile integrity | `npm ci` | Ensures deterministic builds |
-| Unit/integration tests | Node.js test runner | All 87 tests must pass |
+| Unit/integration tests | Node.js test runner + Vitest renderer suite | All ~280 tests must pass on `main` |
 | Security scanning | CodeQL (GitHub) | Automated code analysis |
 | SBOM generation | CycloneDX | Software Bill of Materials for each build |
 
@@ -201,28 +201,19 @@ windows, or paywalls in the publicly published binaries or source. This is
 consistent with the README and was a deliberate decision to maximise
 adoption inside transplant centers and OPOs without procurement friction.
 
-### 6.2 Dormant license-enforcement scaffolding
+### 6.2 License modules are no-op stubs
 
-The codebase retains a license-enforcement subsystem (`electron/license/`,
-HMAC-SHA256 integrity, machine fingerprint, organization binding, tier
-prefix detection) that is **not engaged in the public 1.0 build**. It is
-preserved as future scaffolding for OEM / enterprise resale paths in which
-a partner (e.g. a managed-service vendor or larger transplant-software
-company) wants to bundle TransTrack under their own commercial agreement.
-Any such commercial path would be re-introduced behind a separate build
-flag and re-validated as a delta release; it is **not** part of the
-generally-available product today.
+`electron/license/manager.cjs` and `electron/license/tiers.cjs` are explicitly
+labelled "the licensing/activation system has been removed" and exist solely
+as compatibility shims so existing imports keep resolving. Every function in
+the module reports the application as fully licensed, every tier resolves to
+the same unlimited feature set, and there is no key validation, machine
+binding, HMAC seal, or expiration tracking present in the running code path.
 
-### 6.3 License-enforcement controls (dormant — for reference only)
-
-| Control | Implementation |
-|---|---|
-| Format validation | `XXXXX-XXXXX-XXXXX-XXXXX-XXXXX` pattern enforcement |
-| Organization binding | License locked to organization ID + machine fingerprint |
-| Tamper detection | HMAC-SHA256 integrity seal on all license fields |
-| Tier detection | Key prefix mapping (ST/PR/EN) |
-| Maintenance tracking | Expiration dates with grace periods and renewal support |
-| Audit trail | All license events logged with timestamps |
+If a future OEM, enterprise, or distribution partner requires license
+gating, that work would be a deliberate re-introduction behind a build flag
+and would be released as a delta product. It is **not** present in the
+generally-available 1.0 build.
 
 ---
 
@@ -230,10 +221,14 @@ generally-available product today.
 
 ### 7.1 Database Schema
 
-22 tables covering:
-- **Clinical:** Patients, Donors, Organs, Matches, Barriers, Evaluations
-- **Operational:** Organizations, Users, Settings, Notifications, Reports
-- **Compliance:** Audit Logs, Access Justification Logs, Schema Migrations, Licenses
+27 tables (per `electron/database/schema.cjs` — `CREATE TABLE` count) covering:
+- **Clinical:** Patients, Donors, Organs, Matches, Barriers, Evaluations, Labs,
+  AHHQ records, Living-donor evaluations, Post-transplant follow-ups
+- **Operational:** Organizations, Users, Sessions, Settings, Notifications,
+  Reports, Tasks, Coordinator panels, Organ-offer state machine
+- **Compliance:** Audit Logs (immutable, trigger-protected), Access
+  Justification Logs, Schema Migrations, Authentication-failure log,
+  Password history, MFA secrets, SIEM forwarder queue
 
 ### 7.2 Migration System
 
@@ -340,7 +335,7 @@ These items should be completed before first customer delivery:
 | Unauthorized data access | Low | RBAC + audit logging + org isolation |
 | Supply chain attack via dependencies | Low | Pinned versions, `npm audit` in CI, SBOM generation |
 | Data loss | Low | Single-file database, standard backup procedures |
-| License circumvention | Low | HMAC integrity seal, machine binding, server-side enforcement |
+| License circumvention | N/A | The 1.0 build has no license enforcement; the modules under `electron/license/` are no-op stubs that always report fully licensed. |
 
 ---
 
@@ -348,7 +343,8 @@ These items should be completed before first customer delivery:
 
 TransTrack v1.0.0 implements enterprise-grade security controls appropriate for HIPAA-regulated healthcare environments:
 
-- **87 automated tests** covering security, business logic, and compliance
+- **~280 automated tests** covering security, business logic, compliance,
+  the operational scoring engine, and renderer components
 - **AES-256 encryption** with OS-keychain key protection
 - **Role-based access control** enforced at the IPC handler level
 - **Immutable audit trails** meeting HIPAA and FDA requirements

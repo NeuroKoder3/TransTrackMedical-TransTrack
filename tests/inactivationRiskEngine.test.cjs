@@ -342,6 +342,42 @@ test('projectCenterImpact: distribution counts add up to candidate count', () =>
   assert.strictEqual(total, p.candidates);
 });
 
+console.log('\n=== Documented calibration table — anchors must match within 3pp ===');
+
+// These anchors are duplicated in:
+//   - electron/services/inactivationRiskEngine.cjs (PROB_CURVES comment)
+//   - docs/INACTIVATION_RISK_ENGINE.md             (calibration table section)
+// The doc table is slightly more curved than a 2-parameter logistic supports,
+// so the published fit is allowed ±3 percentage points (well under the noise
+// floor of the operational signal). If a contributor edits either side
+// without updating the other, this test fails.
+const CALIBRATION_ANCHORS = [
+  { score: 25, p30: 0.10, p60: 0.18, p90: 0.25 },
+  { score: 50, p30: 0.30, p60: 0.45, p90: 0.55 },
+  { score: 75, p30: 0.65, p60: 0.78, p90: 0.85 },
+  { score: 90, p30: 0.82, p60: 0.90, p90: 0.94 },
+];
+
+const CALIBRATION_TOLERANCE = 0.030; // ±3 percentage points
+
+for (const anchor of CALIBRATION_ANCHORS) {
+  test(`probability curve at score=${anchor.score} matches documented anchors (±3pp)`, () => {
+    const probs = engine.scoreToProbabilities(anchor.score);
+    assert.ok(
+      Math.abs(probs.d30 - anchor.p30) <= CALIBRATION_TOLERANCE,
+      `d30: expected ~${anchor.p30}, got ${probs.d30.toFixed(4)}`
+    );
+    assert.ok(
+      Math.abs(probs.d60 - anchor.p60) <= CALIBRATION_TOLERANCE,
+      `d60: expected ~${anchor.p60}, got ${probs.d60.toFixed(4)}`
+    );
+    assert.ok(
+      Math.abs(probs.d90 - anchor.p90) <= CALIBRATION_TOLERANCE,
+      `d90: expected ~${anchor.p90}, got ${probs.d90.toFixed(4)}`
+    );
+  });
+}
+
 console.log(`\nResults: ${PASS} passed, ${FAIL} failed.`);
 if (FAIL > 0) {
   for (const f of failures) console.error(`\n${f.name}:\n${f.error.stack || f.error.message}`);

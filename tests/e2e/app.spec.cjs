@@ -90,15 +90,22 @@ test.describe('TransTrack E2E', () => {
     expect(title).toContain('TransTrack');
   });
 
-  test('Login with default admin credentials', async () => {
+  test('Login with provisioned admin credentials', async () => {
     await window.waitForTimeout(2000);
+
+    // The seed code (electron/database/init.cjs) consumes
+    // process.env.TRANSTRACK_INITIAL_ADMIN_PASSWORD when present and falls
+    // back to a random setup token written to userData otherwise. The E2E
+    // job sets this env var to a known value so the login step is
+    // deterministic without relying on the random token.
+    const e2ePassword = process.env.TRANSTRACK_INITIAL_ADMIN_PASSWORD || 'E2E_ONLY_DoNotUseInProd!';
 
     const emailInput = window.locator('input[type="email"], input[name="email"], input[placeholder*="email" i]');
     const passwordInput = window.locator('input[type="password"]');
 
     if (await emailInput.count() > 0) {
       await emailInput.fill('admin@transtrack.local');
-      await passwordInput.fill('Admin123!');
+      await passwordInput.fill(e2ePassword);
 
       const submitButton = window.locator('button[type="submit"], button:has-text("Login"), button:has-text("Sign In")');
       if (await submitButton.count() > 0) {

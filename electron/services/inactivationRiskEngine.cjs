@@ -103,18 +103,30 @@ const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 // Logistic calibration — converts the 0..100 composite score into a
 // probability of inactivation within N days. The intercepts and slopes were
-// chosen so that:
-//   score 25 ≈ 10% / 30d, 18% / 60d, 25% / 90d
-//   score 50 ≈ 30% / 30d, 45% / 60d, 55% / 90d
-//   score 75 ≈ 65% / 30d, 78% / 60d, 85% / 90d
-//   score 90 ≈ 82% / 30d, 90% / 60d, 94% / 90d
+// fit by ordinary-least-squares regression in logit-space against the
+// documented anchor table below. The matching regression test
+// (`inactivationRiskEngine.test.cjs` →
+// "calibration table matches documented anchors") will fail if a future
+// contributor changes one without updating the other.
+//
+//   anchor       30d     60d     90d
+//   score 25     10%     18%     25%
+//   score 50     30%     45%     55%
+//   score 75     65%     78%     85%
+//   score 90     82%     90%     94%
+//
+// The shape of the doc table is slightly more curved than a 2-parameter
+// logistic, so the fit lands within ±3 percentage points of every anchor —
+// well below the precision of the operational signal (we are not predicting
+// individual mortality; we are surfacing operational drift).
+//
 // This is a conservative, monotone calibration; deploying organizations are
 // expected to recalibrate against their own historical inactivation cohort
 // during PQ. The shape (logistic) is fixed; the {intercept, slope} are tunable.
 const PROB_CURVES = Object.freeze({
-  d30: { intercept: -3.20, slope: 0.062 },
-  d60: { intercept: -2.50, slope: 0.060 },
-  d90: { intercept: -2.00, slope: 0.058 },
+  d30: { intercept: -3.659, slope: 0.05720 },
+  d60: { intercept: -2.991, slope: 0.05713 },
+  d90: { intercept: -2.655, slope: 0.05920 },
 });
 
 // ---------------------------------------------------------------------------
@@ -271,6 +283,22 @@ function _logistic(x) {
 
 function _probabilityFromScore(score, curve) {
   return _clamp(_logistic(curve.intercept + curve.slope * score), 0, 1);
+}
+
+/**
+ * Public helper: given a composite risk score in [0, 100], return the
+ * unrounded calibrated probabilities at 30 / 60 / 90 days. Exported so the
+ * documented calibration table in `docs/INACTIVATION_RISK_ENGINE.md` can be
+ * regression-tested directly. The `assessInactivationRisk()` path returns
+ * the same values rounded to two decimal places for display.
+ */
+function scoreToProbabilities(score) {
+  const s = _clamp(Number(score) || 0, 0, 100);
+  return {
+    d30: _probabilityFromScore(s, PROB_CURVES.d30),
+    d60: _probabilityFromScore(s, PROB_CURVES.d60),
+    d90: _probabilityFromScore(s, PROB_CURVES.d90),
+  };
 }
 
 function _classifyRisk(score) {
@@ -717,6 +745,7 @@ module.exports = {
   assessInactivationRisk,
   simulateIntervention,
   projectCenterImpact,
+  scoreToProbabilities,
   // exposed for testing / introspection
   evalExpirySubscore,
   documentationSubscore,

@@ -97,28 +97,30 @@ TransTrack is an **offline-first, HIPAA-compliant Electron desktop application**
 ### Electron Main (`electron/`)
 | Module | Files | Purpose |
 |--------|-------|---------|
-| IPC Handlers | 9 modules | Auth, entities, admin, license, barriers, aHHQ, labs, clinical, operations |
-| Services | 9 | Risk engine, barriers, aHHQ, labs, clock, access, recovery, compliance, reconciliation |
-| Database | 2 | Schema definitions, encryption, migrations |
-| License | 3 | Manager, feature gate, tier definitions |
-| Functions | 1 | Priority scoring, donor matching, FHIR import |
+| IPC Handlers | 25+ modules under `electron/ipc/handlers/` | Auth, entities, admin, MFA, barriers, aHHQ, labs, clinical, operations, organ-offer state machine, living-donor workflow, post-transplant follow-up, OPTN/SRTR exports, HL7, SIEM, calculators, predictions, inactivation-risk, etc. |
+| Services | 10+ | Inactivation Risk Engine v2 (`inactivationRiskEngine.cjs`), risk engine v1, barriers, aHHQ, labs, clock, access, recovery, compliance, reconciliation |
+| Database | `init.cjs`, `schema.cjs` (27 tables), `migrations.cjs` | Schema definitions, SQLCipher encryption, versioned migrations |
+| License | `manager.cjs`, `tiers.cjs` (no-op stubs) | The licensing/activation system has been removed; these files exist as compatibility shims that always report fully licensed |
+| Functions | `lib/` | Priority scoring, donor matching, FHIR import |
 
 ## Build Variants
 
-| Variant | App ID | Restrictions |
-|---------|--------|-------------|
-| **Evaluation** | `com.transtrack.evaluation` | 14-day trial, 50 patients, 1 user, watermark |
-| **Enterprise** | `com.transtrack.enterprise` | Full features, requires license activation |
+The 1.0 distribution ships as a single unrestricted build. There are no
+evaluation / enterprise variants, no watermark, no patient/user limits, and
+no license activation requirement. (See `docs/DUE_DILIGENCE.md` §6 for the
+full statement and the historical rationale.)
 
 ## Technology Stack
 
 | Layer | Technology |
 |-------|------------|
-| Desktop | Electron 35 |
+| Desktop | Electron 39 (`package.json` devDependency) |
 | Frontend | React 18, Vite 6 |
 | Styling | Tailwind CSS, Radix UI (shadcn) |
 | State | TanStack React Query v5 |
 | Forms | React Hook Form + Zod |
-| Database | SQLite via better-sqlite3-multiple-ciphers |
+| Database | SQLite via better-sqlite3-multiple-ciphers (SQLCipher AES-256-CBC, PBKDF2-HMAC-SHA512 ≥256 000 iterations) |
 | Charts | Recharts |
 | Routing | React Router v6 (HashRouter) |
+| Optional server tier | Fastify + PostgreSQL + FHIR R4 + SMART on FHIR v2 + CDS Hooks 1.1 + MLLP/TLS HL7 v2 (early-access; not part of the desktop build) |
+| Operational scoring core | `electron/services/inactivationRiskEngine.cjs` — pure-function, deterministic, ~700 lines, zero external deps |

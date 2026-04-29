@@ -27,25 +27,48 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   projectCenterImpact, getModelInfo) with org scoping, RBAC for center-level
   reports, and audit logging on every call
 - Preload bridge: `window.electronAPI.inactivationRisk.*`
-- 33-case unit test suite for the new engine — pure function, no DB required
-  (`tests/inactivationRiskEngine.test.cjs`)
+- 37-case unit test suite for the new engine — pure function, no DB required
+  (`tests/inactivationRiskEngine.test.cjs`); includes a calibration-table
+  regression test that fails the build if the engine's logistic constants
+  drift away from the documented anchor table by more than ±3 percentage points
 - `npm run release:check` — single-command release readiness gate that runs
   lint, typecheck, audit, tests, build, validates compliance-artefact
   presence, and produces a one-page pass/fail report
 - `docs/INACTIVATION_RISK_ENGINE.md` — full technical specification
 - `docs/STRATEGIC_FIT.md` — acquirer / partner positioning brief
+- First-launch admin provisioning: `electron/database/init.cjs` now reads
+  `TRANSTRACK_INITIAL_ADMIN_PASSWORD` from env when set (length ≥12), and
+  otherwise generates a cryptographically random 24-character setup token,
+  writing it to `userData/INITIAL_ADMIN_PASSWORD.txt` (mode `0o600` on POSIX)
+  and to a clearly-delimited stdout banner. The seeded admin account always
+  has `must_change_password = 1`. There is no shipped, build-time-known
+  default password.
+- CI E2E workflow now sets `TRANSTRACK_INITIAL_ADMIN_PASSWORD` so the
+  Playwright login step is deterministic without depending on the random
+  setup token
 
 ### Changed
+- Logistic calibration coefficients in the Inactivation Risk Engine were
+  re-fit (ordinary least squares in logit-space) so that the documented
+  anchor table in `docs/INACTIVATION_RISK_ENGINE.md` matches the engine
+  output within ±3 percentage points. The earlier closed-form fit was
+  materially off-anchor and is now regression-tested.
 - README technology stack now correctly states Electron 39 (was 35)
 - README explicitly documents the optional Fastify + PostgreSQL server
   tier (FHIR R4, SMART on FHIR v2, CDS Hooks 1.1, MLLP/TLS HL7 v2)
-- DUE_DILIGENCE.md refreshed: 27 tables, 270+ tests, Electron 39, server tier
-- USER_GUIDE.md and DEPLOYMENT_PRODUCTION.md no longer ship a default
-  administrator password; first-launch generates a one-time setup token
-  shown on the splash screen instead
-- DUE_DILIGENCE.md license section reconciled with public README — the
-  public 1.0 distribution ships with all features unlocked; the tiered
-  license-enforcement subsystem is dormant scaffolding for OEM resale
+- DUE_DILIGENCE.md refreshed: 27 tables (was 22), ~280 tests (was 87),
+  Electron 39, server tier disclosed, license section truthfully states
+  that `electron/license/` is now a no-op stub (the previous "dormant
+  scaffolding for OEM resale" description was misleading — the modules
+  explicitly declare the licensing system has been removed)
+- USER_GUIDE.md, DEPLOYMENT_PRODUCTION.md, and README.md describe the
+  actual first-launch flow (token written to file + stdout, sign in as
+  `admin@transtrack.local`, forced password change) rather than the
+  "splash screen + email-picker form" the previous wording implied
+- STRATEGIC_FIT.md tightened: the CDS Hook embedded inside Epic / Cerner /
+  Ottr is correctly marked as roadmap (`docs/INACTIVATION_RISK_ENGINE.md`
+  §9), not as a present capability; engine line-count claim corrected
+  from ~530 to ~700
 
 ## [1.0.0] - 2026-04-11
 

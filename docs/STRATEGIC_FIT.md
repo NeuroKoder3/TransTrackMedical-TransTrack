@@ -44,19 +44,22 @@ allocation, longitudinal CTM, or diagnostics — it complements them.
 | Transplant patient access | TXAccess | Complementary; TransTrack is the inside-the-center workflow surface |
 | Diagnostics | AlloSure, AlloMap, AlloSeq | Complementary — TransTrack ingests lab currency signals but does not interpret diagnostic values |
 
-The engine is designed to be **embedded**: a CDS Hook on the optional server
-tier can deliver the same explainable assessment inside Epic / Cerner / Ottr
-without TransTrack's UI being present. The pure-function scoring core
-(`electron/services/inactivationRiskEngine.cjs`, ~530 lines, zero external
-deps) drops into any Node-compatible runtime.
+The engine is designed to be **embeddable**. Today the pure-function scoring
+core (`electron/services/inactivationRiskEngine.cjs`, ~700 lines, zero
+external deps) drops into any Node-compatible runtime, and the Electron app
+exposes it over IPC. A CDS Hooks 1.1 service that surfaces the same
+explainable assessment inside Epic / Cerner / Ottr is on the documented
+roadmap (`docs/INACTIVATION_RISK_ENGINE.md` §9), not in the 1.0 release.
 
 ## 3. Differentiators that survive a technical review
 
 1. **Pure-function, deterministic, explainable scoring.** Every score is
    reproducible from a fingerprinted input snapshot. There is no opaque
    model. SHAP-style additive decomposition shows exactly why a patient
-   was flagged. (`tests/inactivationRiskEngine.test.cjs` — 33 cases —
-   asserts determinism, weight invariants, and decomposition correctness.)
+   was flagged. (`tests/inactivationRiskEngine.test.cjs` — 37 cases —
+   asserts determinism, weight invariants, decomposition correctness, and
+   that the engine's logistic constants stay aligned with the documented
+   calibration table within ±3 percentage points.)
 2. **Counterfactual interventions.** Coordinators don't just see a score —
    they see "if you resolve this insurance barrier, the score drops
    from 78 to 41." That is the difference between a dashboard and an
@@ -71,10 +74,12 @@ deps) drops into any Node-compatible runtime.
    logs (DB-trigger enforced), TOTP MFA, full IQ/OQ/PQ validation
    templates, ISO 14971-style risk register, HIPAA Security Rule mapping,
    21 CFR Part 11 control mapping. (`docs/compliance/`.)
-5. **Optional FHIR R4 / SMART on FHIR v2 / CDS Hooks 1.1 server tier.**
-   Already runs against the Epic on FHIR sandbox today (evidence:
-   `demo-evidence/epic-roundtrip-20260426-193254.txt`). The same engine
-   can be a CDS Hook embedded in Ottr / TXAccess workflows.
+5. **Optional FHIR R4 / SMART on FHIR v2 / CDS Hooks 1.1 server tier
+   (early-access).** Runs against the Epic on FHIR sandbox today
+   (evidence: `demo-evidence/epic-roundtrip-20260426-193254.txt`). Wiring
+   the inactivation engine in as a CDS Hook inside Ottr / TXAccess
+   workflows is on the roadmap (`docs/INACTIVATION_RISK_ENGINE.md` §9),
+   not yet shipped.
 6. **Mature CI/CD.** ESLint, TypeScript check, npm audit (moderate+),
    CodeQL, Snyk, CycloneDX SBOM, Playwright E2E, Vitest component
    coverage, dependency lockfile integrity, Dependabot — all on every PR.

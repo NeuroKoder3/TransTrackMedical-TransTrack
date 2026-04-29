@@ -10,7 +10,7 @@
 |---|---|
 | Module | `electron/services/inactivationRiskEngine.cjs` |
 | IPC channels | `inactivationRisk:*` (preload bridge: `window.electronAPI.inactivationRisk`) |
-| Tests | `tests/inactivationRiskEngine.test.cjs` (33 cases, pure function, no DB) |
+| Tests | `tests/inactivationRiskEngine.test.cjs` (37 cases, pure function, no DB; includes calibration-table regression) |
 | Model version | `2.0.0` |
 | Determinism | Pure function. Same inputs + same `nowMs` → same output. |
 | Explainability | Full per-factor decomposition + counterfactual simulation. |
@@ -73,8 +73,13 @@ through a fixed logistic function:
 P(inactivation within N days | score) = sigmoid(intercept_N + slope_N * score)
 ```
 
-The default intercept/slope pairs (`d30`, `d60`, `d90`) are conservative and
-chosen so that:
+The default intercept/slope pairs (`d30`, `d60`, `d90`) were fit by ordinary
+least squares in logit-space against the anchor table below. The fit lands
+within ±3 percentage points of every anchor (the doc table is slightly more
+curved than a 2-parameter logistic supports, and ±3pp is well below the
+noise floor of an operational signal). The
+`tests/inactivationRiskEngine.test.cjs` regression suite enforces this — if
+either the constants or the anchors drift apart, that test fails the build.
 
 | score | P(30d) | P(60d) | P(90d) |
 |---|---|---|---|

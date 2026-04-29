@@ -608,37 +608,98 @@ async function seedDefaultData(defaultOrgId) {
   
   if (!adminExists || adminExists.count === 0) {
     const bcrypt = require('bcryptjs');
-    
-    const defaultPassword = 'TransTrack#Admin2026!';
+
+    // First-launch admin provisioning.
+    //
+    // Resolution order for the initial password:
+    //   1. process.env.TRANSTRACK_INITIAL_ADMIN_PASSWORD  (operator override; CI / scripted installs)
+    //   2. cryptographically random 24-char setup token, written to a 0o600 file
+    //      `INITIAL_ADMIN_PASSWORD.txt` in the Electron `userData` directory and
+    //      simultaneously echoed once to stdout. The operator is expected to
+    //      read it on first launch, log in, change the password, then delete
+    //      the file.
+    //
+    // In every case, `must_change_password = 1` is set so the seeded credential
+    // is single-use only. There is no shipped, build-time-known default.
+    const envPassword = process.env.TRANSTRACK_INITIAL_ADMIN_PASSWORD;
+    let defaultPassword;
+    let passwordSource;
+    let setupTokenFilePath = null;
+
+    if (envPassword && envPassword.length >= 12) {
+      defaultPassword = envPassword;
+      passwordSource = 'env:TRANSTRACK_INITIAL_ADMIN_PASSWORD';
+    } else {
+      // 24 base64url chars = ~144 bits of entropy.
+      defaultPassword = crypto.randomBytes(18).toString('base64url');
+      passwordSource = 'generated-setup-token';
+
+      try {
+        const userDataPath = app.getPath('userData');
+        if (!fs.existsSync(userDataPath)) {
+          fs.mkdirSync(userDataPath, { recursive: true });
+        }
+        setupTokenFilePath = path.join(userDataPath, 'INITIAL_ADMIN_PASSWORD.txt');
+        const banner =
+          '# TransTrack — first-launch administrator setup token\n' +
+          '# Generated: ' + new Date().toISOString() + '\n' +
+          '# Account:   admin@transtrack.local\n' +
+          '# This token is valid for ONE login. The user is forced to change\n' +
+          '# the password on first sign-in. Delete this file after rotation.\n' +
+          '\n' +
+          defaultPassword + '\n';
+        fs.writeFileSync(setupTokenFilePath, banner, { mode: 0o600 });
+        // best-effort permission tightening on POSIX; no-op on Windows
+        try { fs.chmodSync(setupTokenFilePath, 0o600); } catch (_e) { /* windows */ }
+      } catch (writeErr) {
+        // Fall back to stdout-only emission if the file can't be written
+        // (e.g. read-only userData on a kiosk). The operator still gets the
+        // token; it just won't be persisted.
+        console.error('Could not persist setup token file:', writeErr.message);
+      }
+    }
+
     const mustChangePassword = true;
-    
-    // Create default admin user
     const adminId = uuidv4();
     const hashedPassword = await bcrypt.hash(defaultPassword, 12);
     const now = new Date().toISOString();
-    
+
     db.prepare(`
       INSERT INTO users (id, org_id, email, password_hash, full_name, role, is_active, must_change_password, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
-      adminId, 
+      adminId,
       defaultOrgId,
-      'admin@transtrack.local', 
-      hashedPassword, 
-      'System Administrator', 
-      'admin', 
+      'admin@transtrack.local',
+      hashedPassword,
+      'System Administrator',
+      'admin',
       1,
       mustChangePassword ? 1 : 0,
       now,
       now
     );
-    
-    if (process.env.NODE_ENV === 'development') {
-      console.log('');
-      console.log('Initial admin credentials: admin@transtrack.local / TransTrack#Admin2026!');
-      console.log('CHANGE YOUR PASSWORD AFTER FIRST LOGIN');
-      console.log('');
+
+    // First-launch banner — printed in every environment, not just dev, so a
+    // production operator installing the MSI/DMG can see the token once.
+    console.log('');
+    console.log('================================================================');
+    console.log(' TransTrack — first-launch administrator setup');
+    console.log('================================================================');
+    console.log(' Account : admin@transtrack.local');
+    console.log(' Source  : ' + passwordSource);
+    if (setupTokenFilePath) {
+      console.log(' Token   : ' + defaultPassword);
+      console.log(' File    : ' + setupTokenFilePath);
+      console.log(' (mode 0o600 on POSIX; ACL inherited on Windows)');
+    } else if (envPassword) {
+      console.log(' Token   : (supplied by env; not echoed)');
+    } else {
+      console.log(' Token   : ' + defaultPassword);
     }
+    console.log(' Must change password on first sign-in: yes');
+    console.log('================================================================');
+    console.log('');
     
     // Create default priority weights for this organization
     const weightsId = uuidv4();
