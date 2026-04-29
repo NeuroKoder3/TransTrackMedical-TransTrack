@@ -153,13 +153,20 @@ Run the installer on the target machine:
 
 ## Step 4: Initial Configuration
 
-### 4.1 Change Default Admin Password
+### 4.1 First-Run Administrator Setup
 
-1. Log in with: `admin@transtrack.local` / `Admin123!`
-2. You will be prompted to change the password
-3. Set a password meeting the requirements:
+TransTrack does not ship default credentials. On first launch the application
+generates a one-time setup token and displays it on the splash screen.
+
+1. Capture the setup token from the splash screen (shown only once).
+2. Open the application; the **First-time administrator setup** form appears
+   automatically when no admin account exists.
+3. Enter your administrator's email, full name, the setup token, and a
+   password meeting the policy:
    - Minimum 12 characters
    - At least one uppercase, lowercase, number, and special character
+4. The setup token is consumed and the admin account is created. Subsequent
+   launches go straight to the standard login screen.
 
 ### 4.2 Configure Organization
 

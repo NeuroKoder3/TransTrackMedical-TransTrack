@@ -1,10 +1,10 @@
 # TransTrack - Technical Due Diligence Report
 
-**Product:** TransTrack v1.0.0
-**Category:** HIPAA/FDA/AATB-Compliant Transplant Waitlist Management System
-**Platform:** Offline-first desktop application (Windows, macOS, Linux)
-**Architecture:** Electron + React (Vite) + SQLite (SQLCipher)
-**Date:** March 2026
+**Product:** TransTrack v1.0.0 (current main: includes Inactivation Risk Engine v2)
+**Category:** HIPAA / 21 CFR Part 11 / AATB-aligned Transplant Operations Platform
+**Platform:** Offline-first desktop application (Windows, macOS, Linux), with optional Fastify + PostgreSQL server tier (early access) for FHIR R4 / SMART on FHIR v2 / CDS Hooks 1.1 / HL7 v2 MLLP integration
+**Architecture:** Electron 39 + React 18 (Vite 6) + SQLite/SQLCipher (AES-256, PBKDF2-SHA512); pure-function operational scoring layer
+**Date:** April 2026 (originally drafted March 2026; refreshed for inactivation-prevention release)
 
 ---
 
@@ -22,24 +22,25 @@ The application employs defense-in-depth security: AES-256 database encryption (
 
 | Layer | Technology | Purpose |
 |---|---|---|
-| Runtime | Electron 35.x | Cross-platform desktop framework |
-| Frontend | React 18, Vite 6, TailwindCSS | Modern component-based UI |
-| Backend | Node.js (Electron main process) | Business logic, IPC handlers |
-| Database | SQLite via better-sqlite3-multiple-ciphers | Encrypted local storage |
-| Encryption | SQLCipher (AES-256-CBC, PBKDF2-HMAC-SHA512) | At-rest data encryption |
+| Runtime | Electron 39.x | Cross-platform desktop framework |
+| Frontend | React 18, Vite 6, TailwindCSS, Radix UI, TanStack Query | Modern component-based UI |
+| Backend (desktop) | Node.js (Electron main process) | Business logic, IPC handlers, pure-function scoring |
+| Database (desktop) | SQLite via better-sqlite3-multiple-ciphers | Encrypted local storage |
+| Encryption | SQLCipher (AES-256-CBC, PBKDF2-HMAC-SHA512 ≥256 000) | At-rest data encryption |
+| Optional server tier | Fastify, PostgreSQL 16, FHIR R4, SMART on FHIR v2, CDS Hooks 1.1, MLLP/TLS HL7 v2 | EHR / OPO interoperability and multi-tenant API surface |
 
-### Codebase Metrics
+### Codebase Metrics (refreshed April 2026)
 
 | Metric | Value |
 |---|---|
-| Frontend source files (JSX/JS/TS/TSX/CSS) | 120 |
-| Backend source files (CJS) | 47 |
-| Test/support files | 23 |
-| Database tables | 22 |
-| Total dependencies (production) | 63 |
-| Total dependencies (development) | 27 |
-| Automated tests | 92 |
-| Documentation files | 18 |
+| Source files (JSX / JS / TS / TSX / CJS) | ~190 |
+| Database tables | 27 |
+| Production dependencies | 31 |
+| Development dependencies | 20 |
+| Automated test suites (Node + Vitest) | 14 + Vitest component runner |
+| Inactivation Risk Engine unit tests | 33 (pure-function, no DB required) |
+| Compliance / operational documentation files | 25+ |
+| Lines of operational scoring code (deterministic) | ~530 |
 
 ### Data Flow
 
@@ -151,14 +152,25 @@ All renderer-to-main communication passes through a secure IPC bridge with conte
 
 ## 5. Testing & Quality Assurance
 
-### 5.1 Automated Test Suites
+### 5.1 Automated Test Suites (refreshed April 2026)
 
 | Suite | Tests | Coverage Area |
 |---|---|---|
 | Cross-Organization Access Prevention | 13 | Multi-tenant isolation, SQL injection prevention |
 | Business Logic | 43 | Priority scoring, donor matching, FHIR validation, HLA matching, password policy |
 | Compliance Verification | 31 | HIPAA safeguards, FDA Part 11, encryption, security configuration, documentation |
-| **Total** | **87** | **All tests passing** |
+| Calculators (MELD / MELD-Na / MELD 3.0 / PELD / LAS / KDPI / EPTS) | per-formula | Reference-only scoring; "Insufficient data" hard-stop |
+| MFA (TOTP + backup codes per RFC 6238) | per-flow | Enrollment, verify, regenerate, disable |
+| HL7 v2 ingestion + parsing | per-message-type | ADT/ORU pipeline, ACK generation |
+| Organ-offer state machine | 9 | Transition rules, decline-reason codes, expiry |
+| Living-donor workflow | 9 | Status state machine, OPTN Policy 14 follow-ups |
+| Post-transplant follow-up | 5 | Events, immunosuppression, rejection, biopsies |
+| OPTN-style export | 6 | TCR / TRR / TRF shape, RFC 4180 escaping, "DO_NOT_SUBMIT" disclaimer |
+| SIEM forwarder | 10 | CEF / RFC 5424 / JSON formatters, destination CRUD |
+| Password history | 7 | Reuse prevention, expiration, depth |
+| **Inactivation Risk Engine v2** | **33** | Per-factor scoring, additive decomposition, calibrated probabilities, counterfactual interventions, center-level ROI projection |
+| Vitest renderer component tests | 60 | Error boundaries, dashboard, settings, login, patient details |
+| **Total automated tests** | **270+** | **All currently passing on `main`** |
 
 ### 5.2 CI/CD Pipeline
 
@@ -181,22 +193,27 @@ All renderer-to-main communication passes through a secure IPC bridge with conte
 
 ## 6. License & Distribution Model
 
-### 6.1 Build Variants
+### 6.1 Current public release: open, no license keys
 
-| Build | Purpose | License Enforcement |
-|---|---|---|
-| Evaluation | 14-day free trial | Hard feature/data limits, watermark restrictions |
-| Enterprise | Full production | License key activation with tier-based feature gating |
+The public **TransTrack 1.0** distribution ships with **all features unlocked
+and no activation requirement**. There are no tiers, license keys, evaluation
+windows, or paywalls in the publicly published binaries or source. This is
+consistent with the README and was a deliberate decision to maximise
+adoption inside transplant centers and OPOs without procurement friction.
 
-### 6.2 License Tiers
+### 6.2 Dormant license-enforcement scaffolding
 
-| Tier | Price | Patients | Workstations | Support | Updates |
-|---|---|---|---|---|---|
-| Starter | $2,499 | 500 | 1 | Email (48hr) | 1 year |
-| Professional | $7,499 | Unlimited | 5 | Priority (24hr) | 2 years |
-| Enterprise | $24,999 | Unlimited | Unlimited | 24/7 phone & email | Lifetime |
+The codebase retains a license-enforcement subsystem (`electron/license/`,
+HMAC-SHA256 integrity, machine fingerprint, organization binding, tier
+prefix detection) that is **not engaged in the public 1.0 build**. It is
+preserved as future scaffolding for OEM / enterprise resale paths in which
+a partner (e.g. a managed-service vendor or larger transplant-software
+company) wants to bundle TransTrack under their own commercial agreement.
+Any such commercial path would be re-introduced behind a separate build
+flag and re-validated as a delta release; it is **not** part of the
+generally-available product today.
 
-### 6.3 License Security
+### 6.3 License-enforcement controls (dormant — for reference only)
 
 | Control | Implementation |
 |---|---|

@@ -300,6 +300,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getFullReport: () => ipcRenderer.invoke('risk:getFullReport'),
     assessPatient: (patientId) => ipcRenderer.invoke('risk:assessPatient', patientId),
   },
+
+  // Inactivation Risk Engine v2 — explainable, counterfactual, ROI-aware
+  // Pure-function scoring with per-factor decomposition, calibrated 30/60/90-day
+  // probabilities, and intervention simulation ("if we resolve barrier X,
+  // score drops from 78 to 41"). Designed for inactivation prevention and
+  // for embedding inside CDS Hooks / partner systems (Ottr, TXAccess, Epic).
+  inactivationRisk: {
+    getModelInfo: () => ipcRenderer.invoke('inactivationRisk:getModelInfo'),
+    assessPatient: (patientId) => ipcRenderer.invoke('inactivationRisk:assessPatient', patientId),
+    simulateIntervention: (params) => ipcRenderer.invoke('inactivationRisk:simulateIntervention', params),
+    projectCenterImpact: (opts) => ipcRenderer.invoke('inactivationRisk:projectCenterImpact', opts),
+  },
   
   // Readiness Barriers (Non-Clinical Operational Tracking)
   // NOTE: This feature is strictly NON-CLINICAL, NON-ALLOCATIVE, and designed for

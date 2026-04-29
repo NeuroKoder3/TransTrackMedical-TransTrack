@@ -15,13 +15,21 @@
 
 ### First-Time Setup
 
-When you first launch TransTrack, you'll be prompted to log in:
+When you first launch TransTrack on a new install:
 
-- **Default Administrator Account**:
-  - Email: `admin@transtrack.local`
-  - Password: *(provided during deployment — see your administrator)*
+1. The application generates a **one-time setup token** and displays it on the
+   splash screen. Copy this token — it is only shown once.
+2. Use the on-screen "First-time administrator setup" form to create your
+   administrator account: email, full name, and a password that meets the
+   system requirements (12+ characters, mixed case, digit, special character).
+3. The setup token is consumed on first use and cannot be reused. If your
+   workstation is rebuilt and you lose the token, the encrypted database
+   itself is the source of truth — restore from backup rather than recreate.
 
-> **Important**: You will be prompted to change the default password on first login. Choose a strong password that meets the system's requirements (12+ characters, uppercase, lowercase, number, special character).
+> **Important**: Default credentials are not shipped. Every install creates
+> its own administrator on first launch. This avoids the well-known-default
+> footgun and aligns with HIPAA Security Rule 45 CFR §164.308(a)(5)(ii)(D)
+> Password Management guidance.
 
 ### Features Available
 

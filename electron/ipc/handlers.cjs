@@ -10,6 +10,7 @@ const clinicalHandlers = require('./handlers/clinical.cjs');
 const operationsHandlers = require('./handlers/operations.cjs');
 const outcomesHandlers = require('./handlers/outcomes.cjs');
 const predictionsHandlers = require('./handlers/predictions.cjs');
+const inactivationRiskHandlers = require('./handlers/inactivationRisk.cjs');
 const tasksHandlers = require('./handlers/tasks.cjs');
 const srtrHandlers = require('./handlers/srtr.cjs');
 const calculatorsHandlers = require('./handlers/calculators.cjs');
@@ -114,6 +115,7 @@ function setupIPCHandlers() {
   operationsHandlers.register();
   outcomesHandlers.register();
   predictionsHandlers.register();
+  inactivationRiskHandlers.register();
   tasksHandlers.register();
   srtrHandlers.register();
   calculatorsHandlers.register();

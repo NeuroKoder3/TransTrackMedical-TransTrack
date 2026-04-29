@@ -65,6 +65,12 @@ The core of TransTrack is proactive detection of operational risks that can dela
 * **Status Churn Detection** — track frequent candidate status changes
 * **Readiness Barriers** — manage non-clinical obstacles (insurance, transport, support, etc.)
 * **Risk-Level Indicators** — highlight high-risk cases before they cause inactivation
+* **Inactivation Risk Engine v2** — deterministic, explainable per-patient inactivation
+  scoring with 30 / 60 / 90-day calibrated probabilities, full per-factor
+  decomposition, and counterfactual intervention simulation ("if you resolve
+  this insurance barrier, the score drops from 78 to 41"). See
+  [`docs/INACTIVATION_RISK_ENGINE.md`](docs/INACTIVATION_RISK_ENGINE.md) for
+  the technical specification.
 * **Transplant Clock** — real-time operational pulse and activity rhythm monitoring
 
 <p align="center">
@@ -213,11 +219,12 @@ All metrics are computed locally from the encrypted SQLite database. No cloud, A
 
 ## Technology Stack
 
-* **Frontend**: React 18, Tailwind CSS, Radix UI, Framer Motion
-* **Desktop**: Electron 35
-* **Database**: Encrypted SQLite (SQLCipher, AES-256-CBC)
-* **Build**: Vite 6, electron-builder
-* **Languages**: TypeScript / JavaScript
+* **Frontend**: React 18, Tailwind CSS, Radix UI, Framer Motion, TanStack Query
+* **Desktop runtime**: Electron 39
+* **Database**: Encrypted SQLite via SQLCipher (AES-256-CBC, PBKDF2-SHA512 ≥256 000 iterations)
+* **Build**: Vite 6, electron-builder, CycloneDX SBOM
+* **Languages**: TypeScript / JavaScript (CommonJS in Electron main, ESM in renderer)
+* **Optional server tier**: Fastify + PostgreSQL + FHIR R4 + SMART on FHIR v2 + CDS Hooks 1.1 + MLLP/TLS HL7 v2 listener (see `server/`, currently early-access; the desktop client can run fully offline or in thin-client mode against the server)
 
 ## Installation
 
@@ -251,10 +258,13 @@ npm run build:electron
 
 ## Quick Start
 
-1. Launch TransTrack
-2. Create your administrator account on first run
-3. Change your password whenever prompted
-4. Begin entering or importing data — all features are immediately available
+1. Launch TransTrack.
+2. On first launch the splash screen displays a **one-time setup token**.
+   Copy it — it is shown only once. No default credentials ship with the
+   product.
+3. Use the on-screen "First-time administrator setup" form to create your
+   administrator account (email + full name + setup token + strong password).
+4. Begin entering or importing data — all features are immediately available.
 
 Contact [Trans_Track@outlook.com](mailto:Trans_Track@outlook.com) if you need assistance.
 
