@@ -16,7 +16,7 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, statSync, readdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -142,6 +142,11 @@ const requiredCompliance = [
   'docs/compliance/RISK_REGISTER.md',
   'docs/compliance/HIPAA_SECURITY_RULE_MAPPING.md',
   'docs/compliance/PART_11_CONTROL_MAPPING.md',
+  'docs/compliance/policies/BAA_TEMPLATE.md',
+  'docs/compliance/HECVAT_PREFILL.md',
+  'docs/CODE_SIGNING.md',
+  'docs/ENVIRONMENT_VARIABLES.md',
+  'docs/PILOT_DEPLOYMENT_RUNBOOK.md',
 ];
 for (const rel of requiredCompliance) {
   await runStep(`Compliance artefact: ${rel}`, 'mandatory', () => {
@@ -166,20 +171,97 @@ await runStep('Inactivation Risk Engine — model self-test', 'mandatory', async
   return `model ${a.modelVersion}, score=${a.score}`;
 });
 
+// --- 7b. Action Queue — pure-function self-test -----------------------------
+await runStep('Action Queue — pure-function self-test', 'mandatory', async () => {
+  const { createRequire } = await import('node:module');
+  const require = createRequire(import.meta.url);
+  const queueSvc = require(resolve(repoRoot, 'electron/services/inactivationActionQueue.cjs'));
+  const r = queueSvc.buildActionQueue([
+    { patientId: 'P1', lastEvaluationDateISO: new Date(Date.now() - 380 * 86400e3).toISOString(),
+      openBarriers: [{ riskLevel: 'high' }] },
+  ], { nowMs: Date.now() });
+  if (!r.queue || r.queue.length !== 1) throw new Error('queue not produced');
+  if (!r.queue[0].recommendedAction) throw new Error('no recommended action');
+  return `queue v${r.queueVersion}, model v${r.modelVersion}`;
+});
+
+// --- 7c. Alert Rules — catalog completeness ---------------------------------
+await runStep('Alert Rules engine — catalog completeness', 'mandatory', async () => {
+  const { createRequire } = await import('node:module');
+  const require = createRequire(import.meta.url);
+  const rules = require(resolve(repoRoot, 'electron/services/inactivationAlertRules.cjs'));
+  const cat = rules.getRuleCatalog();
+  const expected = new Set([
+    'PATIENT_ENTERED_CRITICAL', 'EVAL_EXPIRED', 'EVAL_EXPIRING_SOON',
+    'HIGH_BARRIER_OPENED', 'SCORE_JUMPED', 'CONTACT_LAPSED', 'AHHQ_EXPIRED',
+  ]);
+  const got = new Set(cat.map((r) => r.id));
+  for (const id of expected) {
+    if (!got.has(id)) throw new Error(`missing rule: ${id}`);
+  }
+  return `${cat.length} rules`;
+});
+
+// --- 7d. Health check — never throws + standard envelope --------------------
+// (Skipped in this runner because healthCheck mocks `electron`; covered
+//  comprehensively in tests/healthCheck.test.cjs which is included in the
+//  npm test suite.)
+
 // --- 8. Optional release gates (signed installer, etc.) ---------------------
 await runStep('Code-signed Windows installer present (release/enterprise)', 'optional', () => {
   const dir = resolve(repoRoot, 'release', 'enterprise');
   if (!existsSync(dir)) throw new Error('release/enterprise/ not built');
-  const exe = resolve(dir, 'TransTrack-Enterprise-1.0.0-x64.exe');
-  if (!existsSync(exe)) throw new Error('installer .exe not present');
-  return `${(statSync(exe).size / 1024 / 1024).toFixed(1)} MB`;
+  // Find any version of the installer; we don't pin to a specific version
+  // here so the gate keeps working across version bumps.
+  const files = readdirSync(dir).filter(
+    (f) => /^TransTrack-Enterprise-\d+\.\d+\.\d+-x64\.exe$/.test(f),
+  );
+  if (files.length === 0) throw new Error('no installer .exe present');
+  const newest = files
+    .map((f) => ({ f, mtime: statSync(resolve(dir, f)).mtimeMs }))
+    .sort((a, b) => b.mtime - a.mtime)[0];
+  return `${newest.f} (${(statSync(resolve(dir, newest.f)).size / 1024 / 1024).toFixed(1)} MB)`;
 });
 
-await runStep('Code-signing certificate configured (CSC_LINK env)', 'optional', () => {
-  if (!process.env.CSC_LINK && !process.env.WIN_CSC_LINK) {
-    throw new Error('CSC_LINK / WIN_CSC_LINK not set — installer will not be signed');
+await runStep('Windows code-signing configured (any supported mode)', 'optional', () => {
+  const mode = (process.env.TRANSTRACK_SIGN_MODE || '').toLowerCase();
+  if (mode === 'ssl_esigner') {
+    for (const k of ['ESIGNER_USERNAME', 'ESIGNER_PASSWORD', 'ESIGNER_CREDENTIAL_ID',
+                     'ESIGNER_TOTP_SECRET', 'ESIGNER_TOOL_PATH']) {
+      if (!process.env[k]) throw new Error(`${k} not set`);
+    }
+    return 'ssl_esigner mode';
+  }
+  if (mode === 'pfx' || (process.env.CSC_LINK && process.env.CSC_KEY_PASSWORD)) {
+    if (!process.env.CSC_LINK || !process.env.CSC_KEY_PASSWORD) {
+      throw new Error('CSC_LINK / CSC_KEY_PASSWORD missing');
+    }
+    return 'pfx mode';
+  }
+  if (process.env.ESIGNER_USERNAME && process.env.ESIGNER_PASSWORD &&
+      process.env.ESIGNER_CREDENTIAL_ID && process.env.ESIGNER_TOTP_SECRET &&
+      process.env.ESIGNER_TOOL_PATH) {
+    return 'ssl_esigner mode (auto-detected)';
+  }
+  throw new Error('no code-signing credentials in environment');
+});
+
+await runStep('macOS notarization configured (APPLE_* env vars)', 'optional', () => {
+  for (const k of ['APPLE_ID', 'APPLE_APP_PASSWORD', 'APPLE_TEAM_ID']) {
+    if (!process.env[k]) throw new Error(`${k} not set`);
   }
   return 'configured';
+});
+
+await runStep('@electron/notarize installed (afterSign hook)', 'optional', async () => {
+  const { createRequire } = await import('node:module');
+  const require = createRequire(import.meta.url);
+  try {
+    require.resolve('@electron/notarize');
+    return 'installed';
+  } catch {
+    throw new Error('@electron/notarize missing — npm install --save-dev @electron/notarize');
+  }
 });
 } // end main()
 

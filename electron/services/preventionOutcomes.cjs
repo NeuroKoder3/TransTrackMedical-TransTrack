@@ -136,7 +136,8 @@ function recordOutcome(db, args) {
   }
 
   const after = args.assessmentAfter;
-  const delta = (existing.score_before != null && after.score != null)
+  const delta = (existing.score_before !== null && existing.score_before !== undefined &&
+                 after.score          !== null && after.score          !== undefined)
     ? Math.round((existing.score_before - after.score) * 10) / 10
     : null;
 
@@ -225,11 +226,11 @@ function getInterventionEffectiveness(db, orgId, opts = {}) {
   const perType = rows.map((r) => {
     totals.recorded += r.recorded;
     totals.measured += r.measured || 0;
-    if (r.avg_score_delta != null && r.measured > 0) {
+    if (r.avg_score_delta !== null && r.avg_score_delta !== undefined && r.measured > 0) {
       totals.weightedAvgScoreDelta += r.avg_score_delta * r.measured;
       weightSumScore += r.measured;
     }
-    if (r.avg_prob90_delta != null && r.measured > 0) {
+    if (r.avg_prob90_delta !== null && r.avg_prob90_delta !== undefined && r.measured > 0) {
       totals.weightedAvgProb90Delta += r.avg_prob90_delta * r.measured;
       weightSumProb += r.measured;
     }
@@ -238,11 +239,11 @@ function getInterventionEffectiveness(db, orgId, opts = {}) {
       recorded: r.recorded,
       measured: r.measured || 0,
       averageScoreDelta:
-        r.avg_score_delta != null
+        (r.avg_score_delta !== null && r.avg_score_delta !== undefined)
           ? Math.round(r.avg_score_delta * 10) / 10
           : null,
       averageProbability90Delta:
-        r.avg_prob90_delta != null
+        (r.avg_prob90_delta !== null && r.avg_prob90_delta !== undefined)
           ? Math.round(r.avg_prob90_delta * 1000) / 1000
           : null,
     };

@@ -5,6 +5,97 @@ All notable changes to TransTrack are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-04-29
+
+### Added — inactivation prevention
+
+- **Inactivation Prevention Action Queue** (`electron/services/inactivationActionQueue.cjs`)
+  — pure-function service that ranks the entire active waitlist into a
+  Top-N coordinator action queue with one concrete recommended
+  intervention per patient, urgency multiplier (eval-expiry boost),
+  coordinator-overload detection, and aggregate "if every recommended
+  action is executed, expected inactivations avoided in 90 days"
+  projection. 20 unit tests.
+- **Prevention Outcomes** (`electron/services/preventionOutcomes.cjs`)
+  + `prevention_interventions` table — every coordinator action is
+  logged with the engine score AT THE MOMENT OF ACTION (inputs
+  fingerprint and model version pinned), the measured "after" score on
+  re-assessment, and rolled-up center-level effectiveness per
+  intervention type. This is the proof-of-prevention dataset for
+  quarterly reviews and acquirer diligence. 12 unit tests.
+- **Alert Rules Engine** (`electron/services/inactivationAlertRules.cjs`)
+  — seven-rule pure-function catalog (PATIENT_ENTERED_CRITICAL,
+  EVAL_EXPIRED, EVAL_EXPIRING_SOON, HIGH_BARRIER_OPENED, SCORE_JUMPED,
+  CONTACT_LAPSED, AHHQ_EXPIRED) with stable alert-envelope shape ready
+  for in-app banners, SIEM forward, or CDS Hooks consumption. 18 tests.
+- **Prevention Digest** (`electron/services/preventionDigest.cjs`) —
+  thin composition layer that combines action queue, projection, and
+  intervention effectiveness into a single manager-dashboard snapshot
+  for quarterly reviews. 5 tests.
+- IPC channels `actionQueue:*` (build, top interventions for patient,
+  recordIntervention, recordOutcome, getInterventionsForPatient,
+  getInterventionEffectiveness, buildDigest) and the
+  `window.electronAPI.actionQueue.*` preload bridge. Every channel is
+  org-scoped, RBAC-enforced, and audit-logged.
+
+### Added — enterprise readiness
+
+- **Code-signing infrastructure** (`scripts/sign-win.cjs` +
+  `electron-builder.enterprise.json` updates)
+  - Windows Authenticode signer supporting three modes: SSL.com eSigner
+    cloud HSM (recommended for CI), local PFX/signtool, and a deliberate
+    skip mode for unsigned dev builds. Auto-detects mode from env vars.
+  - RFC 6238 TOTP generator built in so the eSigner credential's TOTP
+    secret can live in CI secrets without an external authenticator app.
+  - `afterSign` hook wired to `scripts/notarize.cjs` and macOS
+    `notarize: { teamId: $env.APPLE_TEAM_ID }` so notarization runs
+    automatically once `APPLE_*` env vars are present.
+  - `@electron/notarize` added as dev dep.
+  - 8 unit tests for the signer.
+- **Multi-tenant Epic configuration** (`server/src/integrations/epic/registry.js`)
+  — per-`(orgId, environment)` resolver. Supports a JSON config file
+  pointed to by `EPIC_CUSTOMERS_CONFIG`, per-customer env vars of the
+  shape `EPIC_CLIENT_ID__<ORG_ID>__<ENV>`, and a generic single-tenant
+  fallback. New `createEpicClientForCustomer` factory. 14 vitest tests.
+- **Health Check service** (`electron/services/healthCheck.cjs`) —
+  comprehensive snapshot (process, logger, database, encryption, risk
+  engine, backups) with worst-of roll-up status, never-throws semantics,
+  and a stable JSON envelope. New IPC channel `system:getHealth` and
+  preload bridge. 6 unit tests.
+- **Optional remote-log sink** in `electron/services/logger.cjs` —
+  fires only when `SENTRY_DSN` or `TRANSTRACK_REMOTE_LOG_URL` is set,
+  vendor-neutral, no new runtime dependency, default level filter is
+  error+fatal.
+
+### Added — documentation
+
+- `docs/compliance/policies/BAA_TEMPLATE.md` — Business Associate
+  Agreement template (subject to legal review; clearly disclaimed).
+- `docs/compliance/HECVAT_PREFILL.md` — HECVAT 3.0 Lite pre-fill draft
+  for hospital InfoSec questionnaires.
+- `docs/CODE_SIGNING.md` — full setup guide for SSL.com eSigner +
+  Apple notarization, including a CI matrix example and cost reference.
+- `docs/ENVIRONMENT_VARIABLES.md` — every env var the system reads,
+  organised by component.
+- `docs/PILOT_DEPLOYMENT_RUNBOOK.md` — end-to-end pilot deployment
+  guide (pre-flight, site setup, daily rhythm, retrospective,
+  optional Epic add-on, escalation matrix).
+
+### Changed
+
+- `scripts/release-readiness-check.mjs` — gate now also enforces:
+  presence of new compliance docs (BAA template, HECVAT pre-fill,
+  code-signing, env-vars, pilot runbook); action queue model self-test;
+  alert rules catalog completeness; signed Windows installer detection
+  (any version, picks newest); supported code-signing mode detection
+  (eSigner / PFX); macOS notarization env-var presence;
+  `@electron/notarize` install presence.
+- `package.json` — version bumped to 1.2.0; `npm test` script extended
+  to cover the six new pure-function test files.
+- `electron-builder.enterprise.json` — `afterSign` wired,
+  `win.signtoolOptions.sign` points to the new signer, mac
+  `notarize.teamId` consumes `$env.APPLE_TEAM_ID`.
+
 ## [1.1.0] - 2026-04-28
 
 ### Added
