@@ -312,6 +312,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
     simulateIntervention: (params) => ipcRenderer.invoke('inactivationRisk:simulateIntervention', params),
     projectCenterImpact: (opts) => ipcRenderer.invoke('inactivationRisk:projectCenterImpact', opts),
   },
+
+  // Inactivation Prevention Action Queue + measured outcomes.
+  // The action queue turns the assessment engine into a coordinator-ready
+  // ranked TODO list with concrete recommended interventions. Recorded
+  // interventions and their measured "after" assessments produce the
+  // proof-of-prevention dataset for the manager dashboard / quarterly review.
+  actionQueue: {
+    build: (opts) => ipcRenderer.invoke('actionQueue:build', opts),
+    topInterventionsForPatient: (params) => ipcRenderer.invoke('actionQueue:topInterventionsForPatient', params),
+    recordIntervention: (params) => ipcRenderer.invoke('actionQueue:recordIntervention', params),
+    recordOutcome: (params) => ipcRenderer.invoke('actionQueue:recordOutcome', params),
+    getInterventionsForPatient: (params) => ipcRenderer.invoke('actionQueue:getInterventionsForPatient', params),
+    getInterventionEffectiveness: (params) => ipcRenderer.invoke('actionQueue:getInterventionEffectiveness', params),
+  },
   
   // Readiness Barriers (Non-Clinical Operational Tracking)
   // NOTE: This feature is strictly NON-CLINICAL, NON-ALLOCATIVE, and designed for

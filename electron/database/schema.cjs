@@ -628,6 +628,48 @@ function createSchema(db) {
     )
   `);
 
+  // --- prevention_interventions ---
+  // Inactivation-prevention intervention log: every concrete action a
+  // coordinator records against an at-risk patient, the engine score
+  // captured at the moment of the action, and (when re-assessed later)
+  // the measured score change. This is the table that proves whether
+  // TransTrack actually prevents inactivations vs. just predicts them.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS prevention_interventions (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      patient_id TEXT NOT NULL,
+      intervention_type TEXT NOT NULL CHECK(intervention_type IN (
+        'resolveAllBarriers',
+        'resolveBarrier',
+        'refreshEvaluation',
+        'refreshDocument',
+        'refreshLabs',
+        'refreshAHHQ',
+        'recordContact',
+        'other'
+      )),
+      target_factor TEXT,
+      score_before REAL,
+      risk_level_before TEXT,
+      probability_90_before REAL,
+      score_after REAL,
+      risk_level_after TEXT,
+      probability_90_after REAL,
+      measured_score_delta REAL,
+      measured_at TEXT,
+      model_version TEXT,
+      inputs_fingerprint_before TEXT,
+      inputs_fingerprint_after TEXT,
+      notes TEXT,
+      performed_by TEXT,
+      performed_role TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE,
+      FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE
+    )
+  `);
+
   // tasks
   // Auto-generated and manual tasks with escalation tracking.
   db.exec(`
@@ -841,6 +883,12 @@ function createIndexes(db) {
     CREATE INDEX IF NOT EXISTS idx_srtr_org_id ON srtr_metrics(org_id);
     CREATE INDEX IF NOT EXISTS idx_srtr_date ON srtr_metrics(org_id, metric_date DESC);
     CREATE INDEX IF NOT EXISTS idx_srtr_risk ON srtr_metrics(org_id, cms_survey_risk_level);
+
+    -- Prevention interventions indexes (org-scoped)
+    CREATE INDEX IF NOT EXISTS idx_prev_int_org_id ON prevention_interventions(org_id);
+    CREATE INDEX IF NOT EXISTS idx_prev_int_patient ON prevention_interventions(org_id, patient_id);
+    CREATE INDEX IF NOT EXISTS idx_prev_int_type ON prevention_interventions(org_id, intervention_type);
+    CREATE INDEX IF NOT EXISTS idx_prev_int_created ON prevention_interventions(org_id, created_at DESC);
   `);
 }
 
@@ -877,7 +925,8 @@ function addOrgIdToExistingTables(db, defaultOrgId) {
     'notification_rules', 'priority_weights', 'ehr_integrations', 'ehr_imports',
     'ehr_sync_logs', 'ehr_validation_rules', 'audit_logs', 'access_justification_logs',
     'readiness_barriers', 'adult_health_history_questionnaires', 'lab_results', 'required_lab_types',
-    'outcomes_snapshots', 'inactivation_predictions', 'tasks', 'task_escalation_rules', 'srtr_metrics'
+    'outcomes_snapshots', 'inactivation_predictions', 'tasks', 'task_escalation_rules', 'srtr_metrics',
+    'prevention_interventions'
   ];
 
   for (const table of tablesToMigrate) {
