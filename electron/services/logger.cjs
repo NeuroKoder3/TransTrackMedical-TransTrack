@@ -70,6 +70,49 @@ function formatEntry(level, message, meta = {}) {
   }) + '\n';
 }
 
+// ---------------------------------------------------------------------------
+// Optional remote sink (Sentry-style POST). Activated by env var SENTRY_DSN
+// (or TRANSTRACK_REMOTE_LOG_URL for self-hosted SIEM-bridge endpoints). If
+// unset, the logger is purely local-disk and behaves exactly as before.
+//
+// We do NOT take a hard dependency on @sentry/electron — adding a heavy
+// runtime dep to a HIPAA-aligned medical app is a deliberate decision the
+// deploying organisation should opt into, and Sentry's own SDK requires a
+// BAA before being used with PHI. This hook keeps the app vendor-neutral
+// and ships any payloads via plain fetch with no PHI in the body (only
+// level + message + meta keys the caller passed in).
+// ---------------------------------------------------------------------------
+const REMOTE_LOG_URL =
+  process.env.SENTRY_DSN || process.env.TRANSTRACK_REMOTE_LOG_URL || null;
+const REMOTE_LOG_LEVELS = new Set(
+  (process.env.TRANSTRACK_REMOTE_LOG_LEVELS || 'error,fatal')
+    .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)
+);
+
+function _shipRemote(level, message, meta) {
+  if (!REMOTE_LOG_URL || !REMOTE_LOG_LEVELS.has(level)) return;
+  if (typeof fetch !== 'function') return;
+  // Fire-and-forget; never throw out of the logger.
+  try {
+    fetch(REMOTE_LOG_URL, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        timestamp: new Date().toISOString(),
+        level,
+        message,
+        meta: meta || null,
+        product: 'TransTrack',
+        version: (() => {
+          try { return app.getVersion(); } catch { return null; }
+        })(),
+        platform: process.platform,
+        pid: process.pid,
+      }),
+    }).catch(() => { /* swallow */ });
+  } catch { /* swallow */ }
+}
+
 function write(level, message, meta) {
   const entry = formatEntry(level, message, meta);
   try {
@@ -83,6 +126,7 @@ function write(level, message, meta) {
     const consoleFn = level === 'error' ? console.error : level === 'warn' ? console.warn : console.log;
     consoleFn(`[${level.toUpperCase()}] ${message}`, meta && Object.keys(meta).length ? meta : '');
   }
+  _shipRemote(level, message, meta);
 }
 
 const logger = {

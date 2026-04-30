@@ -102,6 +102,15 @@ function registerExtendedHandlers() {
     const { getDatabase } = require('../database/init.cjs');
     return getMigrationStatus(getDatabase());
   });
+
+  // Health check — comprehensive system snapshot. Available to any
+  // authenticated user so the in-app diagnostics page works for any role
+  // that has the permission to open it; the report does not contain PHI.
+  ipcMain.handle('system:getHealth', async () => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
+    const healthCheck = require('../services/healthCheck.cjs');
+    return healthCheck.getHealth();
+  });
 }
 
 function setupIPCHandlers() {

@@ -31,6 +31,7 @@ const { ipcMain } = require('electron');
 const engine = require('../../services/inactivationRiskEngine.cjs');
 const queueSvc = require('../../services/inactivationActionQueue.cjs');
 const outcomes = require('../../services/preventionOutcomes.cjs');
+const digest = require('../../services/preventionDigest.cjs');
 const shared = require('../shared.cjs');
 
 function register() {
@@ -187,6 +188,34 @@ function register() {
     if (!patientId) throw new Error('patientId is required');
     const { getDatabase } = require('../../database/init.cjs');
     return outcomes.getInterventionsForPatient(getDatabase(), orgId, patientId);
+  });
+
+  ipcMain.handle('actionQueue:buildDigest', async (_event, params = {}) => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
+    const { currentUser } = shared.getSessionState();
+    const allowed = ['admin', 'coordinator', 'regulator'];
+    if (!currentUser || !allowed.includes(currentUser.role)) {
+      throw new Error('Manager digest requires admin, coordinator, or regulator role.');
+    }
+    const orgId = shared.getSessionOrgId();
+    const result = digest.buildDigestFromDatabase(orgId, {
+      actionQueueSize: params?.actionQueueSize,
+      effectivenessWindowDays: params?.effectivenessWindowDays,
+      costPerInactivationUSD: params?.costPerInactivationUSD,
+    });
+    shared.logAudit(
+      'build', 'PreventionDigest', null, null,
+      JSON.stringify({
+        candidates: result.headline.activeCandidatesScreened,
+        avoided: result.headline.inactivationsAvoided,
+        dollarsAvoided: result.headline.estimatedDollarsAvoided,
+        modelVersion: result.modelVersion,
+        digestVersion: result.digestVersion,
+      }),
+      currentUser?.email,
+      currentUser?.role
+    );
+    return result;
   });
 
   ipcMain.handle('actionQueue:getInterventionEffectiveness', async (_event, params = {}) => {

@@ -268,6 +268,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // System Diagnostics
   system: {
     getMigrationStatus: () => ipcRenderer.invoke('system:getMigrationStatus'),
+    getHealth: () => ipcRenderer.invoke('system:getHealth'),
   },
   
   // Organization Management
@@ -325,6 +326,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     recordOutcome: (params) => ipcRenderer.invoke('actionQueue:recordOutcome', params),
     getInterventionsForPatient: (params) => ipcRenderer.invoke('actionQueue:getInterventionsForPatient', params),
     getInterventionEffectiveness: (params) => ipcRenderer.invoke('actionQueue:getInterventionEffectiveness', params),
+    buildDigest: (params) => ipcRenderer.invoke('actionQueue:buildDigest', params),
   },
   
   // Readiness Barriers (Non-Clinical Operational Tracking)

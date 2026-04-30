@@ -3,6 +3,7 @@
   "appId": "com.transtrack.enterprise",
   "productName": "TransTrack Enterprise",
   "copyright": "Copyright © 2026 TransTrack Medical Software",
+  "afterSign": "scripts/notarize.cjs",
   "directories": {
     "output": "release/enterprise",
     "buildResources": "electron/assets"
@@ -33,7 +34,11 @@
     ],
     "icon": "electron/assets/icon.ico",
     "artifactName": "TransTrack-Enterprise-${version}-${arch}.${ext}",
-    "verifyUpdateCodeSignature": true
+    "verifyUpdateCodeSignature": true,
+    "signtoolOptions": {
+      "sign": "scripts/sign-win.cjs",
+      "signingHashAlgorithms": ["sha256"]
+    }
   },
   "mac": {
     "target": [
@@ -42,17 +47,17 @@
         "arch": ["x64", "arm64"]
       }
     ],
-   "icon": "electron/assets/icon.icns",
-   "category": "public.app-category.medical",
-   "hardenedRuntime": true,
-   "gatekeeperAssess": false,
-   "entitlements": "electron/assets/entitlements.mac.plist",
-   "entitlementsInherit": "electron/assets/entitlements.mac.plist",
-   "artifactName": "TransTrack-Enterprise-${version}-${arch}.${ext}",
-   "type": "distribution",
-   "notarize": false
-    
-    
+    "icon": "electron/assets/icon.icns",
+    "category": "public.app-category.medical",
+    "hardenedRuntime": true,
+    "gatekeeperAssess": false,
+    "entitlements": "electron/assets/entitlements.mac.plist",
+    "entitlementsInherit": "electron/assets/entitlements.mac.plist",
+    "artifactName": "TransTrack-Enterprise-${version}-${arch}.${ext}",
+    "type": "distribution",
+    "notarize": {
+      "teamId": "${env.APPLE_TEAM_ID}"
+    }
   },
   "linux": {
     "target": ["AppImage", "deb"],
