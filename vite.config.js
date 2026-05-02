@@ -50,6 +50,18 @@ export default defineConfig({
         'src/pages/LivingDonors.jsx',
         'src/pages/Hl7Inbox.jsx',
       ],
+      // Per-file coverage gates for PHI-touching screens. These five
+      // components ingest patient, donor, lab, AHHQ, or barrier data
+      // and therefore are the most regression-sensitive UI paths.
+      // The 60% lines threshold is the production-readiness bar
+      // captured in the project evaluation report (see commit log).
+      thresholds: {
+        'src/components/patients/PatientForm.jsx':       { lines: 60, statements: 60, branches: 60, functions: 35 },
+        'src/components/donor/DonorForm.jsx':            { lines: 60, statements: 60, branches: 60, functions: 50 },
+        'src/components/barriers/ReadinessBarrierForm.jsx': { lines: 60, statements: 60, branches: 60, functions: 60 },
+        'src/components/labs/LabForm.jsx':               { lines: 60, statements: 60, branches: 60, functions: 60 },
+        'src/components/ahhq/AHHQForm.jsx':              { lines: 60, statements: 60, branches: 60, functions: 60 },
+      },
     },
   },
 });

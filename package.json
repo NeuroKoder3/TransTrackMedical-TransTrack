@@ -58,6 +58,7 @@
     "test:e2e": "npx playwright test",
     "test:components": "npx vitest run",
     "test:coverage": "npx vitest run --coverage",
+    "test:coverage:phi": "npx vitest run --coverage --coverage.thresholds.autoUpdate=false",
     "test:services": "npm rebuild better-sqlite3-multiple-ciphers && node tests/services.test.cjs",
     "test:ipc": "npm rebuild better-sqlite3-multiple-ciphers && node tests/ipc-integration.test.cjs",
     "test:all": "npm run test && npm run test:services && npm run test:ipc && npm run test:load && npm run test:components",
