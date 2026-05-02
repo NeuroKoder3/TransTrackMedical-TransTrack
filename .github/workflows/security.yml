@@ -144,7 +144,7 @@ jobs:
     if: always()
     steps:
       - name: Set audit commit status
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const state = '${{ needs.audit.result }}' === 'success' ? 'success' : 'failure';
