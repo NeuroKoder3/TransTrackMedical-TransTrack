@@ -199,11 +199,26 @@ Operator workflow:
    - Organization type (Transplant Center, OPO, etc.)
    - Contact information
 
-### 4.3 Activate Enterprise License
+### 4.3 Licensing — not applicable in v1.x
 
-1. Navigate to Settings → License
-2. Enter your license key (provided by TransTrack support)
-3. Verify license tier shows "Enterprise" or "Professional"
+> **Removed in v1.x — open distribution.**
+>
+> Earlier drafts of this guide instructed operators to navigate to
+> Settings → License, enter a license key, and verify an "Enterprise" or
+> "Professional" tier. **None of those steps apply to the publicly distributed
+> v1.x build.**
+>
+> The publicly released TransTrack 1.x distribution ships with **all features
+> unlocked and no activation requirement**. There are no tiers, license keys,
+> evaluation windows, or paywalls in the binaries or source. `electron/license/`
+> is intentionally a no-op compatibility shim: every function reports the
+> application as fully licensed and every tier resolves to the same unlimited
+> feature set. See `docs/DUE_DILIGENCE.md` §6 for the full rationale.
+>
+> If a future OEM or distribution partner re-introduces license gating, it
+> will ship as a deliberate delta product behind a build flag and this section
+> will be re-instated against that build. For v1.x there is **nothing to
+> activate** — proceed directly to §4.4.
 
 ### 4.4 Create User Accounts
 

@@ -21,8 +21,8 @@
 ### Build Verification
 - [ ] Production build completes without errors (`npm run build:enterprise:win`)
 - [ ] Application starts from packaged build
-- [ ] License validation works in packaged build
 - [ ] Database encryption verified in packaged build
+- [ ] **Licensing not applicable in v1.x** — `electron/license/` is a no-op shim; no key validation or tier check exists in the v1.x build (see `docs/DEPLOYMENT_PRODUCTION.md` §4.3 and `docs/DUE_DILIGENCE.md` §6)
 
 ## Deployment Day
 
@@ -37,7 +37,6 @@
 - [ ] Fresh database initialization verified
 - [ ] Default admin account created with strong password requirement
 - [ ] Organization configured with correct name and type
-- [ ] License key activated and verified
 - [ ] Backup/restore cycle tested (3 successful cycles minimum)
 
 ### Configuration
@@ -54,7 +53,6 @@
 - [ ] Role-based access verified (admin, coordinator, viewer)
 - [ ] Audit logs generating correctly
 - [ ] Backup schedule configured and first backup verified
-- [ ] License expiration monitoring confirmed
 
 ### Training
 - [ ] Admin training completed (backup, user management, audit review)
@@ -77,7 +75,6 @@
 ### Monthly
 - [ ] Run `npm audit` for new vulnerabilities
 - [ ] Review access logs for unauthorized access patterns
-- [ ] Verify license expiration status
 
 ### Quarterly
 - [ ] Full disaster recovery test
@@ -93,4 +90,9 @@
 
 ---
 
-*Checklist version: 1.0 | Last updated: 2026-03-21*
+*Checklist version: 1.1 | Last updated: 2026-05-01*
+
+> **v1.1 changes** — removed all license-activation, license-key, and
+> license-expiration steps. The publicly distributed v1.x build has no license
+> enforcement (`electron/license/` is a no-op shim — see
+> `docs/DEPLOYMENT_PRODUCTION.md` §4.3 and `docs/DUE_DILIGENCE.md` §6).
