@@ -1,5 +1,12 @@
 # Validation Summary Report — TransTrack vX.Y.Z
 
+> **Looking for a fully-fleshed-out worked example?** See
+> [`pilot-site-example/VALIDATION_SUMMARY_REPORT_EXAMPLE.md`](pilot-site-example/VALIDATION_SUMMARY_REPORT_EXAMPLE.md)
+> for a populated demonstration of this template against a fictional pilot
+> site (with executed IQ, OQ, and PQ examples in the same directory).
+> The example is clearly labelled as demonstration data — **do not** copy
+> its contents into a real validation package.
+
 | Field | Value |
 |---|---|
 | Document ID | TT-VSR-_____ |

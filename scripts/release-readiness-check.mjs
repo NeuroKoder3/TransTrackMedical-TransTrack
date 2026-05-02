@@ -120,6 +120,12 @@ await runStep('Core unit & integration tests (npm test)', 'mandatory', () => {
   return 'all passing';
 });
 
+// --- 4b. PHI-screen renderer coverage threshold (60% lines) -----------------
+await runStep('Renderer coverage gate — PHI-touching screens (≥60% lines)', 'mandatory', () => {
+  runShell('npm', ['run', 'test:coverage:phi', '--silent']);
+  return 'all PHI screens above threshold';
+});
+
 // --- 5. Renderer build -------------------------------------------------------
 await runStep('Renderer production build (vite)', 'mandatory', () => {
   runShell('npm', ['run', 'build', '--silent']);
@@ -150,6 +156,41 @@ const requiredCompliance = [
 ];
 for (const rel of requiredCompliance) {
   await runStep(`Compliance artefact: ${rel}`, 'mandatory', () => {
+    if (!existsSync(resolve(repoRoot, rel))) throw new Error('missing');
+    return 'present';
+  });
+}
+
+// --- 6b. Security-engagement artefacts (Pen-Test SOW + tracker) -------------
+// These are MANDATORY-as-presence (not as-executed). They turn the third-party
+// pen-test action item from "research project" into "ready to procure".
+const requiredSecurityArtefacts = [
+  'docs/security/README.md',
+  'docs/security/PENETRATION_TEST_SCOPE.md',
+  'docs/security/PENTEST_VENDOR_CHECKLIST.md',
+  'docs/security/PENTEST_REMEDIATION_TRACKER.md',
+  'docs/security/PENETRATION_TEST_SUMMARY_TEMPLATE.md',
+];
+for (const rel of requiredSecurityArtefacts) {
+  await runStep(`Security artefact: ${rel}`, 'mandatory', () => {
+    if (!existsSync(resolve(repoRoot, rel))) throw new Error('missing');
+    return 'present';
+  });
+}
+
+// --- 6c. Validation worked-example artefacts --------------------------------
+// Demonstration package that gives a real pilot site a populated walk-through
+// of an executed VSR + IQ + OQ + PQ. Each file carries a "demonstration only"
+// banner and must remain in tree alongside the empty templates.
+const requiredValidationExampleArtefacts = [
+  'docs/compliance/pilot-site-example/README.md',
+  'docs/compliance/pilot-site-example/VALIDATION_SUMMARY_REPORT_EXAMPLE.md',
+  'docs/compliance/pilot-site-example/IQ_PROTOCOL_EXAMPLE.md',
+  'docs/compliance/pilot-site-example/OQ_PROTOCOL_EXAMPLE.md',
+  'docs/compliance/pilot-site-example/PQ_PROTOCOL_EXAMPLE.md',
+];
+for (const rel of requiredValidationExampleArtefacts) {
+  await runStep(`Validation worked-example: ${rel}`, 'mandatory', () => {
     if (!existsSync(resolve(repoRoot, rel))) throw new Error('missing');
     return 'present';
   });

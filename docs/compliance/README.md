@@ -29,6 +29,15 @@ requirements.
 | [`templates/OQ_PROTOCOL_TEMPLATE.md`](templates/OQ_PROTOCOL_TEMPLATE.md) | Operational Qualification — verify each requirement-driven function works. |
 | [`templates/PQ_PROTOCOL_TEMPLATE.md`](templates/PQ_PROTOCOL_TEMPLATE.md) | Performance Qualification — verify the system performs in the deployed clinical workflow. |
 
+### Worked validation example (demonstration only — not a real validation)
+| Document | Purpose |
+|---|---|
+| [`pilot-site-example/README.md`](pilot-site-example/README.md) | Index for a fully-fleshed-out walkthrough of an executed validation package against a **fictional** pilot site. Demonstration data only — see the disclaimer banner. |
+| [`pilot-site-example/VALIDATION_SUMMARY_REPORT_EXAMPLE.md`](pilot-site-example/VALIDATION_SUMMARY_REPORT_EXAMPLE.md) | Worked example of the signed top-level VSR. |
+| [`pilot-site-example/IQ_PROTOCOL_EXAMPLE.md`](pilot-site-example/IQ_PROTOCOL_EXAMPLE.md) | Worked example of an executed IQ protocol. |
+| [`pilot-site-example/OQ_PROTOCOL_EXAMPLE.md`](pilot-site-example/OQ_PROTOCOL_EXAMPLE.md) | Worked example of an executed OQ protocol (with three Severity-3 findings to model the defect-handling flow). |
+| [`pilot-site-example/PQ_PROTOCOL_EXAMPLE.md`](pilot-site-example/PQ_PROTOCOL_EXAMPLE.md) | Worked example of an executed PQ protocol. |
+
 ### Regulatory mappings
 | Document | Purpose |
 |---|---|
