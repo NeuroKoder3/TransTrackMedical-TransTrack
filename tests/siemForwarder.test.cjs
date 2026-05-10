@@ -20,6 +20,9 @@ db.exec(`
     protocol TEXT, format TEXT, enabled INTEGER, severity_filter TEXT,
     last_success_at TEXT, last_failure_at TEXT, last_failure_reason TEXT,
     dropped_count INTEGER DEFAULT 0, created_by TEXT,
+    -- verify_tls mirrors migration 10: TLS peer-cert verification ON by
+    -- default, can be opted out per destination by an admin.
+    verify_tls INTEGER NOT NULL DEFAULT 1,
     created_at TEXT, updated_at TEXT
   );
 `);
@@ -79,6 +82,37 @@ test('RFC5424 syslog formatter uses correct PRI and structured data', () => {
   assert.ok(out.startsWith('<14>1 '));
   assert.ok(out.includes('transtrack'));
   assert.ok(out.includes('[transtrack@53914 org="ORG1"'));
+});
+
+test('RFC5424 SD escapes ALL special chars (\\, ", ]) per RFC 5424 §6.3.3', () => {
+  // Hostile attacker controls org_id via an injected user. They try to
+  // break out of the SD value to inject extra structured-data params.
+  const out = siem.toRfc5424({
+    ...sample,
+    org_id: 'a]b"c\\d',
+    user_email: 'x"y]z',
+    entity_type: 'E\\F',
+    entity_id: 'I"d',
+  });
+  // Each of '\', '"', ']' inside a PARAM-VALUE must be preceded by '\'.
+  assert.ok(out.includes('org="a\\]b\\"c\\\\d"'),
+    `org param not escaped correctly: ${out}`);
+  assert.ok(out.includes('user="x\\"y\\]z"'),
+    `user param not escaped correctly: ${out}`);
+  assert.ok(out.includes('entity="E\\\\F"'),
+    `entity param not escaped correctly: ${out}`);
+  assert.ok(out.includes('id="I\\"d"'),
+    `id param not escaped correctly: ${out}`);
+  // The SD block must close exactly once, at the end of the SD section,
+  // before the free-form MSG. Every ']' the attacker tried to inject
+  // inside a PARAM-VALUE must be escaped as '\]'. We count "unescaped ]"
+  // as those not preceded by a backslash.
+  const unescaped = (out.match(/(?<!\\)\]/g) || []).length;
+  assert.strictEqual(
+    unescaped,
+    1,
+    `SD must contain exactly one unescaped ']' that terminates the SD: ${out}`,
+  );
 });
 
 test('formatRecord dispatches by format', () => {

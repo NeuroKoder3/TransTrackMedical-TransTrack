@@ -1,0 +1,36 @@
+name: TransTrack CodeQL configuration
+
+# Why this config exists
+# ----------------------
+# CodeQL's `js/clear-text-logging` rule (correctly) errs on the side of
+# caution and flags any path where a variable whose name matches a
+# password-shaped pattern (e.g. `PW`, `password`, `secret`, `token`) can
+# flow into a `console.error` / `console.log`. Several of our top-level
+# devtool/test scripts construct deliberately-fake credentials with
+# names like `PW = 'Smoke-Test-Pw-' + Date.now()` and then `console.error(e)`
+# the resulting error envelope on failure. These scripts:
+#
+#   * are NOT shipped in the Electron binary or the Fastify server image;
+#   * are NOT executed in production;
+#   * never receive real PHI / real credentials;
+#   * exist solely so a developer or CI runner can drive a fresh stack
+#     end-to-end against a throwaway database.
+#
+# We therefore exclude them from CodeQL analysis. Production code paths
+# under `electron/`, `server/`, and `src/` continue to be analysed
+# normally (CodeQL's default behaviour scans everything that isn't
+# explicitly ignored, so omitting a `paths:` allow-list is intentional).
+#
+# To re-include a script for analysis (e.g. if it ever starts touching
+# real credentials), remove it from `paths-ignore` below.
+
+paths-ignore:
+  # E2E smoke / sandbox harnesses. Not shipped, never run in production.
+  - 'scripts/smoke-test.mjs'
+  - 'scripts/epic-sandbox-test.mjs'
+  # Standard noise we never want analysed
+  - '**/node_modules'
+  - 'dist'
+  - 'dist-electron'
+  - 'release'
+  - '**/__snapshots__'

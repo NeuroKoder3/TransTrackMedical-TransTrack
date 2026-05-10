@@ -24,9 +24,18 @@ function makeAuthHook(config) {
   return async function authHook(req) {
     if (req.routeOptions?.config?.public) return;
     const header = req.headers['authorization'] || '';
-    const m = header.match(/^Bearer\s+(.+)$/i);
-    if (!m) throw errors.unauthorized('Missing Bearer token');
-    const raw = m[1];
+    // Hardened against polynomial ReDoS: parse the scheme prefix without a
+    // greedy whitespace quantifier (`\s+ ... .+`), which CodeQL's
+    // js/polynomial-redos rule (correctly) flags as quadratic on inputs
+    // like "Bearer" + many trailing spaces. We instead do a fixed-cost
+    // case-insensitive prefix check and then trim a single run of
+    // whitespace once.
+    const SCHEME = 'bearer ';
+    if (header.length < SCHEME.length || header.slice(0, SCHEME.length).toLowerCase() !== SCHEME) {
+      throw errors.unauthorized('Missing Bearer token');
+    }
+    const raw = header.slice(SCHEME.length).replace(/^\s+/, '');
+    if (!raw) throw errors.unauthorized('Missing Bearer token');
 
     // Heuristic: native JWT contains exactly two dots and base64url segments;
     // SMART opaque tokens are a single base64url string. Try JWT first if it

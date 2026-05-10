@@ -60,10 +60,17 @@ async function build() {
   });
   await app.register(sensible);
   await app.register(formbody);
+  // Global rate limiter is the OUTER ring of defence. Sensitive routes
+  // (auth, MFA, OAuth token exchange, etc.) declare a much stricter
+  // per-route `config.rateLimit` override on top of this. Health/readiness
+  // routes have their own per-route override too — they are NOT
+  // allow-listed here, so the per-route override actually takes effect.
+  // (When `allowList` returns true for a request, @fastify/rate-limit
+  // skips the check entirely — including any per-route override — which
+  // is the opposite of what we want for `js/missing-rate-limiting`.)
   await app.register(rateLimit, {
     max: 600,
     timeWindow: '1 minute',
-    allowList: (req) => req.url.startsWith('/health') || req.url.startsWith('/ready'),
   });
 
   app.addContentTypeParser('application/fhir+json', { parseAs: 'string' }, (_req, body, done) => {

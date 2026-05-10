@@ -412,6 +412,28 @@ const MIGRATIONS = [
       `);
     },
   },
+  {
+    version: 10,
+    name: 'add_siem_verify_tls',
+    description:
+      'Per-destination TLS certificate verification toggle (TT-R026, default ON). ' +
+      'Closes CodeQL js/disabling-certificate-validation: TLS forwarders now ' +
+      'verify peer certificates by default; disabling requires an explicit ' +
+      'admin opt-in per destination (e.g. for self-signed dev SIEMs).',
+    // No rollback — making the column NOT NULL DEFAULT 1 is forward-only.
+    rollbackSql: null,
+    up(db) {
+      const cols = db
+        .prepare("PRAGMA table_info(siem_destinations)")
+        .all()
+        .map((c) => c.name);
+      if (!cols.includes('verify_tls')) {
+        db.exec(
+          'ALTER TABLE siem_destinations ADD COLUMN verify_tls INTEGER NOT NULL DEFAULT 1'
+        );
+      }
+    },
+  },
 ];
 
 /**

@@ -42,7 +42,7 @@ function getDestination(id, orgId) {
 }
 
 function createDestination({ orgId, name, host, port, protocol = 'udp', format = 'cef',
-  enabled = true, severityFilter = 'all', createdBy }) {
+  enabled = true, severityFilter = 'all', createdBy, verifyTls = true }) {
   if (!orgId) throw new Error('orgId required');
   if (!name) throw new Error('name required');
   if (!host) throw new Error('host required');
@@ -54,19 +54,26 @@ function createDestination({ orgId, name, host, port, protocol = 'udp', format =
   getDatabase().prepare(`
     INSERT INTO siem_destinations (
       id, org_id, name, host, port, protocol, format, enabled, severity_filter,
-      created_by, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-  `).run(id, orgId, name, host, port, protocol, format, enabled ? 1 : 0, severityFilter, createdBy ?? null);
+      verify_tls, created_by, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+  `).run(
+    id, orgId, name, host, port, protocol, format,
+    enabled ? 1 : 0, severityFilter, verifyTls ? 1 : 0,
+    createdBy ?? null
+  );
   return getDestination(id, orgId);
 }
 
 function updateDestination({ id, orgId, fields }) {
-  const allowed = ['name', 'host', 'port', 'protocol', 'format', 'enabled', 'severity_filter'];
+  const allowed = [
+    'name', 'host', 'port', 'protocol', 'format',
+    'enabled', 'severity_filter', 'verify_tls',
+  ];
   const sets = []; const params = [];
   for (const k of Object.keys(fields || {})) {
     if (allowed.includes(k)) {
       let v = fields[k];
-      if (k === 'enabled') v = v ? 1 : 0;
+      if (k === 'enabled' || k === 'verify_tls') v = v ? 1 : 0;
       sets.push(`${k} = ?`); params.push(v);
     }
   }
@@ -129,13 +136,30 @@ function toJson(record) {
   });
 }
 
+// RFC 5424 §6.3.3: inside a structured-data PARAM-VALUE the only chars that
+// must be escaped are '"', '\', and ']'. Each must be preceded by a single
+// backslash. Order matters: escape backslash FIRST so we don't double-escape
+// the backslashes we're about to introduce.
+function escapeSdParamValue(value) {
+  return String(value ?? '')
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/]/g, '\\]')
+    .replace(/[\r\n]+/g, ' ');
+}
+
 function toRfc5424(record) {
   const pri = 14; // facility=user (1), severity=informational (6) → 1*8+6=14
   const ts = new Date(record.created_at).toISOString();
   const app = 'transtrack';
   const procid = process.pid;
   const msgid = String(record.action || 'audit').slice(0, 32);
-  const sd = `[transtrack@53914 org="${(record.org_id || '').replace(/"/g, '\\"')}" user="${(record.user_email || '').replace(/"/g, '\\"')}" entity="${(record.entity_type || '')}" id="${(record.entity_id || '')}"]`;
+  const sd =
+    '[transtrack@53914' +
+    ` org="${escapeSdParamValue(record.org_id)}"` +
+    ` user="${escapeSdParamValue(record.user_email)}"` +
+    ` entity="${escapeSdParamValue(record.entity_type)}"` +
+    ` id="${escapeSdParamValue(record.entity_id)}"]`;
   const msg = String(record.details || '').replace(/[\r\n]+/g, ' ');
   return `<${pri}>1 ${ts} ${HOSTNAME} ${app} ${procid} ${msgid} ${sd} ${msg}`;
 }
@@ -198,7 +222,28 @@ function ensureSocket(dest, st) {
     sock.on('close', () => { st.socket = null; });
     st.socket = sock;
   } else if (dest.protocol === 'tls') {
-    const sock = tls.connect({ host: dest.host, port: dest.port, rejectUnauthorized: false });
+    // Default: verify peer certificate (rejectUnauthorized = true). The
+    // operator may explicitly opt out per destination by setting
+    // verify_tls = 0 (e.g. for an internal SIEM with a self-signed cert
+    // during pilot bring-up). When opted out, we annotate the failure log
+    // so the operator is reminded the destination is unverified.
+    // Closes CodeQL alert js/disabling-certificate-validation.
+    const verify = dest.verify_tls === undefined || dest.verify_tls === null
+      ? true
+      : Number(dest.verify_tls) === 1;
+    const sock = tls.connect({
+      host: dest.host,
+      port: dest.port,
+      rejectUnauthorized: verify,
+      servername: dest.host,
+      minVersion: 'TLSv1.2',
+    });
+    if (!verify) {
+      recordFailure(
+        dest.id,
+        'WARNING: TLS peer-certificate verification disabled by operator (verify_tls=0).'
+      );
+    }
     sock.on('error', (err) => { recordFailure(dest.id, err.message); try { sock.destroy(); } catch {} st.socket = null; });
     sock.on('close', () => { st.socket = null; });
     st.socket = sock;

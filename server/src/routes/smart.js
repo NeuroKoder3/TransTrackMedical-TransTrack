@@ -32,6 +32,20 @@ const authzCodes = require('../smart/authzCodes');
 const clients = require('../smart/clients');
 const backendJwt = require('../smart/backendJwt');
 
+// Per-route rate-limit profiles for SMART on FHIR endpoints.
+// The OAuth2 surface is a credential-stuffing target, so these are
+// significantly tighter than the global 600 req/min limiter installed
+// in src/index.js. Token endpoint must allow a reasonable burst because
+// EHR clients commonly refresh in tight loops, but we still cap at 60
+// req/min per IP which is far above any legitimate single-user pattern.
+//
+// Closes CodeQL alerts js/missing-rate-limiting on this file.
+const RL_DISCOVERY = { max: 120, timeWindow: '1 minute' };
+const RL_AUTHORIZE = { max: 30,  timeWindow: '1 minute' };
+const RL_TOKEN     = { max: 60,  timeWindow: '1 minute' };
+const RL_REGISTER  = { max: 10,  timeWindow: '1 minute' };
+const RL_INTROSPECT = { max: 120, timeWindow: '1 minute' };
+
 module.exports = async function smartRoutes(app, opts) {
   const { config } = opts;
   const baseUrl = config.FHIR_BASE_URL;
@@ -43,7 +57,7 @@ module.exports = async function smartRoutes(app, opts) {
 
   // ----- Discovery ----------------------------------------------------------
   app.get('/.well-known/smart-configuration',
-    { config: { public: true } },
+    { config: { public: true, rateLimit: RL_DISCOVERY } },
     async (_req, reply) => {
       reply.type('application/json');
       return {
@@ -93,7 +107,7 @@ module.exports = async function smartRoutes(app, opts) {
 
   // Also publish the SMART config under the FHIR base, per the spec.
   app.get('/fhir/.well-known/smart-configuration',
-    { config: { public: true } },
+    { config: { public: true, rateLimit: RL_DISCOVERY } },
     async (req, reply) => {
       const handler = app.routeIndex
         ? app.routeIndex.find(r => r.path === '/.well-known/smart-configuration')?.handler
@@ -104,7 +118,7 @@ module.exports = async function smartRoutes(app, opts) {
 
   // ----- Authorization endpoint --------------------------------------------
   app.get('/oauth2/authorize',
-    { config: { public: true } },
+    { config: { public: true, rateLimit: RL_AUTHORIZE } },
     async (req, reply) => {
       const q = z.object({
         response_type: z.literal('code'),
@@ -150,7 +164,7 @@ module.exports = async function smartRoutes(app, opts) {
     });
 
   app.post('/oauth2/authorize',
-    { config: { public: true } },
+    { config: { public: true, rateLimit: RL_AUTHORIZE } },
     async (req, reply) => {
       // Form post from the consent screen — the API caller is expected to
       // have presented some authentication challenge (the username/password
@@ -227,7 +241,7 @@ module.exports = async function smartRoutes(app, opts) {
 
   // ----- Token endpoint -----------------------------------------------------
   app.post('/oauth2/token',
-    { config: { public: true } },
+    { config: { public: true, rateLimit: RL_TOKEN } },
     async (req, reply) => {
       reply.header('Cache-Control', 'no-store');
       reply.header('Pragma', 'no-cache');
@@ -236,12 +250,19 @@ module.exports = async function smartRoutes(app, opts) {
       const grantType = body.grant_type;
 
       // ---------- Auth header parsing (basic) -------------------------------
+      // Hardened against polynomial ReDoS (CodeQL js/polynomial-redos): use
+      // a fixed-cost case-insensitive prefix check rather than a regex with
+      // `\s+` followed by `.+`, which is quadratic on long whitespace runs.
       let basicClientId = null;
       let basicSecret = null;
       const auth = req.headers.authorization || '';
-      const m = auth.match(/^Basic\s+(.+)$/i);
-      if (m) {
-        const decoded = Buffer.from(m[1], 'base64').toString('utf8');
+      const BASIC = 'basic ';
+      if (
+        auth.length >= BASIC.length &&
+        auth.slice(0, BASIC.length).toLowerCase() === BASIC
+      ) {
+        const b64 = auth.slice(BASIC.length).replace(/^\s+/, '');
+        const decoded = Buffer.from(b64, 'base64').toString('utf8');
         const colon = decoded.indexOf(':');
         if (colon > 0) {
           basicClientId = decoded.slice(0, colon);
@@ -360,16 +381,16 @@ module.exports = async function smartRoutes(app, opts) {
 
   // ----- Dynamic client registration (admin only) ---------------------------
   app.post('/oauth2/register',
-    { preHandler: requireRole('admin') },
+    { config: { rateLimit: RL_REGISTER }, preHandler: requireRole('admin') },
     async (req) => clients.register(req.auth, req.body || {}));
 
   app.get('/oauth2/clients',
-    { preHandler: requireRole('admin') },
+    { config: { rateLimit: RL_INTROSPECT }, preHandler: requireRole('admin') },
     async (req) => clients.list(req.auth));
 
   // ----- Introspection (RFC 7662) ------------------------------------------
   app.post('/oauth2/introspect',
-    { config: { public: true } },
+    { config: { public: true, rateLimit: RL_INTROSPECT } },
     async (req) => {
       const data = z.object({ token: z.string().min(1) }).parse(req.body || {});
       const found = await tokens.lookupAccess(data.token);
@@ -387,7 +408,7 @@ module.exports = async function smartRoutes(app, opts) {
     });
 
   app.post('/oauth2/revoke',
-    { config: { public: true } },
+    { config: { public: true, rateLimit: RL_INTROSPECT } },
     async (req, reply) => {
       const data = z.object({ token: z.string().min(1) }).parse(req.body || {});
       await tokens.revoke(data.token);

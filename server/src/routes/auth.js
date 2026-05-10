@@ -9,11 +9,57 @@ const samlMod = require('../auth/saml');
 const oidcMod = require('../auth/oidc');
 const { errors } = require('../util/errors');
 
+/**
+ * Coerce an attacker-influenced relay path (SAML RelayState, OIDC `state`
+ * relay, etc.) into a SAFE same-origin relative URL.
+ *
+ * Returns a string that is guaranteed to:
+ *   - start with exactly one forward slash, and
+ *   - never start with `//` (which would be a protocol-relative URL
+ *     resolving to a different host), and
+ *   - never start with `\\` (some browsers normalise backslashes to
+ *     forward slashes during URL parsing — same off-site risk), and
+ *   - never contain a colon before the first slash (e.g. `javascript:`).
+ *
+ * Any input that fails any of these checks is replaced with `'/'`.
+ *
+ * Closes CodeQL alert js/server-side-unvalidated-url-redirection.
+ */
+function sanitizeRelayPath(value) {
+  if (typeof value !== 'string' || value.length === 0) return '/';
+  // Reject any URL that has a scheme (e.g. http:, javascript:, data:)
+  if (/^[a-z][a-z0-9+.-]*:/i.test(value)) return '/';
+  // Reject protocol-relative URLs and back-slash variants.
+  if (value.startsWith('//') || value.startsWith('\\\\') || value.startsWith('/\\') || value.startsWith('\\/')) {
+    return '/';
+  }
+  // Must be an absolute path on this origin.
+  if (!value.startsWith('/')) return '/';
+  // Strip any fragment the caller may have included; we will append our own.
+  const noFragment = value.split('#', 1)[0];
+  // Cap length defensively.
+  return noFragment.slice(0, 2048);
+}
+
+// Per-route rate-limit profiles. These are stricter than the global
+// 600 req/min limiter installed in src/index.js because every route
+// here either authenticates a credential, mints/rotates a session
+// token, or relays an SSO assertion — all classic credential-stuffing
+// and account-enumeration targets.
+//
+// Closes CodeQL alerts js/missing-rate-limiting on this file.
+const RL_LOGIN     = { max: 10,  timeWindow: '1 minute' }; // password / MFA verify
+const RL_ENROLL    = { max: 20,  timeWindow: '1 minute' }; // MFA enrol
+const RL_SSO_INIT  = { max: 30,  timeWindow: '1 minute' }; // SSO redirect kick-off
+const RL_SSO_CB    = { max: 60,  timeWindow: '1 minute' }; // SSO callback
+const RL_REFRESH   = { max: 60,  timeWindow: '1 minute' }; // token rotation
+const RL_LOGOUT    = { max: 60,  timeWindow: '1 minute' }; // session revoke
+
 module.exports = async function authRoutes(app, opts) {
   const { config } = opts;
 
   // ----- POST /auth/login (local password) -----
-  app.post('/auth/login', { config: { public: true } }, async (req) => {
+  app.post('/auth/login', { config: { public: true, rateLimit: RL_LOGIN } }, async (req) => {
     const body = z.object({
       email: z.string().email(),
       password: z.string().min(1),
@@ -30,7 +76,7 @@ module.exports = async function authRoutes(app, opts) {
   });
 
   // ----- POST /auth/mfa/verify -----
-  app.post('/auth/mfa/verify', { config: { public: true } }, async (req) => {
+  app.post('/auth/mfa/verify', { config: { public: true, rateLimit: RL_LOGIN } }, async (req) => {
     const body = z.object({
       challengeId: z.string().uuid(),
       code: z.string().min(6).max(20),
@@ -46,7 +92,7 @@ module.exports = async function authRoutes(app, opts) {
   });
 
   // ----- POST /auth/refresh -----
-  app.post('/auth/refresh', { config: { public: true } }, async (req) => {
+  app.post('/auth/refresh', { config: { public: true, rateLimit: RL_REFRESH } }, async (req) => {
     const body = z.object({ refresh: z.string().min(10) }).parse(req.body);
     return withTransaction({}, async (client) => {
       return authService.refresh(client, config, {
@@ -58,7 +104,7 @@ module.exports = async function authRoutes(app, opts) {
   });
 
   // ----- POST /auth/logout -----
-  app.post('/auth/logout', async (req) => {
+  app.post('/auth/logout', { config: { rateLimit: RL_LOGOUT } }, async (req) => {
     const body = z.object({ refresh: z.string().optional() }).parse(req.body || {});
     await withTransaction({}, async (client) => {
       await authService.revoke(client, body.refresh);
@@ -67,7 +113,7 @@ module.exports = async function authRoutes(app, opts) {
   });
 
   // ----- POST /auth/mfa/enroll/begin -----
-  app.post('/auth/mfa/enroll/begin', async (req) => {
+  app.post('/auth/mfa/enroll/begin', { config: { rateLimit: RL_ENROLL } }, async (req) => {
     if (!req.auth) throw errors.unauthorized();
     const secret = mfa.generateSecret();
     const otpauth = mfa.buildOtpauthUrl({
@@ -93,7 +139,7 @@ module.exports = async function authRoutes(app, opts) {
   });
 
   // ----- POST /auth/mfa/enroll/confirm -----
-  app.post('/auth/mfa/enroll/confirm', async (req) => {
+  app.post('/auth/mfa/enroll/confirm', { config: { rateLimit: RL_ENROLL } }, async (req) => {
     if (!req.auth) throw errors.unauthorized();
     const body = z.object({ code: z.string().min(6).max(10) }).parse(req.body);
     return withTransaction({ orgId: req.auth.orgId, userId: req.auth.userId }, async (client) => {
@@ -117,7 +163,7 @@ module.exports = async function authRoutes(app, opts) {
   });
 
   // ----- POST /auth/password/change -----
-  app.post('/auth/password/change', async (req) => {
+  app.post('/auth/password/change', { config: { rateLimit: RL_LOGIN } }, async (req) => {
     if (!req.auth) throw errors.unauthorized();
     const body = z.object({
       current: z.string().min(1),
@@ -175,11 +221,11 @@ module.exports = async function authRoutes(app, opts) {
   // ===========================================================
   if (config.SAML_ENABLED) {
     samlMod.init(config);
-    app.get('/auth/saml/login', { config: { public: true } }, async (req, reply) => {
+    app.get('/auth/saml/login', { config: { public: true, rateLimit: RL_SSO_INIT } }, async (req, reply) => {
       const url = await samlMod.buildLoginUrl(req.query?.relay || '/');
       return reply.redirect(url);
     });
-    app.post('/auth/saml/callback', { config: { public: true } }, async (req, reply) => {
+    app.post('/auth/saml/callback', { config: { public: true, rateLimit: RL_SSO_CB } }, async (req, reply) => {
       const profile = await samlMod.validatePostResponse(req.body?.SAMLResponse, req.body);
       const attrs = samlMod.extractAttributes(profile, config);
       const orgId = config.HL7_DEFAULT_ORG_ID;
@@ -197,7 +243,15 @@ module.exports = async function authRoutes(app, opts) {
           ip: req.ip, userAgent: req.headers['user-agent'],
         });
       });
-      const target = (req.body?.RelayState || '/') + `#access=${encodeURIComponent(session.access)}`;
+      // Closes CodeQL alert js/server-side-unvalidated-url-redirection.
+      // RelayState is attacker-controllable (it's posted back from the IdP
+      // round-trip) so we MUST NOT use it as an absolute URL. Restrict to
+      // a same-origin relative path that starts with exactly one '/' and
+      // does not start with '//' (which would be a protocol-relative URL
+      // pointing off-site) or '\\' (browsers often normalise backslashes
+      // to forward-slashes pre-resolution).
+      const safeRelative = sanitizeRelayPath(req.body?.RelayState);
+      const target = safeRelative + `#access=${encodeURIComponent(session.access)}`;
       return reply.redirect(target);
     });
   }
@@ -209,13 +263,13 @@ module.exports = async function authRoutes(app, opts) {
     await oidcMod.init(config);
     const stateStore = new Map(); // dev-only; production should use redis/db
 
-    app.get('/auth/oidc/login', { config: { public: true } }, async (req, reply) => {
+    app.get('/auth/oidc/login', { config: { public: true, rateLimit: RL_SSO_INIT } }, async (req, reply) => {
       const a = oidcMod.buildAuthRequest();
       stateStore.set(a.state, a);
       return reply.redirect(a.url);
     });
 
-    app.get('/auth/oidc/callback', { config: { public: true } }, async (req, reply) => {
+    app.get('/auth/oidc/callback', { config: { public: true, rateLimit: RL_SSO_CB } }, async (req, reply) => {
       const expected = stateStore.get(req.query.state);
       if (!expected) throw errors.badRequest('Invalid OIDC state');
       stateStore.delete(req.query.state);
@@ -241,7 +295,7 @@ module.exports = async function authRoutes(app, opts) {
   }
 
   // ----- GET /auth/me -----
-  app.get('/auth/me', async (req) => {
+  app.get('/auth/me', { config: { rateLimit: RL_REFRESH } }, async (req) => {
     if (!req.auth) throw errors.unauthorized();
     return withTransaction({ orgId: req.auth.orgId, userId: req.auth.userId }, async (client) => {
       const r = await client.query(

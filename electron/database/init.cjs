@@ -681,7 +681,21 @@ async function seedDefaultData(defaultOrgId) {
     );
 
     // First-launch banner — printed in every environment, not just dev, so a
-    // production operator installing the MSI/DMG can see the token once.
+    // production operator installing the MSI/DMG can see WHERE to retrieve
+    // the one-time setup token. The token value itself is NOT echoed to
+    // stdout by default — operators must read it from the protected
+    // setup-token file (mode 0o600) that we wrote above. This protects
+    // against accidental capture by terminal recorders, screen-shares,
+    // CI logs, and journalctl.
+    //
+    // For locked-down environments where the file cannot be written
+    // (read-only userData on a kiosk) we still need to surface the token
+    // somewhere; in that case it is emitted on stderr only when the
+    // operator explicitly opts in via TRANSTRACK_ECHO_SETUP_TOKEN=1, and
+    // we print a loud reminder that they must rotate it after first use.
+    //
+    // Closes CodeQL alerts js/clear-text-logging at this site.
+    const echoTokenOptIn = process.env.TRANSTRACK_ECHO_SETUP_TOKEN === '1';
     console.log('');
     console.log('================================================================');
     console.log(' TransTrack — first-launch administrator setup');
@@ -689,13 +703,23 @@ async function seedDefaultData(defaultOrgId) {
     console.log(' Account : admin@transtrack.local');
     console.log(' Source  : ' + passwordSource);
     if (setupTokenFilePath) {
-      console.log(' Token   : ' + defaultPassword);
+      console.log(' Token   : (written to setup-token file; not echoed)');
       console.log(' File    : ' + setupTokenFilePath);
       console.log(' (mode 0o600 on POSIX; ACL inherited on Windows)');
     } else if (envPassword) {
       console.log(' Token   : (supplied by env; not echoed)');
+    } else if (echoTokenOptIn) {
+      console.error(
+        ' Token   : (echoed because TRANSTRACK_ECHO_SETUP_TOKEN=1 is set; ROTATE AFTER FIRST USE)'
+      );
+      // Use stderr separately so the actual token is never on the same
+      // stream as the banner and is easier to scrub from logs.
+      process.stderr.write(' Token   : ' + defaultPassword + '\n');
     } else {
-      console.log(' Token   : ' + defaultPassword);
+      console.log(' Token   : (suppressed — set TRANSTRACK_ECHO_SETUP_TOKEN=1 to print)');
+      console.log(' (no setup-token file could be written; rerun with the env var');
+      console.log('  above OR with TRANSTRACK_DEFAULT_PASSWORD=<your-token> to set it');
+      console.log('  yourself, then rotate at first sign-in.)');
     }
     console.log(' Must change password on first sign-in: yes');
     console.log('================================================================');

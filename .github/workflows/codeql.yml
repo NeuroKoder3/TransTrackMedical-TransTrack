@@ -29,6 +29,10 @@ jobs:
         with:
           languages: javascript-typescript
           build-mode: none
+          # See .github/codeql/codeql-config.yml for path filters and
+          # rationale (notably: dev-only smoke/sandbox scripts that
+          # construct fake credentials are intentionally excluded).
+          config-file: ./.github/codeql/codeql-config.yml
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3

@@ -147,13 +147,22 @@ function decryptSecret(stored) {
 // ---------------- Backup codes ----------------
 
 function generateBackupCodes(count = BACKUP_CODE_COUNT) {
-  const charset = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // exclude ambiguous chars
+  // Charset is intentionally 32 chars (exact power of two) so that
+  // crypto.randomInt(0, charset.length) is uniformly distributed without
+  // any modulo-bias workaround, AND ambiguous characters (0/O, 1/I/L) are
+  // excluded so users can transcribe codes from a printout.
+  const charset = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   const codes = [];
   for (let i = 0; i < count; i++) {
-    const buf = crypto.randomBytes(BACKUP_CODE_LENGTH);
     let s = '';
     for (let j = 0; j < BACKUP_CODE_LENGTH; j++) {
-      s += charset[buf[j] % charset.length];
+      // crypto.randomInt(min, max) is rejection-sampling under the hood
+      // and returns a uniformly-distributed integer in [min, max).
+      // This eliminates the modulo-bias pattern that CodeQL's
+      // js/biased-cryptographic-random rule (correctly) warns about for
+      // generic charset.length values, and is also robust if anyone ever
+      // changes the charset to a non-power-of-two length in the future.
+      s += charset[crypto.randomInt(0, charset.length)];
     }
     codes.push(s.slice(0, 5) + '-' + s.slice(5));
   }
