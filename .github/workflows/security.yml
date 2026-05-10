@@ -38,7 +38,15 @@ jobs:
   snyk:
     name: Snyk Vulnerability Scan
     runs-on: ubuntu-latest
-    if: github.event_name != 'schedule'
+    # Skip when SNYK_TOKEN is not available. This transparently handles:
+    #   - Dependabot PRs (do NOT receive repo Actions secrets — separate
+    #     Dependabot-secret namespace; see GitHub docs).
+    #   - PRs from forks (do not receive repo secrets either).
+    #   - Any environment where the maintainer has not configured the
+    #     Snyk integration.
+    # Dependency-vulnerability coverage is still provided by the `audit`
+    # job above (npm audit) and CodeQL runs in a separate workflow.
+    if: ${{ github.event_name != 'schedule' && secrets.SNYK_TOKEN != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -54,6 +62,24 @@ jobs:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
           args: --severity-threshold=high
+
+  snyk-skipped-notice:
+    name: Snyk Vulnerability Scan (skipped — no token)
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'schedule' && secrets.SNYK_TOKEN == '' }}
+    steps:
+      - name: Explain why Snyk was skipped
+        run: |
+          echo "::notice title=Snyk skipped::SNYK_TOKEN is not available in this build context."
+          echo ""
+          echo "This is expected for:"
+          echo "  - Dependabot PRs (use Dependabot-scoped secrets if you want Snyk to run on them)."
+          echo "  - PRs from forks (no access to repo secrets)."
+          echo "  - Repos where SNYK_TOKEN has never been configured."
+          echo ""
+          echo "Dependency-vulnerability coverage on this PR is still provided by:"
+          echo "  - 'Dependency Audit' job in this workflow (npm audit)."
+          echo "  - 'CodeQL Analysis' workflow (separate file)."
 
   lint:
     name: Lint & Static Analysis
