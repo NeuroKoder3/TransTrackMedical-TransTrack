@@ -89,26 +89,45 @@ const REMOTE_LOG_LEVELS = new Set(
     .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)
 );
 
+const SAFE_META_KEYS = new Set(['error', 'code', 'component', 'action', 'duration']);
+const MAX_REMOTE_MSG_LEN = 256;
+
+function _buildRemotePayload(level, message, meta) {
+  const safeMsg = typeof message === 'string'
+    ? message.slice(0, MAX_REMOTE_MSG_LEN)
+    : String(message || '').slice(0, MAX_REMOTE_MSG_LEN);
+
+  const safeMeta = {};
+  if (meta && typeof meta === 'object') {
+    for (const key of Object.keys(meta)) {
+      if (!SAFE_META_KEYS.has(key)) continue;
+      const val = meta[key];
+      if (typeof val === 'string') safeMeta[key] = val.slice(0, 128);
+      else if (typeof val === 'number' || typeof val === 'boolean') safeMeta[key] = val;
+    }
+  }
+
+  return {
+    timestamp: new Date().toISOString(),
+    level: String(level),
+    message: safeMsg,
+    meta: Object.keys(safeMeta).length > 0 ? safeMeta : undefined,
+    product: 'TransTrack',
+    platform: process.platform,
+    pid: process.pid,
+  };
+}
+
 function _shipRemote(level, message, meta) {
   if (!REMOTE_LOG_URL || !REMOTE_LOG_LEVELS.has(level)) return;
   if (typeof fetch !== 'function') return;
   // Fire-and-forget; never throw out of the logger.
   try {
+    const payload = _buildRemotePayload(level, message, meta);
     fetch(REMOTE_LOG_URL, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        timestamp: new Date().toISOString(),
-        level,
-        message,
-        meta: meta || null,
-        product: 'TransTrack',
-        version: (() => {
-          try { return app.getVersion(); } catch { return null; }
-        })(),
-        platform: process.platform,
-        pid: process.pid,
-      }),
+      body: JSON.stringify(payload),
     }).catch(() => { /* swallow */ });
   } catch { /* swallow */ }
 }

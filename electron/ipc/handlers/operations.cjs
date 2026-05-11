@@ -288,12 +288,20 @@ function register() {
     const ext = path.extname(importPath).toLowerCase();
 
     const MAX_IMPORT_SIZE = 50 * 1024 * 1024; // 50 MB
-    const stat = fs.statSync(importPath);
-    if (stat.size > MAX_IMPORT_SIZE) {
-      throw new Error(`File too large (${(stat.size / 1024 / 1024).toFixed(1)} MB). Maximum import size is 50 MB.`);
+    const fd = fs.openSync(importPath, 'r');
+    let raw;
+    try {
+      const stat = fs.fstatSync(fd);
+      if (stat.size > MAX_IMPORT_SIZE) {
+        fs.closeSync(fd);
+        throw new Error(`File too large (${(stat.size / 1024 / 1024).toFixed(1)} MB). Maximum import size is 50 MB.`);
+      }
+      raw = fs.readFileSync(fd, 'utf8');
+      fs.closeSync(fd);
+    } catch (fdErr) {
+      try { fs.closeSync(fd); } catch { /* already closed */ }
+      throw fdErr;
     }
-
-    const raw = fs.readFileSync(importPath, 'utf8');
     let parsed;
 
     if (ext === '.json') {

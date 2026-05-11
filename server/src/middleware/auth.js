@@ -23,6 +23,9 @@ const { errors } = require('../util/errors');
 function makeAuthHook(config) {
   return async function authHook(req) {
     if (req.routeOptions?.config?.public) return;
+    if (typeof req.rateLimit === 'function') {
+      await req.rateLimit();
+    }
     const header = req.headers['authorization'] || '';
     if (!header.toLowerCase().startsWith('bearer ')) {
       throw errors.unauthorized('Missing Bearer token');
