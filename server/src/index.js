@@ -109,6 +109,12 @@ async function build() {
   app.register(async function protectedRoutes(scope) {
     const authHook = makeAuthHook(config);
     await scope.register(rateLimit, { max: 200, timeWindow: '1 minute' });
+    scope.addHook('onRoute', (routeOptions) => {
+      routeOptions.config = routeOptions.config || {};
+      if (routeOptions.config.rateLimit !== false) {
+        routeOptions.config.rateLimit = routeOptions.config.rateLimit || { max: 200, timeWindow: '1 minute' };
+      }
+    });
     scope.addHook('preHandler', authHook);
 
     scope.register(require('./routes/auth'), { config });
