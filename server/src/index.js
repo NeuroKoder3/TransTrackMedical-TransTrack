@@ -121,7 +121,14 @@ async function build() {
     scope.register(require('./routes/patients'));
     scope.register(require('./routes/organOffers'));
     scope.register(require('./routes/labResults'));
-    scope.register(require('./routes/calculators'));
+    scope.register(require('./routes/calculators'), {
+      config: {
+        rateLimit: {
+          max: 200,
+          timeWindow: '1 minute',
+        },
+      },
+    });
     scope.register(require('./routes/audit'));
     scope.register(require('./routes/hl7'));
     scope.register(require('./routes/fhir'), { config });
