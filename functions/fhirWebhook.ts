@@ -3,6 +3,18 @@ import { createLogger, generateRequestId, safeErrorResponse } from './lib/logger
 
 const logger = createLogger('fhirWebhook');
 
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  const encoder = new TextEncoder();
+  const bufA = encoder.encode(a);
+  const bufB = encoder.encode(b);
+  let result = 0;
+  for (let i = 0; i < bufA.length; i++) {
+    result |= bufA[i] ^ bufB[i];
+  }
+  return result === 0;
+}
+
 Deno.serve(async (req) => {
   const requestId = generateRequestId();
 
@@ -17,8 +29,8 @@ Deno.serve(async (req) => {
       }, { status: 503 });
     }
 
-    // Simple bearer token auth
-    if (!authHeader || authHeader !== `Bearer ${webhookSecret}`) {
+    const expectedToken = `Bearer ${webhookSecret}`;
+    if (!authHeader || !timingSafeEqual(authHeader, expectedToken)) {
       return Response.json({ error: 'Unauthorized' }, { status: 401 });
     }
 

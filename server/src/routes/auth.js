@@ -176,7 +176,8 @@ module.exports = async function authRoutes(app, opts) {
   if (config.SAML_ENABLED) {
     samlMod.init(config);
     app.get('/auth/saml/login', { config: { public: true } }, async (req, reply) => {
-      const url = await samlMod.buildLoginUrl(req.query?.relay || '/');
+      const relay = sanitizeRedirectPath(req.query?.relay || '/');
+      const url = await samlMod.buildLoginUrl(relay);
       return reply.redirect(url);
     });
     app.post('/auth/saml/callback', { config: { public: true } }, async (req, reply) => {
@@ -197,7 +198,11 @@ module.exports = async function authRoutes(app, opts) {
           ip: req.ip, userAgent: req.headers['user-agent'],
         });
       });
-      const target = (req.body?.RelayState || '/') + `#access=${encodeURIComponent(session.access)}`;
+      const target = sanitizeRedirectPath(req.body?.RelayState || '/');
+      reply.setCookie('transtrack_access', session.access, {
+        path: '/', httpOnly: true, secure: config.NODE_ENV === 'production',
+        sameSite: 'Lax', maxAge: config.JWT_ACCESS_TTL_SECONDS,
+      });
       return reply.redirect(target);
     });
   }
@@ -236,8 +241,22 @@ module.exports = async function authRoutes(app, opts) {
           ip: req.ip, userAgent: req.headers['user-agent'],
         });
       });
-      return reply.redirect('/#access=' + encodeURIComponent(session.access));
+      reply.setCookie('transtrack_access', session.access, {
+        path: '/', httpOnly: true, secure: config.NODE_ENV === 'production',
+        sameSite: 'Lax', maxAge: config.JWT_ACCESS_TTL_SECONDS,
+      });
+      return reply.redirect('/');
     });
+  }
+
+  /**
+   * Prevent open-redirect: only allow same-origin paths (starts with /,
+   * does not start with // or contain protocol scheme).
+   */
+  function sanitizeRedirectPath(input) {
+    const s = String(input || '/');
+    if (s.startsWith('/') && !s.startsWith('//') && !/^\/[\\@]/.test(s) && !s.includes(':')) return s;
+    return '/';
   }
 
   // ----- GET /auth/me -----

@@ -17,7 +17,48 @@
 
 const https = require('https');
 const http = require('http');
+const dns = require('dns');
 const { withTransaction, getPool } = require('../db/pool');
+
+const FORBIDDEN_HEADER_NAMES = new Set([
+  'host', 'content-length', 'transfer-encoding', 'connection',
+  'keep-alive', 'upgrade', 'proxy-authorization', 'te',
+]);
+
+function sanitizeHeaders(raw) {
+  if (!raw || typeof raw !== 'object') return {};
+  const clean = {};
+  for (const [k, v] of Object.entries(raw)) {
+    const lower = k.toLowerCase();
+    if (FORBIDDEN_HEADER_NAMES.has(lower)) continue;
+    const sv = String(v).replace(/[\r\n]/g, '');
+    clean[k] = sv;
+  }
+  return clean;
+}
+
+const PRIVATE_RANGES = [
+  /^127\./, /^10\./, /^172\.(1[6-9]|2\d|3[01])\./, /^192\.168\./,
+  /^0\./, /^169\.254\./, /^::1$/, /^fc00:/i, /^fe80:/i, /^fd/i,
+];
+
+function isPrivateIp(ip) {
+  return PRIVATE_RANGES.some(r => r.test(ip));
+}
+
+async function resolveAndValidateUrl(endpoint) {
+  const url = new URL(endpoint);
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+    throw new Error('unsupported protocol');
+  }
+  const addresses = await dns.promises.resolve4(url.hostname).catch(() => []);
+  const addresses6 = await dns.promises.resolve6(url.hostname).catch(() => []);
+  const all = [...addresses, ...addresses6];
+  if (all.some(isPrivateIp)) {
+    throw new Error('subscription endpoint resolves to private IP');
+  }
+  return url;
+}
 
 let dispatcherStarted = false;
 
@@ -147,16 +188,18 @@ async function deliverOne(row) {
   const headers = {
     'Content-Type': row.payload_mime || 'application/fhir+json',
     'Content-Length': Buffer.byteLength(payload),
-    ...(row.header || {}),
+    ...sanitizeHeaders(row.header),
   };
 
+  let url;
+  try {
+    url = await resolveAndValidateUrl(row.endpoint);
+  } catch (e) {
+    await markFailed(row.id, e.message || 'invalid endpoint url');
+    return;
+  }
+
   await new Promise((resolve) => {
-    let url;
-    try { url = new URL(row.endpoint); }
-    catch (e) {
-      markFailed(row.id, 'invalid endpoint url').finally(resolve);
-      return;
-    }
     const lib = url.protocol === 'https:' ? https : http;
     const req = lib.request({
       method: 'POST',

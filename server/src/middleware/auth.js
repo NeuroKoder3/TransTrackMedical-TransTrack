@@ -72,7 +72,7 @@ function makeAuthHook(config) {
       };
     } catch (e) {
       if (e.statusCode) throw e;
-      throw errors.unauthorized('Invalid token: ' + e.message);
+      throw errors.unauthorized('Invalid token');
     }
   };
 }

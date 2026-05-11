@@ -54,7 +54,17 @@ async function build() {
 
   pool.init(config, app.log);
 
-  await app.register(cors, { origin: true, credentials: true });
+  const allowedOrigins = (config.CORS_ALLOWED_ORIGINS || '')
+    .split(',').map(s => s.trim()).filter(Boolean);
+  await app.register(cors, {
+    origin: allowedOrigins.length > 0
+      ? (origin, cb) => {
+          if (!origin || allowedOrigins.includes(origin)) cb(null, true);
+          else cb(new Error('CORS origin rejected'), false);
+        }
+      : config.NODE_ENV === 'development',
+    credentials: true,
+  });
   await app.register(helmet, {
     contentSecurityPolicy: false, // SPA-served separately; FHIR clients break with strict CSP
   });
@@ -91,7 +101,7 @@ async function build() {
     }
     req.log.error({ err }, 'unhandled error');
     reply.code(err.statusCode || 500).send({
-      error: { code: 'internal_error', message: err.message },
+      error: { code: 'internal_error', message: 'An unexpected error occurred' },
     });
   });
 

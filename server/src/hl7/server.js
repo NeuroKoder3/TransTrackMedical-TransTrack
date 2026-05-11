@@ -64,7 +64,7 @@ function start({ config, logger }) {
           parsed = parseMessage(raw);
         } catch (e) {
           logger.warn({ err: e.message }, 'mllp parse failed');
-          const nack = buildAck({ message_control_id: 'UNKNOWN' }, 'AR', e.message);
+          const nack = buildAck({ message_control_id: 'UNKNOWN' }, 'AR', 'Message parse failure');
           socket.write(frame(nack));
           continue;
         }
@@ -97,8 +97,8 @@ function start({ config, logger }) {
           logger.info({ msgId: parsed.message_control_id, processed: result.processed,
             patientId: result.patientId, labCount: result.labCount }, 'mllp ingested');
         } catch (e) {
-          logger.error({ err: e.stack }, 'mllp ingest threw');
-          const nack = buildAck(parsed, 'AE', e.message);
+          logger.error({ err: e }, 'mllp ingest threw');
+          const nack = buildAck(parsed, 'AE', 'Internal processing error');
           socket.write(frame(nack));
         }
       }

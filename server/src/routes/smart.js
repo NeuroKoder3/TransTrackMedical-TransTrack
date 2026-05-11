@@ -166,10 +166,8 @@ module.exports = async function smartRoutes(app, opts) {
         nonce: z.string().optional(),
         launch_patient: z.string().optional(),
         launch_encounter: z.string().optional(),
-        // Either both username+password OR a pre-authenticated user_id (admin override)
         username: z.string().optional(),
         password: z.string().optional(),
-        user_id: z.string().uuid().optional(),
         decision: z.enum(['approve', 'deny']).default('approve'),
       }).parse(req.body || {});
 
@@ -184,9 +182,8 @@ module.exports = async function smartRoutes(app, opts) {
         return;
       }
 
-      let userId = body.user_id || null;
-      if (!userId) {
-        // Authenticate via username/password against the org's user store
+      let userId = null;
+      {
         if (!body.username || !body.password) {
           throw errors.unauthorized('username and password required');
         }
@@ -381,8 +378,6 @@ module.exports = async function smartRoutes(app, opts) {
         token_type: 'Bearer',
         exp: Math.floor(new Date(found.expiresAt).getTime() / 1000),
         sub: found.userId,
-        org_id: found.orgId,
-        ...found.launchContext,
       };
     });
 
