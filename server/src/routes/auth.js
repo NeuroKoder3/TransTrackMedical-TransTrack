@@ -13,7 +13,7 @@ module.exports = async function authRoutes(app, opts) {
   const { config } = opts;
 
   // ----- POST /auth/login (local password) -----
-  app.post('/auth/login', { config: { public: true } }, async (req) => {
+  app.post('/auth/login', { config: { public: true, rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req) => {
     const body = z.object({
       email: z.string().email(),
       password: z.string().min(1),
@@ -30,7 +30,7 @@ module.exports = async function authRoutes(app, opts) {
   });
 
   // ----- POST /auth/mfa/verify -----
-  app.post('/auth/mfa/verify', { config: { public: true } }, async (req) => {
+  app.post('/auth/mfa/verify', { config: { public: true, rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req) => {
     const body = z.object({
       challengeId: z.string().uuid(),
       code: z.string().min(6).max(20),
@@ -46,7 +46,7 @@ module.exports = async function authRoutes(app, opts) {
   });
 
   // ----- POST /auth/refresh -----
-  app.post('/auth/refresh', { config: { public: true } }, async (req) => {
+  app.post('/auth/refresh', { config: { public: true, rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req) => {
     const body = z.object({ refresh: z.string().min(10) }).parse(req.body);
     return withTransaction({}, async (client) => {
       return authService.refresh(client, config, {
@@ -175,11 +175,12 @@ module.exports = async function authRoutes(app, opts) {
   // ===========================================================
   if (config.SAML_ENABLED) {
     samlMod.init(config);
-    app.get('/auth/saml/login', { config: { public: true } }, async (req, reply) => {
-      const url = await samlMod.buildLoginUrl(req.query?.relay || '/');
+    app.get('/auth/saml/login', { config: { public: true, rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (req, reply) => {
+      const relay = sanitizeRedirectPath(req.query?.relay || '/');
+      const url = await samlMod.buildLoginUrl(relay);
       return reply.redirect(url);
     });
-    app.post('/auth/saml/callback', { config: { public: true } }, async (req, reply) => {
+    app.post('/auth/saml/callback', { config: { public: true, rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (req, reply) => {
       const profile = await samlMod.validatePostResponse(req.body?.SAMLResponse, req.body);
       const attrs = samlMod.extractAttributes(profile, config);
       const orgId = config.HL7_DEFAULT_ORG_ID;
@@ -197,7 +198,11 @@ module.exports = async function authRoutes(app, opts) {
           ip: req.ip, userAgent: req.headers['user-agent'],
         });
       });
-      const target = (req.body?.RelayState || '/') + `#access=${encodeURIComponent(session.access)}`;
+      const target = '/';
+      reply.setCookie('transtrack_access', session.access, {
+        path: '/', httpOnly: true, secure: config.NODE_ENV === 'production',
+        sameSite: 'Lax', maxAge: config.JWT_ACCESS_TTL_SECONDS,
+      });
       return reply.redirect(target);
     });
   }
@@ -209,13 +214,13 @@ module.exports = async function authRoutes(app, opts) {
     await oidcMod.init(config);
     const stateStore = new Map(); // dev-only; production should use redis/db
 
-    app.get('/auth/oidc/login', { config: { public: true } }, async (req, reply) => {
+    app.get('/auth/oidc/login', { config: { public: true, rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (req, reply) => {
       const a = oidcMod.buildAuthRequest();
       stateStore.set(a.state, a);
       return reply.redirect(a.url);
     });
 
-    app.get('/auth/oidc/callback', { config: { public: true } }, async (req, reply) => {
+    app.get('/auth/oidc/callback', { config: { public: true, rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (req, reply) => {
       const expected = stateStore.get(req.query.state);
       if (!expected) throw errors.badRequest('Invalid OIDC state');
       stateStore.delete(req.query.state);
@@ -236,8 +241,22 @@ module.exports = async function authRoutes(app, opts) {
           ip: req.ip, userAgent: req.headers['user-agent'],
         });
       });
-      return reply.redirect('/#access=' + encodeURIComponent(session.access));
+      reply.setCookie('transtrack_access', session.access, {
+        path: '/', httpOnly: true, secure: config.NODE_ENV === 'production',
+        sameSite: 'Lax', maxAge: config.JWT_ACCESS_TTL_SECONDS,
+      });
+      return reply.redirect('/');
     });
+  }
+
+  /**
+   * Prevent open-redirect: only allow same-origin paths (starts with /,
+   * does not start with // or contain protocol scheme).
+   */
+  function sanitizeRedirectPath(input) {
+    const s = String(input || '/');
+    if (s.startsWith('/') && !s.startsWith('//') && !/^\/[\\@]/.test(s) && !s.includes(':')) return s;
+    return '/';
   }
 
   // ----- GET /auth/me -----

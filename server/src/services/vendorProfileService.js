@@ -10,6 +10,17 @@ const { withTransaction, query } = require('../db/pool');
  * must be cheap. We cache the active profiles per org for 60 seconds.
  */
 
+/**
+ * Reject patterns with nested quantifiers or backreferences that
+ * can cause catastrophic backtracking (ReDoS).
+ */
+function isSafeRegex(pattern) {
+  if (typeof pattern !== 'string' || pattern.length > 200) return false;
+  if (/(\*|\+|\{)\s*(\*|\+|\{)/.test(pattern)) return false;
+  if (/(\.\*){3,}/.test(pattern)) return false;
+  return true;
+}
+
 const CACHE_TTL_MS = 60 * 1000;
 const cache = new Map(); // orgId -> { ts, profiles: [] }
 
@@ -47,6 +58,7 @@ async function findFor(ctx, sendingApp, sendingFacility) {
   const haystack = `${sendingApp || ''}|${sendingFacility || ''}`;
   for (const p of profiles) {
     try {
+      if (!isSafeRegex(p.sending_app_pattern)) continue;
       const re = new RegExp(p.sending_app_pattern, 'i');
       if (re.test(sendingApp || '') || re.test(haystack)) return p;
     } catch (_e) {

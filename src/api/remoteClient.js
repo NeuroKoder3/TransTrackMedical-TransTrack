@@ -183,12 +183,25 @@ class RemoteClient {
   };
 }
 
+function validateBaseUrl(raw) {
+  if (!raw) return null;
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return null;
+    if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') return raw;
+    if (url.protocol !== 'https:') return null;
+    return raw;
+  } catch {
+    return null;
+  }
+}
+
 function resolveBaseUrl() {
   if (typeof window !== 'undefined' && window.transtrackConfig?.apiBaseUrl) {
-    return window.transtrackConfig.apiBaseUrl;
+    return validateBaseUrl(window.transtrackConfig.apiBaseUrl);
   }
   if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_TRANSTRACK_API_URL) {
-    return import.meta.env.VITE_TRANSTRACK_API_URL;
+    return validateBaseUrl(import.meta.env.VITE_TRANSTRACK_API_URL);
   }
   return null;
 }

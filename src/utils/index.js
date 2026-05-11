@@ -107,7 +107,12 @@ export function isValidEmail(email) {
 }
 
 export function generateId() {
-  return Date.now().toString(36) + Math.random().toString(36).substr(2);
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  const arr = new Uint8Array(16);
+  crypto.getRandomValues(arr);
+  return Array.from(arr, b => b.toString(16).padStart(2, '0')).join('');
 }
 
 export function debounce(func, wait) {

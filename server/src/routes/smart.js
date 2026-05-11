@@ -43,7 +43,7 @@ module.exports = async function smartRoutes(app, opts) {
 
   // ----- Discovery ----------------------------------------------------------
   app.get('/.well-known/smart-configuration',
-    { config: { public: true } },
+    { config: { public: true, rateLimit: { max: 60, timeWindow: '1 minute' } } },
     async (_req, reply) => {
       reply.type('application/json');
       return {
@@ -93,7 +93,7 @@ module.exports = async function smartRoutes(app, opts) {
 
   // Also publish the SMART config under the FHIR base, per the spec.
   app.get('/fhir/.well-known/smart-configuration',
-    { config: { public: true } },
+    { config: { public: true, rateLimit: { max: 60, timeWindow: '1 minute' } } },
     async (req, reply) => {
       const handler = app.routeIndex
         ? app.routeIndex.find(r => r.path === '/.well-known/smart-configuration')?.handler
@@ -104,7 +104,7 @@ module.exports = async function smartRoutes(app, opts) {
 
   // ----- Authorization endpoint --------------------------------------------
   app.get('/oauth2/authorize',
-    { config: { public: true } },
+    { config: { public: true, rateLimit: { max: 30, timeWindow: '1 minute' } } },
     async (req, reply) => {
       const q = z.object({
         response_type: z.literal('code'),
@@ -150,7 +150,7 @@ module.exports = async function smartRoutes(app, opts) {
     });
 
   app.post('/oauth2/authorize',
-    { config: { public: true } },
+    { config: { public: true, rateLimit: { max: 15, timeWindow: '1 minute' } } },
     async (req, reply) => {
       // Form post from the consent screen — the API caller is expected to
       // have presented some authentication challenge (the username/password
@@ -166,10 +166,8 @@ module.exports = async function smartRoutes(app, opts) {
         nonce: z.string().optional(),
         launch_patient: z.string().optional(),
         launch_encounter: z.string().optional(),
-        // Either both username+password OR a pre-authenticated user_id (admin override)
         username: z.string().optional(),
         password: z.string().optional(),
-        user_id: z.string().uuid().optional(),
         decision: z.enum(['approve', 'deny']).default('approve'),
       }).parse(req.body || {});
 
@@ -184,9 +182,8 @@ module.exports = async function smartRoutes(app, opts) {
         return;
       }
 
-      let userId = body.user_id || null;
-      if (!userId) {
-        // Authenticate via username/password against the org's user store
+      let userId = null;
+      {
         if (!body.username || !body.password) {
           throw errors.unauthorized('username and password required');
         }
@@ -227,7 +224,7 @@ module.exports = async function smartRoutes(app, opts) {
 
   // ----- Token endpoint -----------------------------------------------------
   app.post('/oauth2/token',
-    { config: { public: true } },
+    { config: { public: true, rateLimit: { max: 30, timeWindow: '1 minute' } } },
     async (req, reply) => {
       reply.header('Cache-Control', 'no-store');
       reply.header('Pragma', 'no-cache');
@@ -239,9 +236,8 @@ module.exports = async function smartRoutes(app, opts) {
       let basicClientId = null;
       let basicSecret = null;
       const auth = req.headers.authorization || '';
-      const m = auth.match(/^Basic\s+(.+)$/i);
-      if (m) {
-        const decoded = Buffer.from(m[1], 'base64').toString('utf8');
+      if (auth.toLowerCase().startsWith('basic ')) {
+        const decoded = Buffer.from(auth.slice(6).trim(), 'base64').toString('utf8');
         const colon = decoded.indexOf(':');
         if (colon > 0) {
           basicClientId = decoded.slice(0, colon);
@@ -369,7 +365,7 @@ module.exports = async function smartRoutes(app, opts) {
 
   // ----- Introspection (RFC 7662) ------------------------------------------
   app.post('/oauth2/introspect',
-    { config: { public: true } },
+    { config: { public: true, rateLimit: { max: 30, timeWindow: '1 minute' } } },
     async (req) => {
       const data = z.object({ token: z.string().min(1) }).parse(req.body || {});
       const found = await tokens.lookupAccess(data.token);
@@ -381,13 +377,11 @@ module.exports = async function smartRoutes(app, opts) {
         token_type: 'Bearer',
         exp: Math.floor(new Date(found.expiresAt).getTime() / 1000),
         sub: found.userId,
-        org_id: found.orgId,
-        ...found.launchContext,
       };
     });
 
   app.post('/oauth2/revoke',
-    { config: { public: true } },
+    { config: { public: true, rateLimit: { max: 30, timeWindow: '1 minute' } } },
     async (req, reply) => {
       const data = z.object({ token: z.string().min(1) }).parse(req.body || {});
       await tokens.revoke(data.token);

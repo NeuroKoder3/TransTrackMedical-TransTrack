@@ -18,7 +18,6 @@
 
 const { createPublicKey, createVerify, verify: cryptoVerify } = require('crypto');
 const https = require('https');
-const http = require('http');
 
 const ALG_TO_HASH = {
   RS256: 'RSA-SHA256',
@@ -34,9 +33,12 @@ function b64urlDecode(s) {
 }
 
 async function fetchJwks(uri) {
+  const parsed = new URL(uri);
+  if (parsed.protocol !== 'https:') {
+    throw new Error('jwks_uri must use HTTPS');
+  }
   return new Promise((resolve, reject) => {
-    const lib = uri.startsWith('https:') ? https : http;
-    const req = lib.get(uri, (res) => {
+    const req = https.get(uri, (res) => {
       if (res.statusCode !== 200) {
         return reject(new Error(`jwks_uri returned ${res.statusCode}`));
       }
