@@ -198,7 +198,7 @@ module.exports = async function authRoutes(app, opts) {
           ip: req.ip, userAgent: req.headers['user-agent'],
         });
       });
-      const target = sanitizeRedirectPath(req.body?.RelayState || '/');
+      const target = '/';
       reply.setCookie('transtrack_access', session.access, {
         path: '/', httpOnly: true, secure: config.NODE_ENV === 'production',
         sameSite: 'Lax', maxAge: config.JWT_ACCESS_TTL_SECONDS,
