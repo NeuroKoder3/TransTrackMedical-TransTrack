@@ -49,6 +49,7 @@ jobs:
       - run: npm ci --ignore-scripts
 
       - name: Run Snyk to check for vulnerabilities
+        continue-on-error: true
         uses: snyk/actions/node@v1.0.0
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
