@@ -376,8 +376,8 @@ function sendMllp(message) {
 
     await pool.end();
     console.log('\n\x1b[42m\x1b[30m SMOKE TEST PASSED \x1b[0m\n');
-})().catch(e => {
+})().catch(() => {
     console.error('\n\x1b[41m\x1b[37m SMOKE TEST FAILED \x1b[0m');
-    console.error(e.message || 'unknown error');
+    console.error('Smoke test failed. Check service logs or run with a debugger for details.');
     process.exit(1);
 });
