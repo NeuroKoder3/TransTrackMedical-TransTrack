@@ -19,7 +19,7 @@ require('../cds/services'); // side-effect: register built-in services
 
 module.exports = async function cdsRoutes(app) {
   app.get('/cds-services',
-    { config: { public: true } },
+    { config: { public: true, rateLimit: { max: 60, timeWindow: '1 minute' } } },
     async () => ({ services: registry.list() }));
 
   app.post('/cds-services/:id', async (req, reply) => {
@@ -82,7 +82,11 @@ module.exports = async function cdsRoutes(app) {
   app.post('/cds-services/:id/feedback', async (req) => {
     // Per CDS Hooks 1.1, feedback informs the CDS service about user actions.
     // We accept and acknowledge; production deployments use this to tune.
-    req.log.info({ id: req.params.id, feedback: req.body }, 'cds feedback');
+    const fb = req.body || {};
+    req.log.info({
+      id: req.params.id,
+      outcomeCount: Array.isArray(fb.feedback) ? fb.feedback.length : 0,
+    }, 'cds feedback');
     return { acknowledged: true };
   });
 };

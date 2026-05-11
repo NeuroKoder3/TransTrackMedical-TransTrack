@@ -590,7 +590,7 @@ async function initDatabase() {
   if (process.env.NODE_ENV === 'development') {
     console.log('Encrypted database initialized successfully');
     console.log(`Encryption enabled: ${encryptionEnabled}`);
-    console.log(`Default organization: ${defaultOrg.id}`);
+    console.log('Default organization: [configured]');
   }
   
   return db;

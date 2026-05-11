@@ -135,7 +135,8 @@ function toRfc5424(record) {
   const app = 'transtrack';
   const procid = process.pid;
   const msgid = String(record.action || 'audit').slice(0, 32);
-  const sd = `[transtrack@53914 org="${(record.org_id || '').replace(/"/g, '\\"')}" user="${(record.user_email || '').replace(/"/g, '\\"')}" entity="${(record.entity_type || '')}" id="${(record.entity_id || '')}"]`;
+  const esc = (s) => String(s || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\]/g, '\\]');
+  const sd = `[transtrack@53914 org="${esc(record.org_id)}" user="${esc(record.user_email)}" entity="${esc(record.entity_type)}" id="${esc(record.entity_id)}"]`;
   const msg = String(record.details || '').replace(/[\r\n]+/g, ' ');
   return `<${pri}>1 ${ts} ${HOSTNAME} ${app} ${procid} ${msgid} ${sd} ${msg}`;
 }
@@ -198,7 +199,7 @@ function ensureSocket(dest, st) {
     sock.on('close', () => { st.socket = null; });
     st.socket = sock;
   } else if (dest.protocol === 'tls') {
-    const sock = tls.connect({ host: dest.host, port: dest.port, rejectUnauthorized: false });
+    const sock = tls.connect({ host: dest.host, port: dest.port, rejectUnauthorized: true });
     sock.on('error', (err) => { recordFailure(dest.id, err.message); try { sock.destroy(); } catch {} st.socket = null; });
     sock.on('close', () => { st.socket = null; });
     st.socket = sock;

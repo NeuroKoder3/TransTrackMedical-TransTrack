@@ -19,7 +19,7 @@ const mockClient = {
   },
   mfa: {
     status: async () => ({ enrolled: false, backup_codes_remaining: 0 }),
-    beginEnrollment: async () => ({ secret_base32: 'JBSWY3DPEHPK3PXP', otpauth_url: 'otpauth://totp/Mock?secret=JBSWY3DPEHPK3PXP', backup_codes: [] }),
+    beginEnrollment: async () => ({ secret_base32: 'MOCK_DEV_ONLY_SECRET', otpauth_url: 'otpauth://totp/Mock?secret=MOCK_DEV_ONLY_SECRET', backup_codes: [] }),
     confirmEnrollment: async () => ({ ok: true, backup_codes: ['1111-2222','3333-4444'] }),
     verifyChallenge: async () => ({ ok: true, method: 'totp' }),
     regenerateBackupCodes: async () => ({ backup_codes: ['1111-2222','3333-4444'] }),

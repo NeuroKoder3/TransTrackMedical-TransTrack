@@ -106,9 +106,14 @@ Deno.serve(async (req) => {
         case 'regex_pattern':
           if (fieldValue) {
             const pattern = rule.validation_config?.pattern;
-            if (pattern) {
-              const regex = new RegExp(pattern);
-              isValid = regex.test(fieldValue);
+            if (pattern && typeof pattern === 'string' && pattern.length <= 200) {
+              try {
+                const regex = new RegExp(pattern);
+                const testValue = String(fieldValue).slice(0, 1000);
+                isValid = regex.test(testValue);
+              } catch {
+                isValid = false;
+              }
               if (!isValid) {
                 errorMsg = rule.error_message || `Field '${rule.target_field}' does not match required pattern`;
               }

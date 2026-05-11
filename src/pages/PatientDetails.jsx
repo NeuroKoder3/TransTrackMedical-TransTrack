@@ -298,10 +298,18 @@ export default function PatientDetails() {
               <div>
                 <div className="text-sm font-medium text-slate-600 mb-2">Attached Documents</div>
                 <div className="space-y-2">
-                  {patient.document_urls.map((url, index) => (
+                  {patient.document_urls.map((url, index) => {
+                    let safeUrl = '#';
+                    try {
+                      const parsed = new URL(url, window.location.origin);
+                      if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
+                        safeUrl = parsed.href;
+                      }
+                    } catch { /* invalid URL, keep # */ }
+                    return (
                     <a
                       key={index}
-                      href={url}
+                      href={safeUrl}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="flex items-center space-x-2 text-cyan-600 hover:text-cyan-700"
@@ -310,7 +318,8 @@ export default function PatientDetails() {
                       <span>Document {index + 1}</span>
                       <Download className="w-3 h-3" />
                     </a>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}

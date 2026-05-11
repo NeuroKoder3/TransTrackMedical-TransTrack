@@ -131,7 +131,7 @@ async function fhirGet(token, path) {
   const patient = await fhirGet(tok.access_token, `Patient/${PATIENT_ID}`);
   const name = patient.name?.[0];
   console.log(
-    `  ${name?.family}, ${name?.given?.join(' ')}  | DOB ${patient.birthDate}  | gender ${patient.gender}`,
+    `  ${name?.family ? name.family[0] + '***' : '?'}, ${name?.given?.[0]?.[0] || '?'}***  | DOB ****-**-${patient.birthDate?.slice(-2) || '**'}  | gender ${patient.gender}`,
   );
   console.log('');
 
@@ -141,14 +141,6 @@ async function fhirGet(token, path) {
     `Observation?patient=${PATIENT_ID}&category=laboratory&_count=10`,
   );
   console.log(`  ${labs.entry?.length || 0} lab observations`);
-  for (const e of labs.entry?.slice(0, 5) || []) {
-    const o = e.resource;
-    const v =
-      o.valueQuantity?.value !== undefined
-        ? `${o.valueQuantity.value} ${o.valueQuantity.unit || ''}`
-        : o.valueCodeableConcept?.text || '(no value)';
-    console.log(`    - ${o.code?.text || o.code?.coding?.[0]?.display}: ${v}`);
-  }
   console.log('');
 
   console.log('Step 4 - GET Condition?patient=...&category=problem-list-item');
@@ -157,12 +149,6 @@ async function fhirGet(token, path) {
     `Condition?patient=${PATIENT_ID}&category=problem-list-item&_count=10`,
   );
   console.log(`  ${probs.entry?.length || 0} active problems`);
-  for (const e of probs.entry?.slice(0, 5) || []) {
-    const c = e.resource;
-    console.log(
-      `    - ${c.code?.text || c.code?.coding?.[0]?.display} [${c.clinicalStatus?.coding?.[0]?.code}]`,
-    );
-  }
   console.log('');
 
   console.log('Step 5 - GET MedicationRequest?patient=...');
@@ -171,15 +157,6 @@ async function fhirGet(token, path) {
     `MedicationRequest?patient=${PATIENT_ID}&_count=10`,
   );
   console.log(`  ${meds.entry?.length || 0} medication requests`);
-  for (const e of meds.entry?.slice(0, 5) || []) {
-    const m = e.resource;
-    const drug =
-      m.medicationCodeableConcept?.text ||
-      m.medicationCodeableConcept?.coding?.[0]?.display ||
-      m.medicationReference?.display ||
-      '(unknown)';
-    console.log(`    - ${drug}  [status=${m.status}]`);
-  }
   console.log('');
 
   console.log('Step 6 - GET AllergyIntolerance?patient=...');
@@ -188,16 +165,10 @@ async function fhirGet(token, path) {
     `AllergyIntolerance?patient=${PATIENT_ID}&_count=10`,
   );
   console.log(`  ${alg.entry?.length || 0} allergies`);
-  for (const e of alg.entry?.slice(0, 5) || []) {
-    const a = e.resource;
-    console.log(
-      `    - ${a.code?.text || a.code?.coding?.[0]?.display} [${a.clinicalStatus?.coding?.[0]?.code || 'unknown'}]`,
-    );
-  }
   console.log('');
 
   console.log('SUCCESS - Epic sandbox round-trip complete.');
-})().catch((e) => {
-  console.error('FAILED:', e.message);
-  process.exit(1);
+})().catch(() => {
+  console.error('FAILED: request failed. Check configuration and endpoint availability.');
+  process.exitCode = 1;
 });

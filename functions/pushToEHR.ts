@@ -64,10 +64,26 @@ Deno.serve(async (req) => {
     authHeaders['Content-Type'] = 'application/fhir+json';
     authHeaders['Accept'] = 'application/fhir+json';
 
-    // Push to EHR system
+    // Validate endpoint URL to prevent SSRF
+    let endpointUrl: URL;
+    try {
+      endpointUrl = new URL(integration.endpoint_url);
+    } catch {
+      return Response.json({ error: 'Invalid integration endpoint URL' }, { status: 400 });
+    }
+    if (endpointUrl.protocol !== 'https:' && endpointUrl.protocol !== 'http:') {
+      return Response.json({ error: 'Unsupported endpoint protocol' }, { status: 400 });
+    }
+    const hostname = endpointUrl.hostname;
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' ||
+        hostname.startsWith('10.') || hostname.startsWith('192.168.') ||
+        hostname.startsWith('169.254.') || hostname.endsWith('.internal')) {
+      return Response.json({ error: 'Endpoint resolves to restricted address' }, { status: 400 });
+    }
+
     let ehrResponse;
     try {
-      const pushResponse = await fetch(integration.endpoint_url, {
+      const pushResponse = await fetch(endpointUrl.toString(), {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify(fhirBundle)
@@ -76,7 +92,6 @@ Deno.serve(async (req) => {
       ehrResponse = {
         status: pushResponse.status,
         statusText: pushResponse.statusText,
-        body: await pushResponse.text()
       };
 
       if (!pushResponse.ok) {
@@ -128,7 +143,6 @@ Deno.serve(async (req) => {
       synced_fields: syncedFields,
       errors,
       sync_log_id: syncLog.id,
-      ehr_response: ehrResponse
     });
   } catch (error) {
     logger.error('EHR push failed', error, { request_id: requestId });
