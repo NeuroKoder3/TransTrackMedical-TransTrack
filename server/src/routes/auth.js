@@ -58,7 +58,7 @@ module.exports = async function authRoutes(app, opts) {
   });
 
   // ----- POST /auth/logout -----
-  app.post('/auth/logout', async (req) => {
+  app.post('/auth/logout', { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req) => {
     const body = z.object({ refresh: z.string().optional() }).parse(req.body || {});
     await withTransaction({}, async (client) => {
       await authService.revoke(client, body.refresh);
@@ -67,7 +67,7 @@ module.exports = async function authRoutes(app, opts) {
   });
 
   // ----- POST /auth/mfa/enroll/begin -----
-  app.post('/auth/mfa/enroll/begin', async (req) => {
+  app.post('/auth/mfa/enroll/begin', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req) => {
     if (!req.auth) throw errors.unauthorized();
     const secret = mfa.generateSecret();
     const otpauth = mfa.buildOtpauthUrl({
@@ -93,7 +93,7 @@ module.exports = async function authRoutes(app, opts) {
   });
 
   // ----- POST /auth/mfa/enroll/confirm -----
-  app.post('/auth/mfa/enroll/confirm', async (req) => {
+  app.post('/auth/mfa/enroll/confirm', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req) => {
     if (!req.auth) throw errors.unauthorized();
     const body = z.object({ code: z.string().min(6).max(10) }).parse(req.body);
     return withTransaction({ orgId: req.auth.orgId, userId: req.auth.userId }, async (client) => {
@@ -117,7 +117,7 @@ module.exports = async function authRoutes(app, opts) {
   });
 
   // ----- POST /auth/password/change -----
-  app.post('/auth/password/change', async (req) => {
+  app.post('/auth/password/change', { config: { rateLimit: { max: 5, timeWindow: '1 minute' } } }, async (req) => {
     if (!req.auth) throw errors.unauthorized();
     const body = z.object({
       current: z.string().min(1),
@@ -260,7 +260,7 @@ module.exports = async function authRoutes(app, opts) {
   }
 
   // ----- GET /auth/me -----
-  app.get('/auth/me', async (req) => {
+  app.get('/auth/me', { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } }, async (req) => {
     if (!req.auth) throw errors.unauthorized();
     return withTransaction({ orgId: req.auth.orgId, userId: req.auth.userId }, async (client) => {
       const r = await client.query(

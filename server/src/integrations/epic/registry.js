@@ -75,23 +75,31 @@ function resetCache() {
 function _loadFile(filePath) {
   if (!filePath) return null;
   try {
-    const stat = fs.statSync(filePath);
-    if (
-      _fileCache &&
-      _fileCachePath === filePath &&
-      _fileCacheMtimeMs === stat.mtimeMs
-    ) {
-      return _fileCache;
+    const fd = fs.openSync(filePath, 'r');
+    try {
+      const stat = fs.fstatSync(fd);
+      if (
+        _fileCache &&
+        _fileCachePath === filePath &&
+        _fileCacheMtimeMs === stat.mtimeMs
+      ) {
+        fs.closeSync(fd);
+        return _fileCache;
+      }
+      const raw = fs.readFileSync(fd, 'utf8');
+      fs.closeSync(fd);
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') {
+        throw new Error('config file did not parse to an object');
+      }
+      _fileCache = parsed;
+      _fileCachePath = filePath;
+      _fileCacheMtimeMs = stat.mtimeMs;
+      return parsed;
+    } catch (innerErr) {
+      fs.closeSync(fd);
+      throw innerErr;
     }
-    const raw = fs.readFileSync(filePath, 'utf8');
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== 'object') {
-      throw new Error('config file did not parse to an object');
-    }
-    _fileCache = parsed;
-    _fileCachePath = filePath;
-    _fileCacheMtimeMs = stat.mtimeMs;
-    return parsed;
   } catch (e) {
     throw new Error(`Epic registry: failed to load ${filePath}: ${e.message}`);
   }

@@ -114,10 +114,15 @@ async function fhirGet(token, path) {
 }
 
 (async () => {
+  function redact(val) {
+    if (!val || val.length <= 6) return '***';
+    return val.slice(0, 3) + '***' + val.slice(-3);
+  }
+
   console.log('--- Epic sandbox SMART Backend Services test ---');
-  console.log('Token URL :', TOKEN_URL);
-  console.log('FHIR base :', FHIR_BASE);
-  console.log('Patient   :', PATIENT_ID);
+  console.log('Token URL :', TOKEN_URL.replace(/\/\/[^/]+/, '//<host>'));
+  console.log('FHIR base :', FHIR_BASE.replace(/\/\/[^/]+/, '//<host>'));
+  console.log('Patient   :', redact(PATIENT_ID));
   console.log('');
 
   console.log('Step 1 - request access token (JWT bearer)...');
@@ -127,7 +132,7 @@ async function fhirGet(token, path) {
   );
   console.log('');
 
-  console.log('Step 2 - GET Patient/' + PATIENT_ID);
+  console.log('Step 2 - GET Patient/' + redact(PATIENT_ID));
   const patient = await fhirGet(tok.access_token, `Patient/${PATIENT_ID}`);
   const name = patient.name?.[0];
   console.log(

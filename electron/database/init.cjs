@@ -154,29 +154,30 @@ function getEncryptionKey() {
  * SQLCipher databases start with different magic bytes than regular SQLite
  */
 function isDatabaseEncrypted(dbPath) {
-  if (!fs.existsSync(dbPath)) {
-    return null; // Database doesn't exist
-  }
-  
+  let fd;
   try {
-    // Read first 16 bytes of the file
-    const fd = fs.openSync(dbPath, 'r');
+    fd = fs.openSync(dbPath, 'r');
+  } catch (openErr) {
+    if (openErr.code === 'ENOENT') return null;
+    return null;
+  }
+
+  try {
     const buffer = Buffer.alloc(16);
     fs.readSync(fd, buffer, 0, 16, 0);
     fs.closeSync(fd);
-    
+
     // SQLite3 magic header: "SQLite format 3\0"
     const sqliteMagic = Buffer.from('SQLite format 3\0');
-    
-    // If file starts with SQLite magic, it's unencrypted
+
     if (buffer.compare(sqliteMagic, 0, 16, 0, 16) === 0) {
-      return false; // Unencrypted
+      return false;
     }
-    
-    // Otherwise, assume encrypted (or corrupted)
+
     return true;
-  } catch (e) {
-    return null; // Unable to determine
+  } catch {
+    try { fs.closeSync(fd); } catch { /* already closed */ }
+    return null;
   }
 }
 
@@ -689,13 +690,13 @@ async function seedDefaultData(defaultOrgId) {
     console.log(' Account : admin@transtrack.local');
     console.log(' Source  : ' + passwordSource);
     if (setupTokenFilePath) {
-      console.log(' Token   : ' + defaultPassword);
+      console.log(' Token   : (see file below)');
       console.log(' File    : ' + setupTokenFilePath);
       console.log(' (mode 0o600 on POSIX; ACL inherited on Windows)');
     } else if (envPassword) {
       console.log(' Token   : (supplied by env; not echoed)');
     } else {
-      console.log(' Token   : ' + defaultPassword);
+      console.log(' Token   : (could not persist to file; set TRANSTRACK_INITIAL_ADMIN_PASSWORD env and restart)');
     }
     console.log(' Must change password on first sign-in: yes');
     console.log('================================================================');

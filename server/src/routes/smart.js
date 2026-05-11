@@ -229,8 +229,17 @@ module.exports = async function smartRoutes(app, opts) {
       reply.header('Cache-Control', 'no-store');
       reply.header('Pragma', 'no-cache');
 
+      const SUPPORTED_GRANT_TYPES = /** @type {const} */ ([
+        'authorization_code',
+        'refresh_token',
+        'client_credentials',
+        'urn:ietf:params:oauth:grant-type:jwt-bearer',
+      ]);
+
       const body = req.body || {};
-      const grantType = body.grant_type;
+      const grantParsed = z.enum(SUPPORTED_GRANT_TYPES).safeParse(body.grant_type);
+      if (!grantParsed.success) throw errors.badRequest('unsupported_grant_type');
+      const grantType = grantParsed.data;
 
       // ---------- Auth header parsing (basic) -------------------------------
       let basicClientId = null;
@@ -351,7 +360,7 @@ module.exports = async function smartRoutes(app, opts) {
         });
       }
 
-      throw errors.badRequest('unsupported_grant_type');
+      // unreachable: grant_type validated by z.enum above
     });
 
   // ----- Dynamic client registration (admin only) ---------------------------

@@ -73,7 +73,6 @@ async function build() {
   await app.register(rateLimit, {
     max: 600,
     timeWindow: '1 minute',
-    allowList: (req) => req.url.startsWith('/health') || req.url.startsWith('/ready'),
   });
 
   app.addContentTypeParser('application/fhir+json', { parseAs: 'string' }, (_req, body, done) => {
@@ -105,21 +104,25 @@ async function build() {
     });
   });
 
-  const authHook = makeAuthHook(config);
-  app.addHook('preHandler', authHook);
-
   app.register(require('./routes/health'));
-  app.register(require('./routes/auth'), { config });
-  app.register(require('./routes/patients'));
-  app.register(require('./routes/organOffers'));
-  app.register(require('./routes/labResults'));
-  app.register(require('./routes/calculators'));
-  app.register(require('./routes/audit'));
-  app.register(require('./routes/hl7'));
-  app.register(require('./routes/fhir'), { config });
-  app.register(require('./routes/smart'), { config });
-  app.register(require('./routes/cds'));
-  app.register(require('./routes/integrations'), { config });
+
+  app.register(async function protectedRoutes(scope) {
+    const authHook = makeAuthHook(config);
+    await scope.register(rateLimit, { max: 200, timeWindow: '1 minute' });
+    scope.addHook('preHandler', authHook);
+
+    scope.register(require('./routes/auth'), { config });
+    scope.register(require('./routes/patients'));
+    scope.register(require('./routes/organOffers'));
+    scope.register(require('./routes/labResults'));
+    scope.register(require('./routes/calculators'));
+    scope.register(require('./routes/audit'));
+    scope.register(require('./routes/hl7'));
+    scope.register(require('./routes/fhir'), { config });
+    scope.register(require('./routes/smart'), { config });
+    scope.register(require('./routes/cds'));
+    scope.register(require('./routes/integrations'), { config });
+  });
 
   app.addHook('onClose', async () => {
     await pool.shutdown();
