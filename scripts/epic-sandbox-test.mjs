@@ -168,7 +168,7 @@ async function fhirGet(token, path) {
   console.log('');
 
   console.log('SUCCESS - Epic sandbox round-trip complete.');
-})().catch((e) => {
-  console.error('FAILED:', e.message || 'unknown error');
+})().catch(() => {
+  console.error('FAILED: request failed. Check configuration and endpoint availability.');
   process.exitCode = 1;
 });
