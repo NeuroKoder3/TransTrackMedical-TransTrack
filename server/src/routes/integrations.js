@@ -63,10 +63,6 @@ module.exports = async function integrationRoutes(app, opts) {
   app.get('/integrations/epic/status', async () => {
     return {
       enabled: !!(config.EPIC_SANDBOX_CLIENT_ID && config.EPIC_PRIVATE_KEY_FILE),
-      tokenUrl: config.EPIC_TOKEN_URL || epic.DEFAULT_TOKEN_URL,
-      fhirBase: config.EPIC_FHIR_BASE || epic.DEFAULT_FHIR_BASE,
-      defaultPatientId:
-        config.EPIC_DEFAULT_PATIENT_ID || 'erXuFYUfucBZaryVksYEcMg3',
       modes: ['bundle', 'server-fetch'],
     };
   });

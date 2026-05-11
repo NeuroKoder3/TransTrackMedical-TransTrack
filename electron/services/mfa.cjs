@@ -147,13 +147,16 @@ function decryptSecret(stored) {
 // ---------------- Backup codes ----------------
 
 function generateBackupCodes(count = BACKUP_CODE_COUNT) {
-  const charset = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // exclude ambiguous chars
+  const charset = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const limit = 256 - (256 % charset.length);
   const codes = [];
   for (let i = 0; i < count; i++) {
-    const buf = crypto.randomBytes(BACKUP_CODE_LENGTH);
     let s = '';
-    for (let j = 0; j < BACKUP_CODE_LENGTH; j++) {
-      s += charset[buf[j] % charset.length];
+    while (s.length < BACKUP_CODE_LENGTH) {
+      const buf = crypto.randomBytes(1);
+      if (buf[0] < limit) {
+        s += charset[buf[0] % charset.length];
+      }
     }
     codes.push(s.slice(0, 5) + '-' + s.slice(5));
   }
