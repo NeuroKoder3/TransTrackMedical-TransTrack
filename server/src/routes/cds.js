@@ -19,7 +19,7 @@ require('../cds/services'); // side-effect: register built-in services
 
 module.exports = async function cdsRoutes(app) {
   app.get('/cds-services',
-    { config: { public: true } },
+    { config: { public: true, rateLimit: { max: 60, timeWindow: '1 minute' } } },
     async () => ({ services: registry.list() }));
 
   app.post('/cds-services/:id', async (req, reply) => {

@@ -378,6 +378,6 @@ function sendMllp(message) {
     console.log('\n\x1b[42m\x1b[30m SMOKE TEST PASSED \x1b[0m\n');
 })().catch(e => {
     console.error('\n\x1b[41m\x1b[37m SMOKE TEST FAILED \x1b[0m');
-    console.error(e);
+    console.error(e.message || 'unknown error');
     process.exit(1);
 });

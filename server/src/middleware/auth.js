@@ -24,9 +24,11 @@ function makeAuthHook(config) {
   return async function authHook(req) {
     if (req.routeOptions?.config?.public) return;
     const header = req.headers['authorization'] || '';
-    const m = header.match(/^Bearer\s+(.+)$/i);
-    if (!m) throw errors.unauthorized('Missing Bearer token');
-    const raw = m[1];
+    if (!header.toLowerCase().startsWith('bearer ')) {
+      throw errors.unauthorized('Missing Bearer token');
+    }
+    const raw = header.slice(header.indexOf(' ') + 1).trim();
+    if (!raw) throw errors.unauthorized('Missing Bearer token');
 
     // Heuristic: native JWT contains exactly two dots and base64url segments;
     // SMART opaque tokens are a single base64url string. Try JWT first if it
