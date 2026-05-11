@@ -115,6 +115,8 @@ async function build() {
         routeOptions.config.rateLimit = routeOptions.config.rateLimit || { max: 200, timeWindow: '1 minute' };
       }
     });
+    const preAuthRateLimit = scope.rateLimit({ max: 200, timeWindow: '1 minute' });
+    scope.addHook('preHandler', preAuthRateLimit);
     scope.addHook('preHandler', authHook);
 
     scope.register(require('./routes/auth'), { config });
