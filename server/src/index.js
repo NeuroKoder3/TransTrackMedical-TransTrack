@@ -107,8 +107,16 @@ async function build() {
 
   const authHook = makeAuthHook(config);
   const authRateLimitHook = app.rateLimit({ max: 200, timeWindow: '1 minute' });
-  app.addHook('preHandler', authRateLimitHook);
-  app.addHook('preHandler', authHook);
+  app.addHook('onRoute', (routeOptions) => {
+    routeOptions.config = routeOptions.config || {};
+    if (routeOptions.config.public) return;
+    const existingPreHandlers = Array.isArray(routeOptions.preHandler)
+      ? routeOptions.preHandler
+      : routeOptions.preHandler
+        ? [routeOptions.preHandler]
+        : [];
+    routeOptions.preHandler = [authRateLimitHook, authHook, ...existingPreHandlers];
+  });
 
   app.register(require('./routes/health'));
   app.register(require('./routes/auth'), { config });
