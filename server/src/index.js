@@ -106,11 +106,17 @@ async function build() {
   });
 
   const authHook = makeAuthHook(config);
-  const authWithRateLimit = async (req, reply) => {
-    await req.rateLimit();
-    return authHook(req, reply);
-  };
-  app.addHook('preHandler', authWithRateLimit);
+  const authRateLimitHook = app.rateLimit({ max: 200, timeWindow: '1 minute' });
+  app.addHook('onRoute', (routeOptions) => {
+    routeOptions.config = routeOptions.config || {};
+    if (routeOptions.config.public) return;
+    const existingPreHandlers = Array.isArray(routeOptions.preHandler)
+      ? routeOptions.preHandler
+      : routeOptions.preHandler
+        ? [routeOptions.preHandler]
+        : [];
+    routeOptions.preHandler = [authRateLimitHook, authHook, ...existingPreHandlers];
+  });
 
   app.register(require('./routes/health'));
   app.register(require('./routes/auth'), { config });
