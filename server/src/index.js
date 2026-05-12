@@ -106,6 +106,8 @@ async function build() {
   });
 
   const authHook = makeAuthHook(config);
+  const authRateLimitHook = app.rateLimit({ max: 200, timeWindow: '1 minute' });
+  app.addHook('preHandler', authRateLimitHook);
   app.addHook('preHandler', authHook);
 
   app.register(require('./routes/health'));
