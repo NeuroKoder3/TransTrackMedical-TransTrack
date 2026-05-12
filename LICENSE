@@ -1,26 +1,46 @@
-MIT License
-
+TransTrack Proprietary License v1.0
 Copyright (c) 2026 TransTrack Medical Software
+All rights reserved.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+IMPORTANT:
+This software and all related assets, names, branding, documentation, and
+compiled artifacts are proprietary. No person or organization may use,
+reproduce, modify, distribute, sublicense, sell, host, publish, or operate
+this software (in source or binary form) except under an explicit written
+license agreement issued by TransTrack Medical Software.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+1) No unauthorized use
+- You may NOT claim this program as your own.
+- You may NOT redistribute this program under the same or confusingly similar
+  identity.
+- You may NOT publish this program or derivatives under the TransTrack or
+  TransTrackMedical names without written authorization.
 
+2) Activation and license requirement
+- Use of this program requires a valid activation and license entitlement from
+  TransTrack Medical Software.
+- Any use without a valid activation/license is unauthorized.
+
+3) No implied permissions
+- No patent, trademark, service-mark, trade dress, branding, or other
+  intellectual property rights are granted by this file.
+- Public visibility of this repository does NOT grant permission to use,
+  copy, or distribute this software.
+
+4) Authorized channels
+Only the following channels are authorized:
+- Repository: https://github.com/NeuroKoder3/TransTrackMedical-TransTrack
+- Releases: https://github.com/NeuroKoder3/TransTrackMedical-TransTrack/releases
+- Contact: Trans_Track@outlook.com
+
+5) Enforcement
+Unauthorized use may result in takedown requests, account/platform abuse
+reports, and legal action to the fullest extent permitted by law.
+
+6) Disclaimer
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-Note: TransTrack is offered free of charge with all features unlocked. There
-is no license activation, no pricing, and no usage tiers. The Software is not
-intended for clinical decision-making or as a replacement for UNOS/OPTN
-allocation systems.
+IMPLIED, INCLUDING BUT NOT LIMITED TO MERCHANTABILITY, FITNESS FOR A PARTICULAR
+PURPOSE, AND NON-INFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN
+ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION
+WITH THE SOFTWARE OR ITS USE.
