@@ -1,6 +1,6 @@
 # TransTrack / TransTrackMedical Trademark Notice
 
-This file gives third parties constructive notice of the unregistered (common-law) trademarks used by the TransTrack project, the date of first use in commerce, and the limits of the permission granted by the project's source-code license.
+This file gives third parties constructive notice of the unregistered (common-law) trademarks used by the TransTrack project, the date of first use in commerce, and the limits of the permission granted by the project's software license.
 
 This notice is published in good faith. It is not legal advice, and it does not modify the terms of the [`LICENSE`](LICENSE) file in this repository.
 
@@ -49,11 +49,11 @@ The **only** authoritative distribution channel for compiled installers is the G
 
 Any other email address, support page, "purchase" page, payment link, archive, installer, or "official" channel that claims to represent TransTrack — including but not limited to addresses at the domains `transtrackmedical.org`, `transtrack.org`, `transtrackmedical.com`, or any payment link not published from this repository — is **not** affiliated with this project and should be treated as fraudulent.
 
-## 4. Relationship to the source-code license
+## 4. Relationship to the software license
 
-The TransTrack source code in this repository is offered under the [MIT License](LICENSE). The MIT License is a copyright license. It applies to the **source code only**. It does **not** grant any trademark, brand, logo, identity, or "designation of origin" rights.
+The TransTrack software in this repository is governed by the [LICENSE](LICENSE) file in this repository. The software license does not grant any trademark, brand, logo, identity, or "designation of origin" rights.
 
-In particular, the MIT License does not grant any person permission to:
+In particular, the software license does not grant any person permission to:
 
 - a) host, distribute, sell, or "support" any compiled binary, installer, archive, or service under the TransTrack / TransTrackMedical names that is not built directly from a tagged release of this repository;
 - b) operate any landing page, download page, GitHub Pages site, web property, or "official" support channel under the TransTrack / TransTrackMedical names;
@@ -61,7 +61,7 @@ In particular, the MIT License does not grant any person permission to:
 - d) represent themselves as the TransTrack project, its maintainers, "TransTrack Medical Software," or any agent thereof;
 - e) use the TransTrack / TransTrackMedical names, marks, logos, descriptive copy, screenshots, or product identity in any manner likely to cause confusion as to the source of goods or services.
 
-Forks of the source code under a **clearly distinct, non-confusing project name and brand** are welcome under the MIT terms. Forks that retain the TransTrack name, branding, or descriptive identity are not.
+Any reuse, redistribution, or operation without explicit written authorization and valid activation/license entitlement is prohibited.
 
 ## 5. Enforcement
 

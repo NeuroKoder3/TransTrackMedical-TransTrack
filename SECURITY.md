@@ -11,6 +11,26 @@
 - Initial assessment: Within 1 week
 - Resolution target: Based on severity (Critical: 24h, High: 72h, Medium: 1 week, Low: 30 days)
 
+## Trusted Distribution and Impersonation Alerts
+
+- Official repository: `https://github.com/NeuroKoder3/TransTrackMedical-TransTrack`
+- Official release channel: `https://github.com/NeuroKoder3/TransTrackMedical-TransTrack/releases`
+- Official contact: `Trans_Track@outlook.com`
+
+Any third-party page, mirror, or download host claiming to be "official
+TransTrack" outside the channels above is untrusted and may pose a malware or
+supply-chain risk.
+
+Known unaffiliated page currently reported by users:
+- `https://the-vishal-gupta.github.io/`
+- Do not download files or follow software links from this page.
+
+If you encounter a suspicious page, report:
+1. URL and timestamp
+2. Screenshots
+3. Downloaded file hashes (if any)
+4. Any observed malicious behavior
+
 ## Supported Versions
 
 | Version | Supported |

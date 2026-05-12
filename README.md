@@ -10,7 +10,11 @@ TransTrack is an offline-first desktop application for transplant centers and pr
 
 > **Important:** "HIPAA aligned" and "Part 11 architected" describe the product's design controls — they are not certifications. SOC 2 / HITRUST / 21 CFR Part 11 validation, and any FDA determinations, must be performed by the deploying organization with qualified auditors.
 
-TransTrack is free to download and use — no license keys, activation codes, or subscriptions required. All features are fully unlocked for everyone.
+> **Licensing Notice:** TransTrack is proprietary software. Use, operation, and deployment require a valid license activation issued by TransTrack Medical Software. Unauthorized use, redistribution, or rebranding is prohibited.
+
+> **Impersonation and Safety Warning:** The project has identified unaffiliated third-party pages impersonating TransTrack. Do not download installers, archives, or updates from unofficial pages. Use only the official repository and releases listed below.
+
+> **Known Unaffiliated Page (Do Not Use):** `https://the-vishal-gupta.github.io/` is not an authorized TransTrack channel. Treat downloads or links from that page as unsafe.
 
 <p align="center">
   <img src="docs/images/dashboard-preview.svg" alt="TransTrack Dashboard" width="800">
@@ -232,6 +236,8 @@ All metrics are computed locally from the encrypted SQLite database. No cloud, A
 
 Download from the [Releases page](https://github.com/NeuroKoder3/TransTrackMedical-TransTrack/releases).
 
+Only this GitHub Releases page is an authorized download channel.
+
 | Platform              | File                         |
 | --------------------- | ---------------------------- |
 | Windows (x64)         | `TransTrack-1.0.0-x64.exe`   |
@@ -274,6 +280,14 @@ npm run build:electron
 4. Begin entering or importing data — all features are immediately available.
 
 Contact [Trans_Track@outlook.com](mailto:Trans_Track@outlook.com) if you need assistance.
+
+## Trust and Anti-Impersonation Notice
+
+- Official repository: `https://github.com/NeuroKoder3/TransTrackMedical-TransTrack`
+- Official releases: `https://github.com/NeuroKoder3/TransTrackMedical-TransTrack/releases`
+- Official support email: `Trans_Track@outlook.com`
+- Any lookalike page claiming to be "official TransTrack" outside these channels should be treated as untrusted.
+- If you suspect malware, impersonation, or fraud linked to TransTrack branding, report it immediately to `Trans_Track@outlook.com`.
 
 ---
 
