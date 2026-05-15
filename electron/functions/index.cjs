@@ -1129,10 +1129,23 @@ async function pushToEHR(params, context) {
   };
 
   if (integration.api_key_encrypted) {
-    if (integration.auth_type === 'basic_auth') {
-      authHeaders['Authorization'] = `Basic ${integration.api_key_encrypted}`;
-    } else {
-      authHeaders['Authorization'] = `Bearer ${integration.api_key_encrypted}`;
+    // Field-level encryption: the column historically held plaintext (legacy
+    // installs) and now holds AES-256-GCM ciphertext. decryptField()
+    // transparently passes legacy plaintext through, so this is safe across
+    // upgrades. NEVER log the decrypted value.
+    const { decryptField } = require('../services/secretEncryption.cjs');
+    let apiKey;
+    try {
+      apiKey = decryptField(integration.api_key_encrypted, `ehr:${integration.id}`);
+    } catch (_e) {
+      throw new Error('EHR integration credential is corrupt — re-enter the API key in Settings.');
+    }
+    if (apiKey) {
+      if (integration.auth_type === 'basic_auth') {
+        authHeaders['Authorization'] = `Basic ${apiKey}`;
+      } else {
+        authHeaders['Authorization'] = `Bearer ${apiKey}`;
+      }
     }
   }
 

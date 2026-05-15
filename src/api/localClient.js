@@ -131,6 +131,25 @@ const mockClient = {
     }),
     isEnabled: async () => true,
   },
+  // Mock license client for browser dev mode
+  license: {
+    getInfo: async () => ({
+      mode: 'trial', isLicensed: true, isEvaluation: true,
+      tier: 'enterprise', tierName: 'Trial',
+      orgId: 'TRIAL', orgName: 'TransTrack Trial (dev)',
+      machineId: 'dev-machine',
+      trial: { startedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 30 * 86400e3).toISOString(), daysRemaining: 30, durationDays: 30 },
+      limits: { maxPatients: -1, maxUsers: -1, maxInstallations: -1 },
+      features: [],
+      canActivate: true,
+      isDevelopmentBuild: true,
+    }),
+    getMachineId: async () => 'dev-machine',
+    activate: async () => ({ success: false, error: 'Activation requires the Electron desktop client.' }),
+    remove:   async () => ({ success: true }),
+    checkFeature: async () => ({ enabled: true }),
+    checkLimit:   async (_t, c) => ({ withinLimit: true, current: c, limit: -1, remaining: -1 }),
+  },
   // Mock aHHQ client for development
   ahhq: {
     getStatuses: async () => ({
@@ -584,6 +603,21 @@ const createElectronClient = () => {
       getStatus: async () => await window.electronAPI.encryption.getStatus(),
       verifyIntegrity: async () => await window.electronAPI.encryption.verifyIntegrity(),
       isEnabled: async () => await window.electronAPI.encryption.isEnabled(),
+    },
+    // Licensing & activation
+    license: {
+      getInfo:       async () => await window.electronAPI.license.getInfo(),
+      getMachineId:  async () => await window.electronAPI.license.getMachineId(),
+      activate:      async (wire) => await window.electronAPI.license.activate(wire),
+      remove:        async () => await window.electronAPI.license.remove(),
+      checkFeature:  async (flag) => await window.electronAPI.license.checkFeature(flag),
+      checkLimit:    async (type, count) => await window.electronAPI.license.checkLimit(type, count),
+    },
+    // SSO (OIDC) desktop flow
+    sso: {
+      start:       async () => await window.electronAPI.sso.start(),
+      cancel:      async () => await window.electronAPI.sso.cancel(),
+      onCompleted: (cb) => window.electronAPI.sso.onCompleted(cb),
     },
     // Risk Intelligence
     risk: {

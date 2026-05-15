@@ -77,6 +77,11 @@
     "ci:security": "npm ci && npm audit --production --audit-level=moderate",
     "release:check": "node scripts/release-readiness-check.mjs",
     "release:check:strict": "node scripts/release-readiness-check.mjs --strict",
+    "release:check:for-sale": "node scripts/release-readiness-check.mjs --for-sale --strict",
+    "license:keypair": "node scripts/license-keypair.mjs --out keys/license",
+    "license:issue": "node scripts/issue-license.mjs",
+    "test:license": "node tests/license.test.cjs && node tests/secretEncryption.test.cjs",
+    "test:sso": "node tests/oidcDesktop.test.cjs",
     "typecheck": "tsc -p ./jsconfig.json",
     "preview": "vite preview",
     "postinstall": "patch-package && electron-builder install-app-deps"

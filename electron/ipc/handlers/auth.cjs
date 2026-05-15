@@ -5,7 +5,9 @@
  *          auth:listUsers, auth:updateUser, auth:deleteUser
  */
 
-const { ipcMain } = require('electron');
+const { ipcMain, app, shell } = require('electron');
+const fs = require('fs');
+const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const bcrypt = require('bcryptjs');
 const {
@@ -15,6 +17,28 @@ const {
 const shared = require('../shared.cjs');
 const passwordHistory = require('../../services/passwordHistory.cjs');
 const mfa = require('../../services/mfa.cjs');
+const oidcDesktop = require('../../auth/oidcDesktop.cjs');
+
+/**
+ * Best-effort deletion of the first-launch admin setup token file.
+ * Called after a successful password change so the bootstrap credential
+ * does not linger on disk past its single-use window.
+ */
+function purgeSetupTokenFile() {
+  try {
+    if (!app || typeof app.getPath !== 'function') return;
+    const tokenPath = path.join(app.getPath('userData'), 'INITIAL_ADMIN_PASSWORD.txt');
+    if (fs.existsSync(tokenPath)) {
+      // Overwrite the file before unlinking to defeat naive undelete.
+      try {
+        const size = fs.statSync(tokenPath).size;
+        const overwrite = Buffer.alloc(Math.max(size, 64), 0);
+        fs.writeFileSync(tokenPath, overwrite, { mode: 0o600 });
+      } catch { /* best effort */ }
+      fs.unlinkSync(tokenPath);
+    }
+  } catch { /* best effort — never throw from this path */ }
+}
 
 // In-memory pending MFA challenges. Maps challenge_token → { user_id, expires_at, sender_id }
 const pendingMfa = new Map();
@@ -205,6 +229,29 @@ function register() {
 
   ipcMain.handle('auth:isAuthenticated', async () => shared.validateSession());
 
+  // ---- SSO (OIDC) on the desktop --------------------------------------------
+  // The renderer asks main to BEGIN a flow; main opens the system browser.
+  // The actual callback arrives via the custom-protocol handler in main.cjs
+  // (not via IPC), which finalizes the session and emits an
+  // 'auth:ssoCompleted' broadcast.
+  ipcMain.handle('auth:ssoStart', async () => {
+    const issuer = db.prepare("SELECT value FROM app_settings WHERE key = 'sso_oidc_issuer'").get()?.value;
+    const clientId = db.prepare("SELECT value FROM app_settings WHERE key = 'sso_oidc_client_id'").get()?.value;
+    if (!issuer || !clientId) {
+      throw new Error('OIDC SSO is not configured. Administrator must set sso_oidc_issuer and sso_oidc_client_id in app settings.');
+    }
+    const result = await oidcDesktop.startFlow({ issuer, clientId });
+    if (shell && typeof shell.openExternal === 'function') {
+      await shell.openExternal(result.authorizationUrl);
+    }
+    return { started: true, state: result.state };
+  });
+
+  ipcMain.handle('auth:ssoCancel', async () => {
+    oidcDesktop.cancelFlow();
+    return { canceled: true };
+  });
+
   ipcMain.handle('auth:register', async (event, userData) => {
     let defaultOrg = getDefaultOrganization();
     const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get();
@@ -267,8 +314,17 @@ function register() {
     }
 
     const hashedPassword = await bcrypt.hash(newPassword, 12);
+    const wasMustChange = !!user.must_change_password;
     db.prepare("UPDATE users SET password_hash = ?, must_change_password = 0, password_changed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?").run(hashedPassword, currentUser.id);
     passwordHistory.recordPassword(currentUser.id, hashedPassword);
+
+    // If this user just rotated out of the must_change_password state AND
+    // they are the seeded administrator, purge the bootstrap token file
+    // immediately. We do this for any successful rotation off must_change so
+    // the cleanup is robust against admins who renamed admin@transtrack.local.
+    if (wasMustChange) {
+      purgeSetupTokenFile();
+    }
 
     shared.logAudit('update', 'User', currentUser.id, null, 'Password changed', currentUser.email, currentUser.role);
     return { success: true };

@@ -22,6 +22,7 @@ const mfaHandlers = require('./handlers/mfa.cjs');
 const siemHandlers = require('./handlers/siem.cjs');
 const hl7Handlers = require('./handlers/hl7.cjs');
 const optnExportHandlers = require('./handlers/optnExport.cjs');
+const licenseHandlers = require('./handlers/license.cjs');
 const backupHandler = require('./backupHandler.cjs');
 const dataResidency = require('./dataResidency.cjs');
 const auditReportHandler = require('./auditReportHandler.cjs');
@@ -137,6 +138,7 @@ function setupIPCHandlers() {
   siemHandlers.register();
   hl7Handlers.register();
   optnExportHandlers.register();
+  licenseHandlers.register();
   backupHandler.register();
   dataResidency.register();
   auditReportHandler.register();

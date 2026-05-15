@@ -1,19 +1,51 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/AuthContext';
+import { api } from '@/api/apiClient';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2, Shield, Lock, KeyRound, ArrowLeft } from 'lucide-react';
+import { Loader2, Shield, Lock, KeyRound, ArrowLeft, Building2 } from 'lucide-react';
 
 export default function Login() {
-  const { login, isLoadingAuth, mfaChallenge, submitMfa, cancelMfa } = useAuth();
+  const { login, isLoadingAuth, mfaChallenge, submitMfa, cancelMfa, refreshAuth } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [mfaCode, setMfaCode] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [ssoInFlight, setSsoInFlight] = useState(false);
+
+  // Subscribe to the broadcast emitted by the protocol handler after the
+  // OIDC token exchange completes. The renderer's job is to refresh its
+  // auth state so AuthContext picks up the new session.
+  useEffect(() => {
+    if (!api.sso || typeof api.sso.onCompleted !== 'function') return;
+    const unsubscribe = api.sso.onCompleted((payload) => {
+      setSsoInFlight(false);
+      if (payload?.ok) {
+        if (typeof refreshAuth === 'function') refreshAuth();
+        setError('');
+      } else {
+        setError(payload?.error || 'SSO sign-in failed.');
+      }
+    });
+    return unsubscribe;
+  }, [refreshAuth]);
+
+  const handleSso = async () => {
+    setError('');
+    setSsoInFlight(true);
+    try {
+      await api.sso.start();
+      // The IdP page is now open in the system browser. The callback
+      // arrives via auth:ssoCompleted (above).
+    } catch (err) {
+      setSsoInFlight(false);
+      setError(err.message || 'SSO is not configured. Ask your administrator.');
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -119,6 +151,32 @@ export default function Login() {
                     )}
                   </Button>
                 </form>
+
+                <div className="my-4 flex items-center gap-3">
+                  <div className="h-px flex-1 bg-slate-200" />
+                  <span className="text-xs text-slate-400 uppercase tracking-wide">or</span>
+                  <div className="h-px flex-1 bg-slate-200" />
+                </div>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full h-11"
+                  disabled={ssoInFlight || isLoading || isLoadingAuth}
+                  onClick={handleSso}
+                >
+                  {ssoInFlight ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Waiting for identity provider…
+                    </>
+                  ) : (
+                    <>
+                      <Building2 className="w-4 h-4 mr-2" />
+                      Sign in with your organization (SSO)
+                    </>
+                  )}
+                </Button>
 
                 <div className="mt-6 pt-4 border-t border-slate-100">
                   <p className="text-xs text-center text-slate-500">

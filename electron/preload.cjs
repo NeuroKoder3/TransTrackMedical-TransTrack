@@ -276,6 +276,30 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getCurrent: () => ipcRenderer.invoke('organization:getCurrent'),
     update: (updates) => ipcRenderer.invoke('organization:update', updates),
   },
+
+  // Licensing — see electron/ipc/handlers/license.cjs
+  license: {
+    getInfo:       () => ipcRenderer.invoke('license:getInfo'),
+    getMachineId:  () => ipcRenderer.invoke('license:getMachineId'),
+    activate:      (licenseWire) => ipcRenderer.invoke('license:activate', licenseWire),
+    remove:        () => ipcRenderer.invoke('license:remove'),
+    checkFeature:  (featureFlag) => ipcRenderer.invoke('license:checkFeature', featureFlag),
+    checkLimit:    (limitType, currentCount) => ipcRenderer.invoke('license:checkLimit', limitType, currentCount),
+  },
+
+  // SSO (OIDC) on the desktop — see electron/auth/oidcDesktop.cjs
+  sso: {
+    start:  () => ipcRenderer.invoke('auth:ssoStart'),
+    cancel: () => ipcRenderer.invoke('auth:ssoCancel'),
+    // Subscribe to the broadcast emitted by the protocol handler in main.cjs
+    // after the IdP redirect completes. The callback receives
+    // { ok, user?, sessionId?, error? }.
+    onCompleted: (callback) => {
+      const wrapped = (_event, payload) => callback(payload);
+      ipcRenderer.on('auth:ssoCompleted', wrapped);
+      return () => ipcRenderer.removeListener('auth:ssoCompleted', wrapped);
+    },
+  },
   
   // Menu event listeners
   onMenuExport: (callback) => {

@@ -133,7 +133,11 @@ export const AuthProvider = ({ children }) => {
       cancelMfa,
       logout,
       navigateToLogin,
-      checkAppState
+      checkAppState,
+      // Alias for callers (e.g. the SSO completion handler in Login)
+      // that want to re-query the backend after a non-form-driven auth
+      // event landed a fresh session.
+      refreshAuth: checkAppState,
     }}>
       {children}
     </AuthContext.Provider>
