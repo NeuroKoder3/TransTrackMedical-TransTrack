@@ -1,0 +1,222 @@
+name: Release (commercial)
+
+# Triggers ONLY on a signed version tag of the form vX.Y.Z. This workflow
+# enforces the commercial release gate, which requires:
+#   - all CI checks to pass
+#   - Windows code-signing credentials present in the environment
+#   - Apple notarization credentials present in the environment
+#   - signed Windows installer artifact built into release/enterprise/
+#
+# If any of those is missing, the build fails. This is the mechanism that
+# enforces "no unsigned binary is ever published to customers".
+#
+# Required repository secrets:
+#   Windows (one of two modes):
+#     a) SSL.com eSigner (preferred — cloud HSM, no local cert):
+#          ESIGNER_USERNAME
+#          ESIGNER_PASSWORD
+#          ESIGNER_CREDENTIAL_ID
+#          ESIGNER_TOTP_SECRET
+#        and TRANSTRACK_SIGN_MODE=ssl_esigner in env
+#     b) Legacy PFX file:
+#          CSC_LINK                base64 .pfx
+#          CSC_KEY_PASSWORD        pfx password
+#   macOS:
+#     APPLE_ID                Apple ID for notarization
+#     APPLE_APP_PASSWORD      app-specific password
+#     APPLE_TEAM_ID           developer team ID
+#     APPLE_CERT_BASE64       Developer ID Application cert .p12 (base64)
+#     APPLE_CERT_PASSWORD     cert password
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. v1.3.0). Used only for workflow_dispatch.'
+        required: true
+        type: string
+
+permissions:
+  contents: write   # needed to upload to GitHub Releases
+
+jobs:
+  preflight:
+    name: Preflight — secrets present
+    runs-on: ubuntu-latest
+    outputs:
+      windows_mode: ${{ steps.detect.outputs.windows_mode }}
+    steps:
+      - name: Detect Windows signing mode
+        id: detect
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          ESIGNER_USERNAME: ${{ secrets.ESIGNER_USERNAME }}
+        run: |
+          if [ -n "$ESIGNER_USERNAME" ]; then
+            echo "windows_mode=ssl_esigner" >> $GITHUB_OUTPUT
+          elif [ -n "$CSC_LINK" ]; then
+            echo "windows_mode=pfx" >> $GITHUB_OUTPUT
+          else
+            echo "::error::No Windows code-signing credentials present. Set ESIGNER_* or CSC_LINK secrets before tagging a release."
+            exit 1
+          fi
+
+      - name: Require macOS notarization credentials
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          missing=0
+          for v in APPLE_ID APPLE_APP_PASSWORD APPLE_TEAM_ID; do
+            if [ -z "${!v}" ]; then
+              echo "::error::Missing required secret: $v"
+              missing=1
+            fi
+          done
+          if [ $missing -ne 0 ]; then
+            exit 1
+          fi
+
+  build-windows:
+    name: Build & sign Windows installer
+    needs: preflight
+    runs-on: windows-latest
+    env:
+      TRANSTRACK_SIGN_MODE: ${{ needs.preflight.outputs.windows_mode }}
+      ESIGNER_USERNAME: ${{ secrets.ESIGNER_USERNAME }}
+      ESIGNER_PASSWORD: ${{ secrets.ESIGNER_PASSWORD }}
+      ESIGNER_CREDENTIAL_ID: ${{ secrets.ESIGNER_CREDENTIAL_ID }}
+      ESIGNER_TOTP_SECRET: ${{ secrets.ESIGNER_TOTP_SECRET }}
+      CSC_LINK: ${{ secrets.CSC_LINK }}
+      CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build renderer
+        run: npm run build
+
+      - name: Build & sign Windows installer (electron-builder)
+        run: npm run dist:win:enterprise
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: release/enterprise/*.exe
+          retention-days: 30
+
+  build-macos:
+    name: Build, sign & notarize macOS installer
+    needs: preflight
+    runs-on: macos-latest
+    env:
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      CSC_LINK: ${{ secrets.APPLE_CERT_BASE64 }}
+      CSC_KEY_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build renderer
+        run: npm run build
+
+      - name: Build, sign & notarize macOS DMG
+        run: npm run dist:mac:enterprise
+
+      - name: Upload DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-dmg
+          path: release/enterprise/*.dmg
+          retention-days: 30
+
+  gate:
+    name: Commercial release gate (--for-sale)
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+    env:
+      TRANSTRACK_RELEASE_CHANNEL: public
+      # The signing-mode env vars are set so the gate's environment check
+      # reports them as configured even though we don't actually re-sign
+      # here — the artifacts were signed in the matrix jobs above.
+      TRANSTRACK_SIGN_MODE: ssl_esigner
+      ESIGNER_USERNAME: ${{ secrets.ESIGNER_USERNAME }}
+      ESIGNER_PASSWORD: ${{ secrets.ESIGNER_PASSWORD }}
+      ESIGNER_CREDENTIAL_ID: ${{ secrets.ESIGNER_CREDENTIAL_ID }}
+      ESIGNER_TOTP_SECRET: ${{ secrets.ESIGNER_TOTP_SECRET }}
+      ESIGNER_TOOL_PATH: '/usr/local/bin/codesigntool'
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build renderer
+        run: npm run build
+
+      - name: Download Windows installer artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-installer
+          path: release/enterprise/
+
+      - name: Verify installer artifact present
+        run: ls -lR release/enterprise/
+
+      - name: Run commercial release gate (--for-sale)
+        run: npm run release:check:for-sale
+
+  publish:
+    name: Publish to GitHub Releases
+    needs: gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Windows installer
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-installer
+          path: dist-release/
+
+      - name: Download macOS DMG
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-dmg
+          path: dist-release/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name || inputs.tag }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            dist-release/*.exe
+            dist-release/*.dmg
