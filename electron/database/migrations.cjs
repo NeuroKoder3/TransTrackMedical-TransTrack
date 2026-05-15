@@ -412,6 +412,65 @@ const MIGRATIONS = [
       `);
     },
   },
+  {
+    version: 11,
+    name: 'add_sso_columns_and_app_settings',
+    description: 'Per-user SSO opt-in flag, OIDC subject correlation, and a generic app_settings k/v table for SSO configuration',
+    rollbackSql: null,
+    up(db) {
+      const userCols = db.prepare("PRAGMA table_info(users)").all().map(c => c.name);
+      if (!userCols.includes('sso_enabled')) {
+        db.exec("ALTER TABLE users ADD COLUMN sso_enabled INTEGER NOT NULL DEFAULT 0");
+      }
+      if (!userCols.includes('sso_subject')) {
+        db.exec("ALTER TABLE users ADD COLUMN sso_subject TEXT");
+      }
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS app_settings (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL,
+          updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_by TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_users_sso_subject ON users(sso_subject) WHERE sso_subject IS NOT NULL;
+      `);
+    },
+  },
+  {
+    version: 10,
+    name: 'encrypt_legacy_ehr_api_keys',
+    description: 'Re-encrypt any plaintext EHR integration credentials in place (AES-256-GCM)',
+    rollbackSql: null,
+    up(db) {
+      // Lazily require so unit tests of unrelated migrations don't pull in
+      // the secret-encryption service (which expects userData on disk).
+      const { encryptField, isEncrypted } = require('../services/secretEncryption.cjs');
+
+      const tableInfo = db.prepare("PRAGMA table_info(ehr_integrations)").all();
+      if (tableInfo.length === 0) return;
+      const hasColumn = tableInfo.some(c => c.name === 'api_key_encrypted');
+      if (!hasColumn) return;
+
+      const rows = db.prepare(
+        "SELECT id, api_key_encrypted FROM ehr_integrations WHERE api_key_encrypted IS NOT NULL AND api_key_encrypted != ''"
+      ).all();
+
+      const upd = db.prepare('UPDATE ehr_integrations SET api_key_encrypted = ? WHERE id = ?');
+      for (const row of rows) {
+        if (isEncrypted(row.api_key_encrypted)) continue;
+        try {
+          const ciphertext = encryptField(String(row.api_key_encrypted), `ehr_integrations:${row.id}`);
+          upd.run(ciphertext, row.id);
+        } catch {
+          // If we cannot encrypt (e.g. headless test env without safeStorage),
+          // null the value out — better to lose the credential than to leave
+          // plaintext PHI-adjacent secrets in the DB. Admin can re-enter the
+          // key in Settings.
+          upd.run(null, row.id);
+        }
+      }
+    },
+  },
 ];
 
 /**

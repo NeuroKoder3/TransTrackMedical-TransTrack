@@ -9,6 +9,56 @@ const { v4: uuidv4 } = require('uuid');
 const { getDatabase } = require('../../database/init.cjs');
 const shared = require('../shared.cjs');
 const { hasPermission, PERMISSIONS } = require('../../services/accessControl.cjs');
+const { encryptField, isEncrypted } = require('../../services/secretEncryption.cjs');
+
+/**
+ * Columns that hold raw secrets we must transparently encrypt on write.
+ * The label argument to encryptField scopes the HKDF subkey so per-row
+ * key rotation is feasible later.
+ */
+const ENCRYPTED_FIELDS_BY_TABLE = {
+  ehr_integrations: ['api_key_encrypted'],
+};
+
+function applyEncryptionToWrite(tableName, entityId, data) {
+  const encryptedCols = ENCRYPTED_FIELDS_BY_TABLE[tableName];
+  if (!encryptedCols) return data;
+  for (const col of encryptedCols) {
+    // Sentinel '__SET__' means the renderer is round-tripping a redacted
+    // payload and does NOT want to overwrite the stored credential. Drop
+    // the field entirely so the existing column value is preserved.
+    if (data[col] === '__SET__') {
+      delete data[col];
+      continue;
+    }
+    if (data[col] !== undefined && data[col] !== null && data[col] !== '') {
+      if (!isEncrypted(data[col])) {
+        data[col] = encryptField(String(data[col]), `${tableName}:${entityId || 'new'}`);
+      }
+    }
+  }
+  return data;
+}
+
+/**
+ * Redact encrypted columns before returning entities to the renderer.
+ * The renderer never needs the cleartext — it only needs to know whether
+ * a credential is configured. We swap the column value for a sentinel.
+ */
+function redactSecretsForRenderer(tableName, row) {
+  if (!row) return row;
+  const encryptedCols = ENCRYPTED_FIELDS_BY_TABLE[tableName];
+  if (!encryptedCols) return row;
+  const redacted = { ...row };
+  for (const col of encryptedCols) {
+    if (redacted[col]) {
+      redacted[col] = '__SET__';
+    } else {
+      redacted[col] = null;
+    }
+  }
+  return redacted;
+}
 
 const ENTITY_PERMISSION_MAP = {
   Patient:       { view: PERMISSIONS.PATIENT_VIEW, create: PERMISSIONS.PATIENT_CREATE, update: PERMISSIONS.PATIENT_UPDATE, delete: PERMISSIONS.PATIENT_DELETE },
@@ -52,9 +102,38 @@ function register() {
 
     if (entityName === 'AuditLog') throw new Error('Audit logs cannot be created directly');
 
+    // License enforcement — refuse to create new Patient / User rows once
+    // the licensed cap is reached. Reads and updates are always allowed
+    // (this matches the "fail safe, not silently lose data" stance).
+    if (entityName === 'Patient' || entityName === 'User') {
+      const licenseManager = require('../../license/manager.cjs');
+      const info = licenseManager.getLicenseInfo();
+      if (info.mode === 'trial_expired' || info.mode === 'invalid') {
+        throw new Error(
+          info.mode === 'trial_expired'
+            ? 'Your trial period has ended. Please activate a TransTrack license in Settings → License to continue creating records.'
+            : 'License is invalid. Please contact your administrator. (' + (info.verificationError || 'unknown') + ')'
+        );
+      }
+      const limitType = entityName === 'Patient' ? 'patients' : 'users';
+      // Count existing rows for this org (cheap; SQLite COUNT is O(1) on
+      // an indexed column for small N).
+      const tbl = entityName === 'Patient' ? 'patients' : 'users';
+      const { getDatabase } = require('../../database/init.cjs');
+      const current = getDatabase().prepare(`SELECT COUNT(*) AS n FROM ${tbl} WHERE org_id = ?`).get(orgId)?.n || 0;
+      const check = licenseManager.checkLimit(limitType, current);
+      if (!check.withinLimit) {
+        throw new Error(
+          `License limit reached: your tier allows up to ${check.limit} ${limitType}. ` +
+          `Upgrade your license in Settings → License or contact your account manager.`
+        );
+      }
+    }
+
     const id = data.id || uuidv4();
     delete data.org_id;
     const safeData = shared.filterToAllowedColumns(tableName, data);
+    applyEncryptionToWrite(tableName, id, safeData);
     const entityData = shared.sanitizeForSQLite({ ...safeData, id, org_id: orgId, created_by: currentUser.email });
 
     // console.log(`creating ${entityName}`, Object.keys(entityData));
@@ -80,7 +159,7 @@ function register() {
     else if (data.patient_name) patientName = data.patient_name;
 
     shared.logAudit('create', entityName, id, patientName, `${entityName} created`, currentUser.email, currentUser.role);
-    return shared.getEntityByIdAndOrg(tableName, id, orgId);
+    return redactSecretsForRenderer(tableName, shared.getEntityByIdAndOrg(tableName, id, orgId));
   });
 
   ipcMain.handle('entity:get', async (event, entityName, id) => {
@@ -89,7 +168,7 @@ function register() {
     enforcePermission(currentUser, entityName, 'view');
     const tableName = shared.entityTableMap[entityName];
     if (!tableName) throw new Error(`Unknown entity: ${entityName}`);
-    return shared.getEntityByIdAndOrg(tableName, id, shared.getSessionOrgId());
+    return redactSecretsForRenderer(tableName, shared.getEntityByIdAndOrg(tableName, id, shared.getSessionOrgId()));
   });
 
   ipcMain.handle('entity:update', async (event, entityName, id, data) => {
@@ -107,6 +186,7 @@ function register() {
 
     const now = new Date().toISOString();
     const safeData = shared.filterToAllowedColumns(tableName, data);
+    applyEncryptionToWrite(tableName, id, safeData);
     const entityData = shared.sanitizeForSQLite({ ...safeData, updated_by: currentUser.email, updated_at: now });
 
     const updates = Object.keys(entityData).map(k => `${k} = ?`).join(', ');
@@ -119,7 +199,7 @@ function register() {
     else if (entity.patient_name) patientName = entity.patient_name;
 
     shared.logAudit('update', entityName, id, patientName, `${entityName} updated`, currentUser.email, currentUser.role);
-    return entity;
+    return redactSecretsForRenderer(tableName, entity);
   });
 
   ipcMain.handle('entity:delete', async (event, entityName, id) => {
@@ -150,7 +230,8 @@ function register() {
     enforcePermission(currentUser, entityName, 'view');
     const tableName = shared.entityTableMap[entityName];
     if (!tableName) throw new Error(`Unknown entity: ${entityName}`);
-    return shared.listEntitiesByOrg(tableName, shared.getSessionOrgId(), orderBy, limit);
+    const rows = shared.listEntitiesByOrg(tableName, shared.getSessionOrgId(), orderBy, limit);
+    return rows.map((r) => redactSecretsForRenderer(tableName, r));
   });
 
   ipcMain.handle('entity:filter', async (event, entityName, filters, orderBy, limit) => {
@@ -194,7 +275,9 @@ function register() {
     }
 
     const rows = db.prepare(query).all(...values);
-    return rows.map(shared.parseJsonFields);
+    return rows
+      .map(shared.parseJsonFields)
+      .map((r) => redactSecretsForRenderer(tableName, r));
   });
 }
 

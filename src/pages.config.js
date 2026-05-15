@@ -19,6 +19,7 @@ import OrganOffers from './pages/OrganOffers';
 import PostTransplant from './pages/PostTransplant';
 import LivingDonors from './pages/LivingDonors';
 import Hl7Inbox from './pages/Hl7Inbox';
+import License from './pages/License';
 import __Layout from './Layout.jsx';
 
 
@@ -44,6 +45,7 @@ export const PAGES = {
     "PostTransplant": PostTransplant,
     "LivingDonors": LivingDonors,
     "Hl7Inbox": Hl7Inbox,
+    "License": License,
 }
 
 export const pagesConfig = {

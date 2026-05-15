@@ -38,6 +38,10 @@
     "qrcode": "^1.5.4",
     "zod": "^3.23.8"
   },
+  "optionalDependencies": {
+    "stripe": "^18.0.0",
+    "nodemailer": "^6.9.0"
+  },
   "devDependencies": {
     "vitest": "^4.1.5",
     "eslint": "^9.13.0"

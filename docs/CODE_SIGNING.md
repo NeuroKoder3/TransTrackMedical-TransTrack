@@ -8,6 +8,24 @@ codebase** is the certificate itself — that has to be procured externally
 and the secrets wired into the environment. Once those are in place, no
 further code changes are required.
 
+## Commercial-release gate
+
+The release-readiness check (`scripts/release-readiness-check.mjs`)
+treats signing as **optional** in the default mode so day-to-day dev
+builds don't require certificates. For a build that is going to be sold
+or pushed to a customer, run:
+
+```bash
+npm run release:check:for-sale
+```
+
+This sets `TRANSTRACK_RELEASE_CHANNEL=public` and promotes every signing
+and notarization check to **mandatory**. The CI workflow at
+`.github/workflows/release.yml` invokes this gate on every `v*.*.*` tag
+and fails the build if signing credentials are missing — meaning **no
+unsigned binary can be published to a customer through the normal
+release path**.
+
 ---
 
 ## Windows Authenticode

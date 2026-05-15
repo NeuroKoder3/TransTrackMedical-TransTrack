@@ -80,6 +80,23 @@ async function build() {
     try { done(null, JSON.parse(body)); } catch (e) { done(e); }
   });
 
+  // Raw-body capture for Stripe webhook signature verification. Routes
+  // opt-in by setting `config.rawBody: true` on the route definition;
+  // when they do, the original JSON string is preserved at req.rawBody
+  // and the parsed object remains at req.body.
+  app.addHook('preParsing', (req, _reply, payload, done) => {
+    if (!req.routeOptions?.config?.rawBody) return done(null, payload);
+    let body = '';
+    payload.on('data', (chunk) => { body += chunk; });
+    payload.on('end', () => {
+      req.rawBody = body;
+      const { Readable } = require('stream');
+      const stream = Readable.from([body]);
+      done(null, stream);
+    });
+    payload.on('error', done);
+  });
+
   app.setErrorHandler((err, req, reply) => {
     if (err instanceof HttpError) {
       reply.code(err.status).send({
@@ -130,6 +147,7 @@ async function build() {
   app.register(require('./routes/smart'), { config });
   app.register(require('./routes/cds'));
   app.register(require('./routes/integrations'), { config });
+  app.register(require('./routes/billing'), { config });
 
   app.addHook('onClose', async () => {
     await pool.shutdown();

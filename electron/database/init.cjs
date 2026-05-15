@@ -681,26 +681,35 @@ async function seedDefaultData(defaultOrgId) {
       now
     );
 
-    // First-launch banner — printed in every environment, not just dev, so a
-    // production operator installing the MSI/DMG can see the token once.
-    console.log('');
-    console.log('================================================================');
-    console.log(' TransTrack — first-launch administrator setup');
-    console.log('================================================================');
-    console.log(' Account : admin@transtrack.local');
-    console.log(' Source  : ' + passwordSource);
+    // First-launch banner — operator-visible. We intentionally NEVER echo the
+    // token itself to stdout (which is captured by RMM tools, journald,
+    // PowerShell transcripts, Windows Event Forwarding, and Electron's own
+    // log files) — only the file path. The token file lives at mode 0o600
+    // on POSIX and is auto-deleted on first successful password rotation
+    // (see auth:changePassword in electron/ipc/handlers/auth.cjs).
+    const banner = [
+      '',
+      '================================================================',
+      ' TransTrack — first-launch administrator setup',
+      '================================================================',
+      ' Account : admin@transtrack.local',
+      ' Source  : ' + passwordSource,
+    ];
     if (setupTokenFilePath) {
-      console.log(' Token   : (see file below)');
-      console.log(' File    : ' + setupTokenFilePath);
-      console.log(' (mode 0o600 on POSIX; ACL inherited on Windows)');
+      banner.push(' Token   : (written to file; not echoed to stdout)');
+      banner.push(' File    : ' + setupTokenFilePath);
+      banner.push(' (mode 0o600 on POSIX; auto-deleted after first password change)');
     } else if (envPassword) {
-      console.log(' Token   : (supplied by env; not echoed)');
+      banner.push(' Token   : (supplied by env; not echoed)');
     } else {
-      console.log(' Token   : (could not persist to file; set TRANSTRACK_INITIAL_ADMIN_PASSWORD env and restart)');
+      banner.push(' Token   : (could not persist; set TRANSTRACK_INITIAL_ADMIN_PASSWORD and restart)');
     }
-    console.log(' Must change password on first sign-in: yes');
-    console.log('================================================================');
-    console.log('');
+    banner.push(' Must change password on first sign-in: yes');
+    banner.push('================================================================');
+    banner.push('');
+    // Write the banner only to stdout for the user who launched the process;
+    // do NOT route it through the structured logger which may ship to a SIEM.
+    for (const line of banner) process.stdout.write(line + '\n');
     
     // Create default priority weights for this organization
     const weightsId = uuidv4();

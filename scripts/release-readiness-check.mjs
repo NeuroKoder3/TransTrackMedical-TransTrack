@@ -24,6 +24,14 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, '..');
 const isStrict = process.argv.includes('--strict');
 
+// --for-sale promotes the signing / notarization / installer gates from
+// `optional` to `mandatory`. This is the gate that prevents shipping a
+// commercial build without code-signing credentials. CI is expected to
+// pass this flag for the public release pipeline.
+const isCommercialRelease = process.argv.includes('--for-sale') ||
+  process.env.TRANSTRACK_RELEASE_CHANNEL === 'public';
+const signingSeverity = isCommercialRelease ? 'mandatory' : 'optional';
+
 // -----------------------------------------------------------------------------
 // Tiny ANSI helpers — no chalk dependency, ASCII-safe on Windows PowerShell.
 // -----------------------------------------------------------------------------
@@ -74,8 +82,10 @@ function runShell(cmd, args, opts = {}) {
 
 async function main() {
 console.log(c.b('\nTransTrack — Release Readiness Check'));
-console.log(`  repo:   ${repoRoot}`);
-console.log(`  strict: ${isStrict}\n`);
+console.log(`  repo:     ${repoRoot}`);
+console.log(`  strict:   ${isStrict}`);
+console.log(`  for-sale: ${isCommercialRelease}` +
+  (isCommercialRelease ? c.y('  (signing gates promoted to MANDATORY)') : '') + '\n');
 
 // --- 1. Working tree state ---------------------------------------------------
 await runStep('Git working tree clean', 'optional', () => {
@@ -249,7 +259,7 @@ await runStep('Alert Rules engine — catalog completeness', 'mandatory', async 
 //  npm test suite.)
 
 // --- 8. Optional release gates (signed installer, etc.) ---------------------
-await runStep('Code-signed Windows installer present (release/enterprise)', 'optional', () => {
+await runStep('Code-signed Windows installer present (release/enterprise)', signingSeverity, () => {
   const dir = resolve(repoRoot, 'release', 'enterprise');
   if (!existsSync(dir)) throw new Error('release/enterprise/ not built');
   // Find any version of the installer; we don't pin to a specific version
@@ -264,7 +274,7 @@ await runStep('Code-signed Windows installer present (release/enterprise)', 'opt
   return `${newest.f} (${(statSync(resolve(dir, newest.f)).size / 1024 / 1024).toFixed(1)} MB)`;
 });
 
-await runStep('Windows code-signing configured (any supported mode)', 'optional', () => {
+await runStep('Windows code-signing configured (any supported mode)', signingSeverity, () => {
   const mode = (process.env.TRANSTRACK_SIGN_MODE || '').toLowerCase();
   if (mode === 'ssl_esigner') {
     for (const k of ['ESIGNER_USERNAME', 'ESIGNER_PASSWORD', 'ESIGNER_CREDENTIAL_ID',
@@ -287,14 +297,14 @@ await runStep('Windows code-signing configured (any supported mode)', 'optional'
   throw new Error('no code-signing credentials in environment');
 });
 
-await runStep('macOS notarization configured (APPLE_* env vars)', 'optional', () => {
+await runStep('macOS notarization configured (APPLE_* env vars)', signingSeverity, () => {
   for (const k of ['APPLE_ID', 'APPLE_APP_PASSWORD', 'APPLE_TEAM_ID']) {
     if (!process.env[k]) throw new Error(`${k} not set`);
   }
   return 'configured';
 });
 
-await runStep('@electron/notarize installed (afterSign hook)', 'optional', async () => {
+await runStep('@electron/notarize installed (afterSign hook)', signingSeverity, async () => {
   const { createRequire } = await import('node:module');
   const require = createRequire(import.meta.url);
   try {

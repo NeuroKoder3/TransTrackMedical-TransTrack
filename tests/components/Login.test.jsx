@@ -50,7 +50,9 @@ describe('Login Page', () => {
 
   it('renders the Sign In button', () => {
     renderLogin();
-    expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument();
+    // Anchored regex so we don't accidentally match the
+    // "Sign in with your organization (SSO)" button rendered alongside it.
+    expect(screen.getByRole('button', { name: /^sign in$/i })).toBeInTheDocument();
   });
 
   it('renders the TransTrack brand name', () => {
@@ -65,7 +67,7 @@ describe('Login Page', () => {
     const user = userEvent.setup();
     await user.type(screen.getByLabelText(/email/i), 'admin@transtrack.local');
     await user.type(screen.getByLabelText(/password/i), 'TestPassword123!');
-    await user.click(screen.getByRole('button', { name: /sign in/i }));
+    await user.click(screen.getByRole('button', { name: /^sign in$/i }));
 
     await waitFor(() => {
       expect(mockLogin).toHaveBeenCalledWith('admin@transtrack.local', 'TestPassword123!');
@@ -79,7 +81,7 @@ describe('Login Page', () => {
     const user = userEvent.setup();
     await user.type(screen.getByLabelText(/email/i), 'bad@test.com');
     await user.type(screen.getByLabelText(/password/i), 'wrong');
-    await user.click(screen.getByRole('button', { name: /sign in/i }));
+    await user.click(screen.getByRole('button', { name: /^sign in$/i }));
 
     await waitFor(() => {
       expect(screen.getByText('Invalid credentials')).toBeInTheDocument();

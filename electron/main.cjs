@@ -6,6 +6,29 @@ const { initDatabase, closeDatabase } = require('./database/init.cjs');
 const { setupIPCHandlers } = require('./ipc/handlers.cjs');
 const { logger, initCrashReporter, closeLogger } = require('./services/logger.cjs');
 
+// Register the custom URL protocol used as the OIDC SSO redirect target.
+// Must run BEFORE app.whenReady() on every platform. See electron/auth/oidcDesktop.cjs.
+const TRANSTRACK_PROTOCOL = 'transtrack';
+if (process.defaultApp) {
+  // When running from `npm run electron-dev`, process.argv[1] points to the
+  // entry script and the call below has to pass it explicitly for the OS
+  // to bind the protocol to the dev runner. In a packaged build there is
+  // no second argument needed.
+  if (process.argv.length >= 2) {
+    app.setAsDefaultProtocolClient(TRANSTRACK_PROTOCOL, process.execPath, [path.resolve(process.argv[1])]);
+  }
+} else {
+  app.setAsDefaultProtocolClient(TRANSTRACK_PROTOCOL);
+}
+
+// Single-instance lock — on Windows/Linux the second app launch triggered
+// by `transtrack://...` is delivered to the first instance via the
+// second-instance event below; without this lock, both would race.
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+}
+
 // Disable hardware acceleration for better compatibility
 app.disableHardwareAcceleration();
 
@@ -354,6 +377,53 @@ app.on('window-all-closed', () => {
     app.quit();
   }
 });
+
+// macOS protocol handler: the OS hands us the URL via `open-url`.
+app.on('open-url', (event, url) => {
+  event.preventDefault();
+  handleProtocolUrl(url);
+});
+
+// Windows/Linux: a second `transtrack://...` invocation lands here.
+app.on('second-instance', (_event, argv /*, _workingDir */) => {
+  // The protocol URL is somewhere in argv on Windows; scan defensively.
+  const url = argv.find((a) => typeof a === 'string' && a.startsWith(`${TRANSTRACK_PROTOCOL}://`));
+  if (url) handleProtocolUrl(url);
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+  }
+});
+
+/**
+ * Centralized protocol-URL dispatcher. Currently the only registered
+ * scheme is `transtrack://auth/callback` for OIDC SSO; add new ones
+ * here as needed.
+ */
+async function handleProtocolUrl(url) {
+  try {
+    const u = new URL(url);
+    if (u.protocol !== `${TRANSTRACK_PROTOCOL}:`) return;
+    if (u.host === 'auth' && u.pathname === '/callback') {
+      const oidc = require('./auth/oidcDesktop.cjs');
+      const identity = await oidc.completeFlow(url);
+      // Hand off to the auth handler module to find/create the matching
+      // local user and mint a session.
+      const ssoHandler = require('./ipc/handlers/ssoCallback.cjs');
+      const sessionInfo = await ssoHandler.finalizeSso(identity);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('auth:ssoCompleted', { ok: true, ...sessionInfo });
+      }
+      return;
+    }
+    logger.warn('Unhandled protocol URL', { url });
+  } catch (err) {
+    logger.error('Protocol URL handler failed', { error: err.message });
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('auth:ssoCompleted', { ok: false, error: err.message });
+    }
+  }
+}
 
 app.on('before-quit', async () => {
   logger.info('Application shutting down...');

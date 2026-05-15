@@ -4,7 +4,7 @@ import { createPageUrl } from '@/utils';
 import {
   Activity, Users, FileText, Settings, Shield, Heart, Database,
   AlertTriangle, HardDrive, BarChart3, Brain, ListTodo, ClipboardCheck,
-  Stethoscope, Inbox, KeyRound, UserPlus, X,
+  Stethoscope, Inbox, KeyRound, UserPlus, X, Key,
 } from 'lucide-react';
 
 /**
@@ -76,6 +76,7 @@ export default function Sidebar({ user, isOpen = true, onClose }) {
         { name: 'Priority Config', page: 'PrioritySettings', icon: Settings, show: isAdmin },
         { name: 'Compliance', page: 'ComplianceCenter', icon: Shield, show: isAdmin || isRegulator },
         { name: 'Recovery', page: 'DisasterRecovery', icon: HardDrive, show: isAdmin },
+        { name: 'License', page: 'License', icon: Key, show: isAdmin },
         { name: 'Settings', page: 'Settings', icon: Settings, show: isAdmin },
       ],
     },

@@ -66,7 +66,7 @@ export default function EHRIntegrationManager() {
     }
   };
 
-  const webhookUrl = `${window.location.origin}/api/functions/fhirWebhook`;
+  const webhookUrl = `${window.location.origin}/api/fhir/webhook`;
 
   const copyToClipboard = (text) => {
     navigator.clipboard.writeText(text);
