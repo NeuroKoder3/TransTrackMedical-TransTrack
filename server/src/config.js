@@ -82,6 +82,30 @@ const schema = z.object({
   EPIC_KID: z.string().optional().default('transtrack-epic-1'),
   EPIC_SCOPE: z.string().optional().default(''),
   EPIC_DEFAULT_PATIENT_ID: z.string().optional().default(''),
+
+  // ---------------------------------------------------------------------------
+  // Stripe billing & license provisioning (see server/src/routes/billing.js).
+  // All of these are optional — the routes return 503 if Stripe isn't
+  // configured, so existing pilot/integration deploys are unaffected.
+  // ---------------------------------------------------------------------------
+  STRIPE_SECRET_KEY: z.string().optional().default(''),
+  STRIPE_WEBHOOK_SECRET: z.string().optional().default(''),
+  STRIPE_BILLING_RETURN_URL: z.string().optional().default(''),
+  STRIPE_PRICE_ID_STARTER: z.string().optional().default(''),
+  STRIPE_PRICE_ID_PROFESSIONAL: z.string().optional().default(''),
+  STRIPE_PRICE_ID_ENTERPRISE: z.string().optional().default(''),
+
+  // Path to the Ed25519 private key used to sign licenses issued by the
+  // webhook handler. NEVER commit this; mount it as a Docker secret.
+  LICENSE_PRIVATE_KEY_PATH: z.string().optional().default(''),
+
+  // Optional SMTP for emailing license files to customers post-checkout.
+  SMTP_HOST: z.string().optional().default(''),
+  SMTP_PORT: z.coerce.number().int().positive().optional().default(587),
+  SMTP_SECURE: z.coerce.boolean().optional().default(false),
+  SMTP_USER: z.string().optional().default(''),
+  SMTP_PASSWORD: z.string().optional().default(''),
+  SMTP_FROM: z.string().optional().default(''),
 });
 
 function load() {
