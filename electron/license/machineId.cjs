@@ -40,12 +40,21 @@ function _userDataDir() {
 
 function _stableInstallUuid() {
   const dir = _userDataDir();
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.mkdirSync(dir, { recursive: true });
   const idPath = path.join(dir, '.transtrack-install-uuid');
-  if (fs.existsSync(idPath)) {
+
+  // Read the existing UUID directly rather than check-then-read, to avoid
+  // the TOCTOU race CodeQL flags as `js/file-system-race`. ENOENT (no file
+  // yet) and any other read error fall through to the regenerate path.
+  try {
     const v = fs.readFileSync(idPath, 'utf8').trim();
     if (/^[a-f0-9-]{8,}$/i.test(v)) return v;
+  } catch (err) {
+    if (err && err.code !== 'ENOENT') {
+      /* file corrupted or unreadable; fall through and overwrite */
+    }
   }
+
   const uuid = crypto.randomUUID();
   fs.writeFileSync(idPath, uuid, { mode: 0o600 });
   try { fs.chmodSync(idPath, 0o600); } catch { /* windows */ }

@@ -40,14 +40,18 @@ function _trialPath() {
   return path.join(_userDataDir(), '.transtrack-trial');
 }
 
+// All filesystem helpers below avoid the existsSync()-then-act pattern that
+// CodeQL flags as `js/file-system-race`. We attempt the operation directly
+// and treat ENOENT as the negative result. This eliminates the TOCTOU window
+// and is what Node's own docs recommend.
+
 function loadLicense() {
   const p = _licensePath();
-  if (!fs.existsSync(p)) return null;
   try {
     const raw = fs.readFileSync(p, 'utf8').trim();
-    if (!raw) return null;
-    return raw;
-  } catch {
+    return raw || null;
+  } catch (err) {
+    if (err && err.code === 'ENOENT') return null;
     return null;
   }
 }
@@ -57,15 +61,18 @@ function storeLicense(wireLicense) {
     throw new Error('storeLicense expects a LIC1.* wire-format string');
   }
   const dir = _userDataDir();
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(_licensePath(), wireLicense, { mode: 0o600 });
   try { fs.chmodSync(_licensePath(), 0o600); } catch { /* windows */ }
 }
 
 function deleteLicense() {
-  const p = _licensePath();
-  if (fs.existsSync(p)) {
-    try { fs.unlinkSync(p); } catch { /* ignore */ }
+  try {
+    fs.unlinkSync(_licensePath());
+  } catch (err) {
+    if (!err || err.code !== 'ENOENT') {
+      // Re-suppress: deletion errors must never bubble up out of this path.
+    }
   }
 }
 
@@ -77,17 +84,21 @@ function deleteLicense() {
 function getTrialState(nowMs = Date.now()) {
   const p = _trialPath();
   const dir = _userDataDir();
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.mkdirSync(dir, { recursive: true });
 
   let startedAt;
-  if (fs.existsSync(p)) {
-    try {
-      const obj = JSON.parse(fs.readFileSync(p, 'utf8'));
-      if (obj && typeof obj.startedAt === 'string' && !isNaN(Date.parse(obj.startedAt))) {
-        startedAt = obj.startedAt;
-      }
-    } catch { /* file corrupt; rewrite */ }
+  try {
+    const obj = JSON.parse(fs.readFileSync(p, 'utf8'));
+    if (obj && typeof obj.startedAt === 'string' && !isNaN(Date.parse(obj.startedAt))) {
+      startedAt = obj.startedAt;
+    }
+  } catch (err) {
+    // ENOENT (no trial yet) and parse errors both fall through to "create new"
+    if (err && err.code !== 'ENOENT') {
+      /* file corrupt; rewrite */
+    }
   }
+
   if (!startedAt) {
     startedAt = new Date(nowMs).toISOString();
     fs.writeFileSync(p, JSON.stringify({ startedAt }), { mode: 0o600 });

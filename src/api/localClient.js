@@ -605,19 +605,38 @@ const createElectronClient = () => {
       isEnabled: async () => await window.electronAPI.encryption.isEnabled(),
     },
     // Licensing & activation
+    //
+    // Each wrapper checks that the underlying electronAPI namespace is
+    // actually wired in before invoking it.  This matters in two scenarios:
+    //
+    //   1. Browser-only dev mode where no electronAPI is attached at all.
+    //   2. Test environments that mock electronAPI with a subset of
+    //      namespaces (e.g. component tests for <Login /> that don't care
+    //      about licensing).
+    //
+    // Without these guards, mounting a component that touches `api.license.*`
+    // or `api.sso.*` from a test that doesn't mock those namespaces throws
+    // `TypeError: Cannot read properties of undefined (reading '<x>')`.
     license: {
-      getInfo:       async () => await window.electronAPI.license.getInfo(),
-      getMachineId:  async () => await window.electronAPI.license.getMachineId(),
-      activate:      async (wire) => await window.electronAPI.license.activate(wire),
-      remove:        async () => await window.electronAPI.license.remove(),
-      checkFeature:  async (flag) => await window.electronAPI.license.checkFeature(flag),
-      checkLimit:    async (type, count) => await window.electronAPI.license.checkLimit(type, count),
+      getInfo:       async () => await window.electronAPI?.license?.getInfo?.(),
+      getMachineId:  async () => await window.electronAPI?.license?.getMachineId?.(),
+      activate:      async (wire) => await window.electronAPI?.license?.activate?.(wire),
+      remove:        async () => await window.electronAPI?.license?.remove?.(),
+      checkFeature:  async (flag) => await window.electronAPI?.license?.checkFeature?.(flag),
+      checkLimit:    async (type, count) => await window.electronAPI?.license?.checkLimit?.(type, count),
     },
-    // SSO (OIDC) desktop flow
+    // SSO (OIDC) desktop flow.  `onCompleted` must always return a
+    // callable unsubscribe so React effect cleanup doesn't crash when SSO
+    // isn't available (e.g. in unit tests).
     sso: {
-      start:       async () => await window.electronAPI.sso.start(),
-      cancel:      async () => await window.electronAPI.sso.cancel(),
-      onCompleted: (cb) => window.electronAPI.sso.onCompleted(cb),
+      start:       async () => await window.electronAPI?.sso?.start?.(),
+      cancel:      async () => await window.electronAPI?.sso?.cancel?.(),
+      onCompleted: (cb) => {
+        const fn = window.electronAPI?.sso?.onCompleted;
+        if (typeof fn !== 'function') return () => {};
+        const unsubscribe = fn(cb);
+        return typeof unsubscribe === 'function' ? unsubscribe : () => {};
+      },
     },
     // Risk Intelligence
     risk: {

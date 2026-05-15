@@ -38,12 +38,9 @@ const outDir = arg('out', 'keys/license');
 const privPath = path.join(outDir, 'license-private.pem');
 const pubPath  = path.join(outDir, 'license-public.pem');
 
-if ((fs.existsSync(privPath) || fs.existsSync(pubPath)) && !force) {
-  console.error(`ERROR: ${privPath} or ${pubPath} already exists. Pass --force to overwrite.`);
-  console.error('       Overwriting will invalidate every license issued under the previous key.');
-  process.exit(1);
-}
-
+// Avoid the existsSync()-then-write TOCTOU race CodeQL flags as
+// `js/file-system-race`. Use `wx`/`wx+` open flags so the OS atomically
+// fails with EEXIST if the file is already there, unless --force was set.
 fs.mkdirSync(outDir, { recursive: true });
 
 const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
@@ -56,8 +53,22 @@ const pubRaw  = publicKey.export({ type: 'spki', format: 'der' });
 // so the raw 32-byte key is the last 32 bytes.
 const pubKeyBytes = pubRaw.subarray(pubRaw.length - 32);
 
-fs.writeFileSync(privPath, privPem, { mode: 0o600 });
-fs.writeFileSync(pubPath,  pubPem);
+const writeFlag = force ? 'w' : 'wx';
+function writeKeyFile(filePath, contents, mode) {
+  try {
+    fs.writeFileSync(filePath, contents, { flag: writeFlag, mode });
+  } catch (err) {
+    if (err && err.code === 'EEXIST') {
+      console.error(`ERROR: ${filePath} already exists. Pass --force to overwrite.`);
+      console.error('       Overwriting will invalidate every license issued under the previous key.');
+      process.exit(1);
+    }
+    throw err;
+  }
+}
+
+writeKeyFile(privPath, privPem, 0o600);
+writeKeyFile(pubPath,  pubPem,  0o644);
 try { fs.chmodSync(privPath, 0o600); } catch { /* windows */ }
 
 console.log('TransTrack publisher Ed25519 keypair generated.');

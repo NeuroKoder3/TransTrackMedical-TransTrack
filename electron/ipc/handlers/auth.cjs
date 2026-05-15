@@ -21,21 +21,41 @@ const oidcDesktop = require('../../auth/oidcDesktop.cjs');
 
 /**
  * Best-effort deletion of the first-launch admin setup token file.
+ *
  * Called after a successful password change so the bootstrap credential
  * does not linger on disk past its single-use window.
+ *
+ * Implementation note: we deliberately avoid the existsSync()-then-act
+ * pattern (which CodeQL flags as `js/file-system-race`) and instead open
+ * the file directly, treating ENOENT as a successful no-op.  This both
+ * eliminates the TOCTOU window and is more concise.
  */
 function purgeSetupTokenFile() {
   try {
     if (!app || typeof app.getPath !== 'function') return;
     const tokenPath = path.join(app.getPath('userData'), 'INITIAL_ADMIN_PASSWORD.txt');
-    if (fs.existsSync(tokenPath)) {
-      // Overwrite the file before unlinking to defeat naive undelete.
-      try {
-        const size = fs.statSync(tokenPath).size;
-        const overwrite = Buffer.alloc(Math.max(size, 64), 0);
-        fs.writeFileSync(tokenPath, overwrite, { mode: 0o600 });
-      } catch { /* best effort */ }
-      fs.unlinkSync(tokenPath);
+
+    let fd;
+    try {
+      fd = fs.openSync(tokenPath, 'r+');
+    } catch (err) {
+      if (err && err.code === 'ENOENT') return;
+      throw err;
+    }
+
+    try {
+      const { size } = fs.fstatSync(fd);
+      const overwrite = Buffer.alloc(Math.max(size, 64), 0);
+      fs.writeSync(fd, overwrite, 0, overwrite.length, 0);
+      fs.fsyncSync(fd);
+    } catch { /* best effort overwrite */ }
+    finally {
+      try { fs.closeSync(fd); } catch { /* ignore */ }
+    }
+
+    try { fs.unlinkSync(tokenPath); }
+    catch (err) {
+      if (!err || err.code !== 'ENOENT') throw err;
     }
   } catch { /* best effort — never throw from this path */ }
 }
