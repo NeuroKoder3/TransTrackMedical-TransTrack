@@ -148,7 +148,7 @@
     "@vitejs/plugin-react": "4.7.0",
     "@vitest/coverage-v8": "^4.1.4",
     "autoprefixer": "10.5.0",
-    "baseline-browser-mapping": "2.10.27",
+    "baseline-browser-mapping": "2.10.30",
     "concurrently": "8.2.2",
     "electron": "39.8.9",
     "electron-builder": "26.8.1",
