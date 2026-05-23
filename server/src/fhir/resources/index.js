@@ -17,8 +17,29 @@
  */
 
 const { errors } = require('../../util/errors');
-const patientService = require('../../services/patientService');
-const labResultService = require('../../services/labResultService');
+const patientService    = require('../../services/patientService');
+const labResultService  = require('../../services/labResultService');
+const conditionService  = require('../../services/conditionService');
+const medicationService = require('../../services/medicationService');
+const allergyService    = require('../../services/allergyService');
+
+/**
+ * Resolve a FHIR subject/patient reference to a native patients row.
+ * Returns null if the patient cannot be found so postCreate hooks can
+ * gracefully skip native materialisation rather than throwing.
+ */
+async function resolveNativePatient(client, ctx, subjectRef) {
+  const fhirPatientId = (subjectRef || '').replace(/^Patient\//, '');
+  if (!fhirPatientId) return null;
+  const res = await client.query(
+    `SELECT body FROM fhir_resources
+     WHERE org_id = $1 AND resource_type = 'Patient' AND resource_id = $2`,
+    [ctx.orgId, fhirPatientId],
+  );
+  const mrn = res.rows[0]?.body?.identifier?.[0]?.value;
+  if (!mrn) return null;
+  return patientService.getByMrn(client, ctx, mrn);
+}
 
 function requireField(obj, path, label) {
   const segs = path.split('.');
@@ -122,12 +143,56 @@ const MedicationRequest = {
     expectType(body, 'MedicationRequest');
     if (!body.subject?.reference) throw errors.badRequest('subject.reference required');
   },
+  async postCreate(client, ctx, body) {
+    const native = await resolveNativePatient(client, ctx, body.subject?.reference);
+    if (!native) return;
+    const medCC  = body.medicationCodeableConcept;
+    const coding = medCC?.coding?.[0];
+    const dosage = (body.dosageInstruction || [])[0];
+    await medicationService.create(client, ctx, {
+      patient_id:       native.id,
+      medication_code:  coding?.code || null,
+      code_system:      coding?.system || null,
+      medication_name:  coding?.display || medCC?.text || 'Unknown medication',
+      status:           body.status || null,
+      intent:           body.intent || null,
+      dosage_text:      dosage?.text || null,
+      frequency:        dosage?.timing?.code?.text || null,
+      route:            dosage?.route?.coding?.[0]?.display || dosage?.route?.text || null,
+      authored_on:      body.authoredOn?.substring(0, 10) || null,
+      prescriber:       body.requester?.display || null,
+      source:           'FHIR_R4',
+      fhir_resource_id: body.id || null,
+    });
+  },
 };
 
 const AllergyIntolerance = {
   validate(body) {
     expectType(body, 'AllergyIntolerance');
     if (!body.patient?.reference) throw errors.badRequest('patient.reference required');
+  },
+  async postCreate(client, ctx, body) {
+    const native = await resolveNativePatient(client, ctx, body.patient?.reference);
+    if (!native) return;
+    const coding  = body.code?.coding?.[0];
+    const display = coding?.display || body.code?.text || 'Unknown allergen';
+    await allergyService.create(client, ctx, {
+      patient_id:           native.id,
+      code:                 coding?.code || null,
+      code_system:          coding?.system || null,
+      display,
+      allergy_type:         body.type || null,
+      category:             Array.isArray(body.category) ? body.category[0] : null,
+      criticality:          body.criticality || null,
+      clinical_status:      body.clinicalStatus?.coding?.[0]?.code || null,
+      verification_status:  body.verificationStatus?.coding?.[0]?.code || null,
+      reaction_description: body.reaction?.[0]?.description ||
+                            body.reaction?.[0]?.manifestation?.[0]?.text || null,
+      onset_date:           body.onsetDateTime?.substring(0, 10) || body.onsetDate || null,
+      source:               'FHIR_R4',
+      fhir_resource_id:     body.id || null,
+    });
   },
 };
 
@@ -157,6 +222,25 @@ const Condition = {
     if (!body.code?.coding?.length && !body.code?.text) {
       throw errors.badRequest('code.coding or code.text required');
     }
+  },
+  async postCreate(client, ctx, body) {
+    const native = await resolveNativePatient(client, ctx, body.subject?.reference);
+    if (!native) return;
+    const coding  = body.code?.coding?.[0];
+    const display = coding?.display || body.code?.text || 'Unknown condition';
+    await conditionService.create(client, ctx, {
+      patient_id:          native.id,
+      code:                coding?.code || display,
+      code_system:         coding?.system || null,
+      display,
+      clinical_status:     body.clinicalStatus?.coding?.[0]?.code || null,
+      verification_status: body.verificationStatus?.coding?.[0]?.code || null,
+      category:            body.category?.[0]?.coding?.[0]?.code || null,
+      onset_date:          body.onsetDateTime?.substring(0, 10) || body.onsetDate || null,
+      abatement_date:      body.abatementDateTime?.substring(0, 10) || body.abatementDate || null,
+      source:              'FHIR_R4',
+      fhir_resource_id:    body.id || null,
+    });
   },
 };
 
