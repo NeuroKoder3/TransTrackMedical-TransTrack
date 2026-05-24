@@ -27,17 +27,20 @@ const DEFAULT_FHIR_BASE =
   'https://fhir.epic.com/interconnect-fhir-oauth/api/FHIR/R4';
 
 /**
- * Core scopes confirmed granted by the Epic non-production sandbox for a
- * Backend Systems app. Encounter, Immunization, Organization, and Procedure
- * are registered in the app but may take additional time to propagate; add
- * them back once confirmed granted.
+ * Full system-level scope set for the TransTrack Backend Services app.
+ * All 9 scopes are registered in the Epic non-production sandbox app
+ * (Client ID a8634931-c997-4516-90cd-21ec3a27813e).
  */
 const DEFAULT_SCOPES = [
   'system/AllergyIntolerance.read',
   'system/Condition.read',
+  'system/Encounter.read',
+  'system/Immunization.read',
   'system/MedicationRequest.read',
   'system/Observation.read',
+  'system/Organization.read',
   'system/Patient.read',
+  'system/Procedure.read',
 ].join(' ');
 
 function b64url(buf) {
