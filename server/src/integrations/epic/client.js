@@ -11,8 +11,11 @@
  * Verified end-to-end against the Epic on FHIR Developer Sandbox
  * (https://fhir.epic.com) using the test patient "Camila Maria Lopez"
  * (Patient ID erXuFYUfucBZaryVksYEcMg3) with system-level scopes for
- * Patient, Observation, Condition, MedicationRequest, AllergyIntolerance,
- * Encounter, Immunization, Procedure, and Organization.
+ * Patient, Observation, Condition, MedicationRequest, and AllergyIntolerance.
+ *
+ * Sandbox app (Non-Production Client ID): a8634931-c997-4516-90cd-21ec3a27813e
+ * JWKS URI: https://gist.githubusercontent.com/NeuroKoder3/a2f2b23b69e49dd284b8147d6817bcaa/raw/jwks.json
+ * Verified: Epic May 2026 — token exchange confirmed, all 5 core scopes granted.
  */
 
 const { createSign, randomUUID } = require('node:crypto');
@@ -24,20 +27,17 @@ const DEFAULT_FHIR_BASE =
   'https://fhir.epic.com/interconnect-fhir-oauth/api/FHIR/R4';
 
 /**
- * Minimal default scope set known to be granted by the Epic non-production
- * sandbox for a "Backend Systems" application with all USCDI-core read
- * APIs enabled.
+ * Core scopes confirmed granted by the Epic non-production sandbox for a
+ * Backend Systems app. Encounter, Immunization, Organization, and Procedure
+ * are registered in the app but may take additional time to propagate; add
+ * them back once confirmed granted.
  */
 const DEFAULT_SCOPES = [
   'system/AllergyIntolerance.read',
   'system/Condition.read',
-  'system/Encounter.read',
-  'system/Immunization.read',
   'system/MedicationRequest.read',
   'system/Observation.read',
-  'system/Organization.read',
   'system/Patient.read',
-  'system/Procedure.read',
 ].join(' ');
 
 function b64url(buf) {
