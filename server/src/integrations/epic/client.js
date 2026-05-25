@@ -11,8 +11,11 @@
  * Verified end-to-end against the Epic on FHIR Developer Sandbox
  * (https://fhir.epic.com) using the test patient "Camila Maria Lopez"
  * (Patient ID erXuFYUfucBZaryVksYEcMg3) with system-level scopes for
- * Patient, Observation, Condition, MedicationRequest, AllergyIntolerance,
- * Encounter, Immunization, Procedure, and Organization.
+ * Patient, Observation, Condition, MedicationRequest, and AllergyIntolerance.
+ *
+ * Sandbox app (Non-Production Client ID): a8634931-c997-4516-90cd-21ec3a27813e
+ * JWKS URI: https://gist.githubusercontent.com/NeuroKoder3/a2f2b23b69e49dd284b8147d6817bcaa/raw/jwks.json
+ * Verified: Epic May 2026 — token exchange confirmed, all 5 core scopes granted.
  */
 
 const { createSign, randomUUID } = require('node:crypto');
@@ -24,9 +27,9 @@ const DEFAULT_FHIR_BASE =
   'https://fhir.epic.com/interconnect-fhir-oauth/api/FHIR/R4';
 
 /**
- * Minimal default scope set known to be granted by the Epic non-production
- * sandbox for a "Backend Systems" application with all USCDI-core read
- * APIs enabled.
+ * Full system-level scope set for the TransTrack Backend Services app.
+ * All 9 scopes are registered in the Epic non-production sandbox app
+ * (Client ID a8634931-c997-4516-90cd-21ec3a27813e).
  */
 const DEFAULT_SCOPES = [
   'system/AllergyIntolerance.read',
