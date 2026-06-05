@@ -3,8 +3,9 @@
 | Document control | |
 |---|---|
 | Document ID | TT-SEC-PT-PUB-_____ |
-| Status | **TEMPLATE — NOT EXECUTED** |
-| Last reviewed | 2026-05-01 |
+| Status | **TEMPLATE — awaiting third-party engagement** |
+| Last reviewed | 2026-06-05 |
+| Internal baseline | [`engagements/2026-06-internal/INTERNAL_SECURITY_ASSESSMENT.md`](engagements/2026-06-internal/INTERNAL_SECURITY_ASSESSMENT.md) — complete |
 
 > ## ⚠ TEMPLATE NOTICE — DO NOT TREAT AS A REAL REPORT
 >
