@@ -22,7 +22,8 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
+          cache: 'npm'
 
       - run: npm ci --ignore-scripts
 
@@ -44,7 +45,8 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
+          cache: 'npm'
 
       - run: npm ci --ignore-scripts
 
@@ -64,7 +66,8 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
+          cache: 'npm'
 
       - run: npm ci --ignore-scripts
 
@@ -74,12 +77,15 @@ jobs:
   test-security:
     name: Security Tests
     runs-on: ubuntu-latest
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
+          cache: 'npm'
 
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y python3 make g++
@@ -101,17 +107,20 @@ jobs:
   load-test:
     name: Performance Load Test
     runs-on: ubuntu-latest
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
+          cache: 'npm'
 
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y python3 make g++
 
-      - run: npm install
+      - run: npm ci
 
       - name: Rebuild native modules
         run: npm rebuild better-sqlite3-multiple-ciphers
@@ -127,7 +136,8 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
+          cache: 'npm'
 
       - name: Verify lockfile is committed
         run: |
