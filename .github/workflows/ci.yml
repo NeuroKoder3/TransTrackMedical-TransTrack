@@ -14,12 +14,15 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
+          cache: 'npm'
 
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y python3 make g++
@@ -105,7 +108,16 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Cache Electron binary
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/electron
+          key: electron-linux-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            electron-linux-
 
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y python3 make g++ xvfb
@@ -143,12 +155,15 @@ jobs:
     name: Windows Build Verification
     runs-on: windows-latest
     needs: build
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
+          cache: 'npm'
 
       - name: Install npm dependencies
         run: npm ci
