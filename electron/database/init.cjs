@@ -20,7 +20,12 @@ const Database = require('better-sqlite3-multiple-ciphers');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
-const { app, safeStorage } = require('electron');
+// Guarded require: electron is only available inside the Electron main process.
+// Unit tests (plain Node) load this module without launching Electron, so we
+// fall back to undefined. All code paths that use app/safeStorage are inside
+// function bodies that are never called during unit tests.
+let app, safeStorage;
+try { ({ app, safeStorage } = require('electron')); } catch { /* plain Node / CI */ }
 const { createSchema, createIndexes, createAuditLogTriggers, addOrgIdToExistingTables } = require('./schema.cjs');
 const { runMigrations } = require('./migrations.cjs');
 
