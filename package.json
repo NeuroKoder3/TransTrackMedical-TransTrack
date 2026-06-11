@@ -151,7 +151,7 @@
     "baseline-browser-mapping": "2.10.33",
     "concurrently": "8.2.2",
     "electron": "39.8.9",
-    "electron-builder": "26.8.1",
+    "electron-builder": "26.15.2",
     "eslint": "9.39.4",
     "eslint-plugin-react": "7.37.5",
     "eslint-plugin-react-hooks": "7.1.1",
