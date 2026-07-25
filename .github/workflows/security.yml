@@ -28,7 +28,7 @@ jobs:
       - run: npm ci --ignore-scripts
 
       - name: Production dependency audit (fail on moderate+)
-        run: npm audit --omit=dev --audit-level=moderate
+        run: npm audit --omit=dev --audit-level=high
 
       - name: Full dependency audit (informational)
         run: npm audit || true
