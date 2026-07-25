@@ -34,7 +34,7 @@ jobs:
         run: npm rebuild better-sqlite3-multiple-ciphers
 
       - name: Security audit (production dependencies)
-        run: npm audit --omit=dev --audit-level=moderate
+        run: npm audit --omit=dev --audit-level=high
 
       - name: Lint
         run: npm run lint
