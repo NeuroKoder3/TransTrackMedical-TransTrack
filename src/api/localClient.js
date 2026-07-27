@@ -290,10 +290,38 @@ const mockClient = {
     }),
     getRequiredTypes: async () => [],
   },
+  files: {
+    importFile: async () => null,
+    exportCSV: async () => ({ success: false, reason: 'Not available outside Electron' }),
+    exportExcel: async () => ({ success: false, reason: 'Not available outside Electron' }),
+    exportPDF: async () => ({ success: false, reason: 'Not available outside Electron' }),
+  },
   risk: {
     getDashboard: async () => ({ riskScore: 0, patients: [], alerts: [] }),
     getFullReport: async () => ({ report: {} }),
     assessPatient: async () => ({ riskLevel: 'low' }),
+  },
+  actionQueue: {
+    build: async () => ({
+      queueVersion: 'dev', modelVersion: 'dev', generatedAtISO: new Date().toISOString(),
+      candidatesScreened: 0, queueSize: 0,
+      distribution: { critical: 0, high: 0, moderate: 0, low: 0, none: 0 },
+      queue: [], coordinatorOverloads: [],
+      aggregateExpectedImpact: {
+        projectedProbabilityReductionWithin90Days: 0,
+        projectedInactivationsAvoidedWithin90Days: 0,
+      },
+      disclaimer: 'Dev placeholder — not available outside Electron.',
+    }),
+    topInterventionsForPatient: async () => ({ topInterventions: [] }),
+    recordIntervention: async () => ({ id: null }),
+    recordOutcome: async () => ({ updated: false }),
+    getInterventionsForPatient: async () => [],
+    getInterventionEffectiveness: async () => ({
+      windowDays: 90, perInterventionType: [],
+      totals: { recorded: 0, measured: 0, weightedAvgScoreDelta: 0, weightedAvgProb90Delta: 0 },
+    }),
+    buildDigest: async () => null,
   },
   outcomes: {
     getDashboard: async () => ({ outcomes: [] }),
@@ -638,11 +666,36 @@ const createElectronClient = () => {
         return typeof unsubscribe === 'function' ? unsubscribe : () => {};
       },
     },
+    // File import/export (native dialogs; audit-logged in the main process)
+    files: {
+      importFile: async (type) => await window.electronAPI.files.importFile(type),
+      exportCSV: async (data, filename) => await window.electronAPI.files.exportCSV(data, filename),
+      exportExcel: async (data, filename) => await window.electronAPI.files.exportExcel(data, filename),
+      exportPDF: async (data, filename) => await window.electronAPI.files.exportPDF(data, filename),
+    },
     // Risk Intelligence
     risk: {
       getDashboard: async () => await window.electronAPI.risk.getDashboard(),
       getFullReport: async () => await window.electronAPI.risk.getFullReport(),
       assessPatient: async (patientId) => await window.electronAPI.risk.assessPatient(patientId),
+    },
+    // Inactivation Prevention Action Queue + measured outcomes.
+    // Ranked coordinator worklist built by the deterministic risk engine,
+    // with recorded interventions and measured before/after outcomes.
+    actionQueue: {
+      build: async (opts) => await window.electronAPI.actionQueue.build(opts),
+      topInterventionsForPatient: async (params) =>
+        await window.electronAPI.actionQueue.topInterventionsForPatient(params),
+      recordIntervention: async (params) =>
+        await window.electronAPI.actionQueue.recordIntervention(params),
+      recordOutcome: async (params) =>
+        await window.electronAPI.actionQueue.recordOutcome(params),
+      getInterventionsForPatient: async (params) =>
+        await window.electronAPI.actionQueue.getInterventionsForPatient(params),
+      getInterventionEffectiveness: async (params) =>
+        await window.electronAPI.actionQueue.getInterventionEffectiveness(params),
+      buildDigest: async (params) =>
+        await window.electronAPI.actionQueue.buildDigest(params),
     },
     // Outcomes Dashboard
     outcomes: {
@@ -695,8 +748,38 @@ const createElectronClient = () => {
   };
 };
 
+/**
+ * Production guard: a clinical product must never silently serve fabricated
+ * data. If the Electron IPC bridge is missing in a production build (and the
+ * remote API client isn't active — see apiClient.js), every call fails loudly
+ * with a diagnosable error instead of returning placeholder values.
+ * The mock client is reachable only in dev builds and test environments.
+ */
+const productionGuardClient = new Proxy({}, {
+  get(_target, namespace) {
+    if (namespace === 'then') return undefined;
+    return new Proxy({}, {
+      get(_t, method) {
+        return () => {
+          throw new Error(
+            `TransTrack data bridge unavailable (api.${String(namespace)}.${String(method)}). ` +
+            'The Electron IPC bridge failed to initialize and no remote API is configured. ' +
+            'Refusing to serve placeholder data in a production build — restart the ' +
+            'application; if the problem persists, contact support.'
+          );
+        };
+      },
+    });
+  },
+});
+
+const isProductionBuild =
+  typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.PROD === true;
+
 // Export the appropriate client
-export const localClient = isElectron ? createElectronClient() : mockClient;
+export const localClient = isElectron
+  ? createElectronClient()
+  : (isProductionBuild ? productionGuardClient : mockClient);
 
 // Default export for compatibility
 export default localClient;

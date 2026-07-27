@@ -66,7 +66,7 @@ jobs:
             const fs = require('fs');
             const summary = JSON.parse(fs.readFileSync('coverage/coverage-summary.json', 'utf8'));
             const total = summary.total;
-            const hardMin = 8;
+            const hardMin = 15;
             const target = 60;
             const lines = total.lines.pct;
             const branches = total.branches.pct;
@@ -98,6 +98,30 @@ jobs:
           name: sbom
           path: sbom.json
           retention-days: 90
+
+  server:
+    name: Server Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install server dependencies
+        run: npm ci
+        working-directory: server
+
+      - name: Lint server
+        run: npm run lint
+        working-directory: server
+
+      - name: Run server unit tests
+        run: npm test
+        working-directory: server
 
   e2e:
     name: Playwright E2E Tests

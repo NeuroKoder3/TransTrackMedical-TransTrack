@@ -111,6 +111,16 @@ async function refresh(rawRefresh, { ttlSeconds = 3600 } = {}) {
   });
 }
 
+async function lookupTokenClientId(rawToken) {
+  const h = hash(rawToken);
+  const r = await getPool().query(
+    `SELECT client_id FROM smart_access_tokens
+     WHERE access_token_hash = $1 OR refresh_token_hash = $1`,
+    [h]
+  );
+  return r.rows[0]?.client_id || null;
+}
+
 async function revoke(rawToken) {
   await getPool().query(
     `UPDATE smart_access_tokens SET revoked_at = now()
@@ -119,4 +129,6 @@ async function revoke(rawToken) {
   );
 }
 
-module.exports = { issue, lookupAccess, refresh, revoke, hash, newOpaque };
+module.exports = {
+  issue, lookupAccess, lookupTokenClientId, refresh, revoke, hash, newOpaque,
+};

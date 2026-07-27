@@ -4,15 +4,29 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Plus, Users, Loader2, AlertCircle } from 'lucide-react';
+import { Plus, Users, Loader2, AlertCircle, Upload, CheckCircle2 } from 'lucide-react';
 import ErrorState from '@/components/ui/ErrorState';
 import PatientForm from '../components/patients/PatientForm';
 import { motion, AnimatePresence } from 'framer-motion';
+
+// Columns accepted from a roster CSV (see assets/sample-imports/
+// patient-roster-template.csv). Unknown columns are ignored so exports from
+// other systems can be imported without pre-cleaning.
+const IMPORTABLE_FIELDS = [
+  'patient_id', 'first_name', 'last_name', 'date_of_birth', 'blood_type',
+  'organ_needed', 'medical_urgency', 'waitlist_status',
+  'date_added_to_waitlist', 'last_evaluation_date',
+  'meld_score', 'pra_percentage', 'cpra_percentage',
+  'phone', 'email', 'diagnosis', 'notes',
+];
+const NUMERIC_IMPORT_FIELDS = new Set(['meld_score', 'pra_percentage', 'cpra_percentage']);
 
 export default function Patients() {
   const [showForm, setShowForm] = useState(false);
   const [editingPatient, setEditingPatient] = useState(null);
   const [error, setError] = useState(null);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importSummary, setImportSummary] = useState(null);
   const queryClient = useQueryClient();
 
   const { data: patients = [], isLoading, isError, error: queryError } = useQuery({
@@ -94,6 +108,66 @@ export default function Patients() {
     setShowForm(true);
   };
 
+  const handleImportCsv = async () => {
+    setIsImporting(true);
+    setError(null);
+    setImportSummary(null);
+    try {
+      const result = await api.files.importFile('csv');
+      if (!result || result.cancelled) return;
+      if (!result.success || !Array.isArray(result.data)) {
+        throw new Error('Import failed: the file could not be parsed.');
+      }
+
+      let created = 0;
+      const failures = [];
+      for (const [i, row] of result.data.entries()) {
+        const payload = {};
+        for (const field of IMPORTABLE_FIELDS) {
+          const value = row[field];
+          if (value === undefined || value === null || String(value).trim() === '') continue;
+          if (NUMERIC_IMPORT_FIELDS.has(field)) {
+            const num = Number(value);
+            if (!Number.isFinite(num)) {
+              failures.push(`Row ${i + 2}: ${field} must be a number (got "${value}")`);
+              continue;
+            }
+            payload[field] = num;
+          } else {
+            payload[field] = String(value).trim();
+          }
+        }
+        if (!payload.first_name || !payload.last_name) {
+          failures.push(`Row ${i + 2}: first_name and last_name are required`);
+          continue;
+        }
+        try {
+          const patient = await api.entities.Patient.create(payload);
+          try {
+            await api.functions.invoke('calculatePriorityAdvanced', { patient_id: patient.id });
+          } catch (e) {
+            // Priority calculation is non-critical, continue
+          }
+          created++;
+        } catch (e) {
+          failures.push(`Row ${i + 2}: ${e.message}`);
+        }
+      }
+
+      queryClient.invalidateQueries({ queryKey: ['patients'] });
+      setImportSummary({
+        filename: result.filename,
+        created,
+        failed: failures.length,
+        failures: failures.slice(0, 5),
+      });
+    } catch (e) {
+      setError(e.message || 'CSV import failed. Please check the file and try again.');
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
   const isMutating = createPatientMutation.isPending || updatePatientMutation.isPending;
 
   if (isError) {
@@ -109,19 +183,52 @@ export default function Patients() {
             <p className="text-slate-600 mt-1">Add and manage patient records</p>
           </div>
           {!showForm && (
-            <Button
-              onClick={() => {
-                setEditingPatient(null);
-                setShowForm(true);
-                setError(null);
-              }}
-              className="bg-cyan-600 hover:bg-cyan-700"
-            >
-              <Plus className="w-5 h-5 mr-2" />
-              Add Patient
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={handleImportCsv}
+                disabled={isImporting}
+              >
+                {isImporting ? (
+                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                ) : (
+                  <Upload className="w-5 h-5 mr-2" />
+                )}
+                Import CSV
+              </Button>
+              <Button
+                onClick={() => {
+                  setEditingPatient(null);
+                  setShowForm(true);
+                  setError(null);
+                }}
+                className="bg-cyan-600 hover:bg-cyan-700"
+              >
+                <Plus className="w-5 h-5 mr-2" />
+                Add Patient
+              </Button>
+            </div>
           )}
         </div>
+
+        {/* Import Summary */}
+        {importSummary && (
+          <Alert className={importSummary.failed > 0 ? 'bg-amber-50 border-amber-200' : 'bg-green-50 border-green-200'}>
+            <CheckCircle2 className="h-4 w-4" />
+            <AlertDescription>
+              Imported {importSummary.created} patient{importSummary.created === 1 ? '' : 's'} from{' '}
+              {importSummary.filename}
+              {importSummary.failed > 0 && (
+                <>
+                  {' '}({importSummary.failed} row{importSummary.failed === 1 ? '' : 's'} skipped):
+                  <ul className="list-disc ml-5 mt-1 text-sm">
+                    {importSummary.failures.map((f, idx) => <li key={idx}>{f}</li>)}
+                  </ul>
+                </>
+              )}
+            </AlertDescription>
+          </Alert>
+        )}
 
         {/* Error Display */}
         {(error || queryError) && (

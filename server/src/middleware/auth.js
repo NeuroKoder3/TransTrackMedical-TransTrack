@@ -3,6 +3,7 @@
 const jwt = require('../auth/jwt');
 const smartTokens = require('../smart/tokens');
 const smartScopes = require('../smart/scopes');
+const { readAccessToken } = require('../auth/sessionCookies');
 const { errors } = require('../util/errors');
 
 /**
@@ -27,10 +28,11 @@ function makeAuthHook(config) {
       await req.rateLimit();
     }
     const header = req.headers['authorization'] || '';
-    if (!header.toLowerCase().startsWith('bearer ')) {
-      throw errors.unauthorized('Missing Bearer token');
+    let raw = '';
+    if (header.toLowerCase().startsWith('bearer ')) {
+      raw = header.slice(header.indexOf(' ') + 1).trim();
     }
-    const raw = header.slice(header.indexOf(' ') + 1).trim();
+    if (!raw) raw = readAccessToken(req) || '';
     if (!raw) throw errors.unauthorized('Missing Bearer token');
 
     // Heuristic: native JWT contains exactly two dots and base64url segments;
@@ -85,14 +87,8 @@ function makeAuthHook(config) {
 function requireRole(...allowed) {
   return async function (req) {
     if (!req.auth) throw errors.unauthorized();
-    // SMART system tokens (backend services) act as 'admin' for purposes of
-    // RBAC — scope-based filtering is the actual access-control mechanism.
-    if (req.auth.role === 'smart_system') return;
-    if (req.auth.role === 'smart_user') {
-      // For SMART user tokens, treat as 'user' unless the calling route
-      // permits it explicitly (e.g. routes that require 'admin' will deny).
-      if (allowed.includes('user') || allowed.includes('smart_user')) return;
-      throw errors.forbidden('SMART user token cannot access role-restricted endpoint');
+    if (req.auth.role === 'smart_system' || req.auth.role === 'smart_user') {
+      throw errors.forbidden('SMART tokens cannot access native API endpoints');
     }
     if (!allowed.includes(req.auth.role) && req.auth.role !== 'admin') {
       throw errors.forbidden(`Requires one of: ${allowed.join(', ')}`);

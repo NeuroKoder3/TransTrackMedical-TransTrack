@@ -25,12 +25,12 @@
 const { z } = require('zod');
 const { errors } = require('../util/errors');
 const { requireRole } = require('../middleware/auth');
-const { withTransaction, getPool } = require('../db/pool');
-const scopes = require('../smart/scopes');
+const { getPool } = require('../db/pool');
 const tokens = require('../smart/tokens');
 const authzCodes = require('../smart/authzCodes');
 const clients = require('../smart/clients');
 const backendJwt = require('../smart/backendJwt');
+const { authenticateOAuthClient } = require('../smart/clientAuth');
 
 module.exports = async function smartRoutes(app, opts) {
   const { config } = opts;
@@ -56,6 +56,12 @@ module.exports = async function smartRoutes(app, opts) {
         registration_endpoint: `${issuer}/oauth2/register`,
         introspection_endpoint: `${issuer}/oauth2/introspect`,
         revocation_endpoint: `${issuer}/oauth2/revoke`,
+        introspection_endpoint_auth_methods_supported: [
+          'client_secret_basic', 'client_secret_post', 'private_key_jwt',
+        ],
+        revocation_endpoint_auth_methods_supported: [
+          'client_secret_basic', 'client_secret_post', 'private_key_jwt',
+        ],
         scopes_supported: [
           'openid', 'fhirUser', 'profile', 'email',
           'launch', 'launch/patient', 'launch/encounter', 'launch/practitioner',
@@ -376,9 +382,11 @@ module.exports = async function smartRoutes(app, opts) {
   app.post('/oauth2/introspect',
     { config: { public: true, rateLimit: { max: 30, timeWindow: '1 minute' } } },
     async (req) => {
-      const data = z.object({ token: z.string().min(1) }).parse(req.body || {});
+      const body = req.body || {};
+      const { clientId } = await authenticateOAuthClient(req, body, { tokenUrl });
+      const data = z.object({ token: z.string().min(1) }).parse(body);
       const found = await tokens.lookupAccess(data.token);
-      if (!found) return { active: false };
+      if (!found || found.clientId !== clientId) return { active: false };
       return {
         active: true,
         scope: found.scope,
@@ -392,8 +400,13 @@ module.exports = async function smartRoutes(app, opts) {
   app.post('/oauth2/revoke',
     { config: { public: true, rateLimit: { max: 30, timeWindow: '1 minute' } } },
     async (req, reply) => {
-      const data = z.object({ token: z.string().min(1) }).parse(req.body || {});
-      await tokens.revoke(data.token);
+      const body = req.body || {};
+      const { clientId } = await authenticateOAuthClient(req, body, { tokenUrl });
+      const data = z.object({ token: z.string().min(1) }).parse(body);
+      const ownerClientId = await tokens.lookupTokenClientId(data.token);
+      if (ownerClientId && ownerClientId === clientId) {
+        await tokens.revoke(data.token);
+      }
       reply.code(200).send({ revoked: true });
     });
 };

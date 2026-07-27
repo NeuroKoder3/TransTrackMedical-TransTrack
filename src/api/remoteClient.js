@@ -4,33 +4,38 @@
  * Used when the Electron renderer (or a pure web build) is configured to
  * speak to a TransTrack API server instead of the local SQLite + IPC bridge.
  *
+ * Session tokens:
+ *   - Access token: held in memory only (never localStorage).
+ *   - Refresh token: httpOnly cookie set by the server (credentials: include).
+ *
  * Activation:
  *   - In Electron, set TRANSTRACK_API_URL via the user's preferences or
  *     pass it through `window.transtrackConfig.apiBaseUrl`.
  *   - In a web build, define VITE_TRANSTRACK_API_URL at build time.
- *
- * The exported shape intentionally mirrors `localClient` for the subset of
- * functionality currently routed through the API.  Anything not yet wired
- * to a REST endpoint falls through to a local-IPC implementation when
- * available, otherwise throws a clear error.
  */
 
-const ACCESS_KEY = 'transtrack:access';
-const REFRESH_KEY = 'transtrack:refresh';
+const LEGACY_ACCESS_KEY = 'transtrack:access';
+const LEGACY_REFRESH_KEY = 'transtrack:refresh';
+
+/** @type {string | null} */
+let memoryAccessToken = null;
+
+function purgeLegacyLocalStorage() {
+  if (typeof localStorage === 'undefined') return;
+  localStorage.removeItem(LEGACY_ACCESS_KEY);
+  localStorage.removeItem(LEGACY_REFRESH_KEY);
+}
+
+purgeLegacyLocalStorage();
 
 function tokenStore() {
   return {
-    getAccess: () => (typeof localStorage !== 'undefined' ? localStorage.getItem(ACCESS_KEY) : null),
-    getRefresh: () => (typeof localStorage !== 'undefined' ? localStorage.getItem(REFRESH_KEY) : null),
-    set: (access, refresh) => {
-      if (typeof localStorage === 'undefined') return;
-      if (access) localStorage.setItem(ACCESS_KEY, access);
-      if (refresh) localStorage.setItem(REFRESH_KEY, refresh);
+    getAccess: () => memoryAccessToken,
+    setAccess: (access) => {
+      memoryAccessToken = access || null;
     },
     clear: () => {
-      if (typeof localStorage === 'undefined') return;
-      localStorage.removeItem(ACCESS_KEY);
-      localStorage.removeItem(REFRESH_KEY);
+      memoryAccessToken = null;
     },
   };
 }
@@ -49,6 +54,7 @@ class RemoteClient {
     const r = await fetch(url, {
       method: opts.method || 'GET',
       headers,
+      credentials: 'include',
       body: opts.body ? JSON.stringify(opts.body) : undefined,
     });
     if (r.status === 401 && access && opts._retry !== true) {
@@ -71,17 +77,16 @@ class RemoteClient {
   }
 
   async _refresh() {
-    const refresh = this.tokens.getRefresh();
-    if (!refresh) return false;
     try {
       const r = await fetch(this.baseUrl + '/auth/refresh', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ refresh }),
+        credentials: 'include',
+        body: JSON.stringify({}),
       });
       if (!r.ok) { this.tokens.clear(); return false; }
       const body = await r.json();
-      this.tokens.set(body.access, body.refresh);
+      this.tokens.setAccess(body.access);
       return true;
     } catch {
       this.tokens.clear();
@@ -93,17 +98,16 @@ class RemoteClient {
   auth = {
     login: async ({ email, password }) => {
       const r = await this._fetch('/auth/login', { method: 'POST', body: { email, password } });
-      if (r.kind === 'session') this.tokens.set(r.access, r.refresh);
+      if (r.kind === 'session') this.tokens.setAccess(r.access);
       return r;
     },
     loginMfa: async ({ challengeId, code }) => {
       const r = await this._fetch('/auth/mfa/verify', { method: 'POST', body: { challengeId, code } });
-      if (r.kind === 'session') this.tokens.set(r.access, r.refresh);
+      if (r.kind === 'session') this.tokens.setAccess(r.access);
       return r;
     },
     logout: async () => {
-      const refresh = this.tokens.getRefresh();
-      try { await this._fetch('/auth/logout', { method: 'POST', body: { refresh } }); }
+      try { await this._fetch('/auth/logout', { method: 'POST', body: {} }); }
       finally { this.tokens.clear(); }
       return { ok: true };
     },

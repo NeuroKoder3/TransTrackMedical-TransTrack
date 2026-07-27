@@ -51,15 +51,17 @@ token, and the file in `userData` will not be written.
 
 ### Features Available
 
-TransTrack is fully featured out of the box — no license keys, activation,
-or tiers are required. Every install includes:
+New installs run a 30-day full-feature trial; a signed license file
+(provided with your purchase) unlocks continued use — see the License page
+under Administration. Features include:
 
-- Unlimited patients, donors, and users
-- FHIR R4 import/export
-- EHR integration and bidirectional sync
+- Patient, donor, and user management (limits per license tier)
+- FHIR R4 import and file export
+- EHR integration: read-only import from Epic (patient demographics,
+  observations); TransTrack does not write data back into the EHR
 - Full audit and compliance reporting
 - Advanced analytics and custom reports
-- Free software updates
+- Software updates per your license/maintenance terms
 
 ---
 

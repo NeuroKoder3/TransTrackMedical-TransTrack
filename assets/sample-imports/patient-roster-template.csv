@@ -1,0 +1,3 @@
+patient_id,first_name,last_name,date_of_birth,blood_type,organ_needed,medical_urgency,waitlist_status,date_added_to_waitlist,last_evaluation_date,meld_score,pra_percentage,phone,email,diagnosis,notes
+UNOS-000001,Jane,Example,1968-04-12,O+,kidney,high,active,2025-11-03,2026-05-20,,42,555-0100,jane.example@example.org,ESRD secondary to diabetes,Template row - replace with real data
+UNOS-000002,John,Sample,1975-09-30,A-,liver,medium,active,2026-01-15,2026-06-01,24,,555-0101,john.sample@example.org,NASH cirrhosis,Template row - replace with real data
