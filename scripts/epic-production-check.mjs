@@ -48,7 +48,13 @@ function info(label) { process.stdout.write(`\n  \x1b[36m·\x1b[0m ${label}`); }
 function section(title) { console.log(`\n\x1b[1m\x1b[34m── ${title} ──\x1b[0m`); }
 
 const evidence = [];
-function record(line) { evidence.push(line); }
+// Evidence lines may embed fragments of HTTP error responses; strip control
+// characters and cap length so a hostile/misconfigured endpoint cannot
+// inject arbitrary content into the evidence file.
+function record(line) {
+  const clean = String(line).replace(/[^\x20-\x7E]/g, ' ').slice(0, 500);
+  evidence.push(clean);
+}
 
 function redactHost(url) {
   try {

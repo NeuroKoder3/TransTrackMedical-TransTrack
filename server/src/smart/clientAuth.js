@@ -27,8 +27,18 @@ function parseClientCredentials(req, body = {}) {
   };
 }
 
+const JWT_BEARER_ASSERTION_TYPE =
+  'urn:ietf:params:oauth:client-assertion-type:jwt-bearer';
+
 /**
  * Authenticate an OAuth client for introspection/revocation (RFC 7662 / RFC 7009).
+ *
+ * Exactly one verification path exists per registered client type — the
+ * caller cannot select a weaker path by shaping the request:
+ *   confidential -> client secret (Basic or client_secret_post), always verified
+ *   backend      -> private_key_jwt assertion, always verified
+ *   anything else (public/unknown) -> rejected; public clients cannot
+ *                   authenticate and are not permitted on these endpoints
  */
 async function authenticateOAuthClient(req, body, { tokenUrl } = {}) {
   const { clientId, clientSecret, clientAssertion, clientAssertionType } =
@@ -42,20 +52,12 @@ async function authenticateOAuthClient(req, body, { tokenUrl } = {}) {
     const ok = await clients.verifySecret(smartClient, clientSecret);
     if (!ok) throw errors.unauthorized('invalid_client');
   } else if (smartClient.client_type === 'backend') {
-    if (
-      clientAssertion
-      && clientAssertionType === 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer'
-      && tokenUrl
-    ) {
-      await backendJwt.verifyAssertion(smartClient, clientAssertion, tokenUrl);
-    } else if (clientSecret) {
-      const ok = await clients.verifySecret(smartClient, clientSecret);
-      if (!ok) throw errors.unauthorized('invalid_client');
-    } else {
-      // Backend services must present a private_key_jwt assertion or a secret;
-      // a bare client_id is not authentication.
+    if (!tokenUrl || clientAssertionType !== JWT_BEARER_ASSERTION_TYPE || !clientAssertion) {
       throw errors.unauthorized('client authentication required');
     }
+    await backendJwt.verifyAssertion(smartClient, clientAssertion, tokenUrl);
+  } else {
+    throw errors.unauthorized('invalid_client');
   }
 
   return { clientId, smartClient };
