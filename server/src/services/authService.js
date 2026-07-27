@@ -1,6 +1,6 @@
 'use strict';
 
-const { newId, newToken, sha256 } = require('../util/ids');
+const { newToken, sha256 } = require('../util/ids');
 const password = require('../auth/password');
 const mfa = require('../auth/mfa');
 const jwt = require('../auth/jwt');

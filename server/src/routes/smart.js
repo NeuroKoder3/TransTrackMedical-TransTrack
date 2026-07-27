@@ -25,8 +25,7 @@
 const { z } = require('zod');
 const { errors } = require('../util/errors');
 const { requireRole } = require('../middleware/auth');
-const { withTransaction, getPool } = require('../db/pool');
-const scopes = require('../smart/scopes');
+const { getPool } = require('../db/pool');
 const tokens = require('../smart/tokens');
 const authzCodes = require('../smart/authzCodes');
 const clients = require('../smart/clients');
