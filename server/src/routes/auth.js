@@ -8,34 +8,42 @@ const mfa = require('../auth/mfa');
 const samlMod = require('../auth/saml');
 const oidcMod = require('../auth/oidc');
 const { errors } = require('../util/errors');
+const { setSessionCookies, clearSessionCookies, readRefreshToken } = require('../auth/sessionCookies');
 
 module.exports = async function authRoutes(app, opts) {
   const { config } = opts;
 
   // ----- POST /auth/login (local password) -----
-  app.post('/auth/login', { config: { public: true, rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req) => {
+  app.post('/auth/login', { config: { public: true, rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req, reply) => {
     const body = z.object({
       email: z.string().email(),
       password: z.string().min(1),
     }).parse(req.body);
-    return withTransaction({}, async (client) => {
-      const result = await authService.passwordLogin(client, config, {
+    const result = await withTransaction({}, async (client) => {
+      return authService.passwordLogin(client, config, {
         email: body.email,
         plaintext: body.password,
         ip: req.ip,
         userAgent: req.headers['user-agent'],
       });
-      return result;
     });
+    if (result.kind === 'session') {
+      setSessionCookies(reply, {
+        access: result.access,
+        refresh: result.refresh,
+        config,
+      });
+    }
+    return result;
   });
 
   // ----- POST /auth/mfa/verify -----
-  app.post('/auth/mfa/verify', { config: { public: true, rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req) => {
+  app.post('/auth/mfa/verify', { config: { public: true, rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req, reply) => {
     const body = z.object({
       challengeId: z.string().uuid(),
       code: z.string().min(6).max(20),
     }).parse(req.body);
-    return withTransaction({}, async (client) => {
+    const result = await withTransaction({}, async (client) => {
       return authService.consumeMfaChallenge(client, config, {
         challengeId: body.challengeId,
         code: body.code,
@@ -43,26 +51,44 @@ module.exports = async function authRoutes(app, opts) {
         userAgent: req.headers['user-agent'],
       });
     });
+    if (result.kind === 'session') {
+      setSessionCookies(reply, {
+        access: result.access,
+        refresh: result.refresh,
+        config,
+      });
+    }
+    return result;
   });
 
   // ----- POST /auth/refresh -----
-  app.post('/auth/refresh', { config: { public: true, rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req) => {
-    const body = z.object({ refresh: z.string().min(10) }).parse(req.body);
-    return withTransaction({}, async (client) => {
+  app.post('/auth/refresh', { config: { public: true, rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req, reply) => {
+    const body = z.object({ refresh: z.string().min(10).optional() }).parse(req.body || {});
+    const refreshToken = readRefreshToken(req, body.refresh);
+    if (!refreshToken) throw errors.unauthorized('Missing refresh token');
+    const result = await withTransaction({}, async (client) => {
       return authService.refresh(client, config, {
-        refreshToken: body.refresh,
+        refreshToken,
         ip: req.ip,
         userAgent: req.headers['user-agent'],
       });
     });
+    setSessionCookies(reply, {
+      access: result.access,
+      refresh: result.refresh,
+      config,
+    });
+    return result;
   });
 
   // ----- POST /auth/logout -----
-  app.post('/auth/logout', { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req) => {
+  app.post('/auth/logout', { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req, reply) => {
     const body = z.object({ refresh: z.string().optional() }).parse(req.body || {});
+    const refreshToken = readRefreshToken(req, body.refresh);
     await withTransaction({}, async (client) => {
-      await authService.revoke(client, body.refresh);
+      await authService.revoke(client, refreshToken);
     });
+    clearSessionCookies(reply);
     return { ok: true };
   });
 

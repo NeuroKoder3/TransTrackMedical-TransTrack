@@ -1,0 +1,1127 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TransTrack — Demo</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #f0f5fb;
+        --bg-2: #e4ecf6;
+        --panel: #ffffff;
+        --panel-2: #f7fafd;
+        --border: rgba(30, 80, 160, 0.14);
+        --text: #0d1f38;
+        --muted: #3a5a82;
+        --accent: #0284c7;
+        --accent-2: #0891b2;
+        --warn: #d97706;
+        --good: #059669;
+        --bad: #dc2626;
+        --grad: linear-gradient(135deg, #0284c7 0%, #0891b2 50%, #059669 100%);
+        --grad-soft: linear-gradient(180deg, rgba(2,132,199,.08), rgba(2,132,199,0));
+      }
+
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+
+      body {
+        background: #c8d8ee;
+        font-family: 'Inter', system-ui, sans-serif;
+        -webkit-font-smoothing: antialiased;
+        overflow: hidden;
+        width: 100vw;
+        height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      /* ── STAGE ── */
+      #stage {
+        position: relative;
+        width: 1280px;
+        height: 720px;
+        background: var(--bg);
+        overflow: hidden;
+        border-radius: 12px;
+        box-shadow: 0 0 80px rgba(2, 132, 199, 0.18);
+      }
+
+      /* ambient glow blobs */
+      .glow-a {
+        position: absolute;
+        width: 900px; height: 900px;
+        top: -350px; right: -300px;
+        background: radial-gradient(closest-side, rgba(2,132,199,.10), transparent 70%);
+        filter: blur(30px);
+        pointer-events: none;
+      }
+      .glow-b {
+        position: absolute;
+        width: 700px; height: 700px;
+        bottom: -350px; left: -200px;
+        background: radial-gradient(closest-side, rgba(5,150,105,.08), transparent 70%);
+        filter: blur(30px);
+        pointer-events: none;
+      }
+
+      /* ── PROGRESS BAR ── */
+      #progress-bar {
+        position: absolute;
+        bottom: 0; left: 0; right: 0;
+        height: 3px;
+        background: rgba(255,255,255,.06);
+        z-index: 100;
+      }
+      #progress-fill {
+        height: 100%;
+        background: var(--grad);
+        transition: width 0.1s linear;
+        width: 0%;
+      }
+
+      /* ── CONTROLS ── */
+      #controls {
+        position: absolute;
+        bottom: 14px;
+        right: 20px;
+        display: flex;
+        gap: 10px;
+        z-index: 100;
+      }
+      .ctrl-btn {
+        width: 34px; height: 34px;
+        border-radius: 8px;
+        background: rgba(255,255,255,.8);
+        border: 1px solid var(--border);
+        color: var(--text);
+        cursor: pointer;
+        display: grid; place-items: center;
+        font-size: 14px;
+        transition: background .15s;
+        backdrop-filter: blur(6px);
+      }
+      .ctrl-btn:hover { background: #fff; }
+
+      /* scene indicator */
+      #dots {
+        position: absolute;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        gap: 7px;
+        z-index: 100;
+      }
+      .dot {
+        width: 6px; height: 6px;
+        border-radius: 50%;
+        background: rgba(255,255,255,.2);
+        transition: background .3s, transform .3s;
+      }
+      .dot.active {
+        background: var(--accent);
+        transform: scale(1.4);
+      }
+
+      /* ── SCENES ── */
+      .scene {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity .5s ease;
+      }
+      .scene.active {
+        opacity: 1;
+        pointer-events: all;
+      }
+
+      /* shared text helpers */
+      .eyebrow {
+        display: inline-flex; align-items: center; gap: 8px;
+        padding: 5px 12px;
+        border: 1px solid rgba(2,132,199,.3);
+        border-radius: 999px;
+        background: rgba(2,132,199,.1);
+        color: #0369a1;
+        font-size: 12px; font-weight: 700; letter-spacing: .5px;
+        text-transform: uppercase;
+        margin-bottom: 16px;
+      }
+      .eyebrow .pulse {
+        width: 7px; height: 7px;
+        border-radius: 50%;
+        background: #34d399;
+        box-shadow: 0 0 0 4px rgba(52,211,153,.2);
+        animation: pulse-ring 1.8s ease-out infinite;
+      }
+      @keyframes pulse-ring {
+        0%   { box-shadow: 0 0 0 0 rgba(52,211,153,.5); }
+        70%  { box-shadow: 0 0 0 7px rgba(52,211,153,0); }
+        100% { box-shadow: 0 0 0 0 rgba(52,211,153,0); }
+      }
+
+      .grad-text {
+        background: var(--grad);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+
+      /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+         SCENE 1 — Title card
+      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+      #s1 {
+        flex-direction: column;
+        text-align: center;
+        gap: 0;
+        padding: 60px;
+      }
+      #s1 .logo {
+        display: flex; align-items: center; gap: 14px;
+        margin-bottom: 32px;
+      }
+      #s1 .mark {
+        width: 56px; height: 56px;
+        border-radius: 14px;
+        background: var(--grad);
+        display: grid; place-items: center;
+        font-size: 22px; font-weight: 900;
+        color: #002233;
+        flex-shrink: 0;
+      }
+      #s1 .brand-name {
+        font-size: 42px; font-weight: 900;
+        letter-spacing: -.02em;
+        color: var(--text);
+      }
+      #s1 h1 {
+        font-size: 52px; font-weight: 900; line-height: 1.05;
+        letter-spacing: -.03em;
+        max-width: 860px;
+        animation: fadeup .7s ease both;
+      }
+      #s1 .sub {
+        color: var(--muted);
+        font-size: 20px;
+        margin-top: 16px;
+        max-width: 680px;
+        animation: fadeup .7s .2s ease both;
+      }
+      #s1 .chips {
+        display: flex; gap: 12px; margin-top: 32px;
+        animation: fadeup .7s .4s ease both;
+      }
+      .chip {
+        padding: 8px 16px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        font-size: 13px; font-weight: 600;
+        color: var(--muted);
+        background: rgba(255,255,255,.7);
+      }
+      .chip.hi { border-color: rgba(5,150,105,.4); color: #065f46; background: rgba(5,150,105,.1); }
+
+      @keyframes fadeup {
+        from { opacity:0; transform: translateY(20px); }
+        to   { opacity:1; transform: translateY(0); }
+      }
+
+      /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+         SCENE 2 — Problem
+      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+      #s2 { flex-direction: column; padding: 60px 80px; gap: 36px; }
+      #s2 h2 {
+        font-size: 40px; font-weight: 900; line-height: 1.08;
+        letter-spacing: -.02em; text-align: center;
+      }
+      .prob-cards {
+        display: grid; grid-template-columns: repeat(3,1fr); gap: 16px;
+        width: 100%;
+      }
+      .prob-card {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 22px;
+        opacity: 0;
+        transform: translateY(18px);
+        transition: opacity .5s ease, transform .5s ease;
+        box-shadow: 0 2px 12px rgba(13,31,56,.07);
+      }
+      .prob-card.in { opacity: 1; transform: none; }
+      .prob-icon {
+        width: 40px; height: 40px;
+        border-radius: 10px;
+        background: rgba(220,38,38,.1);
+        border: 1px solid rgba(220,38,38,.25);
+        color: #b91c1c;
+        display: grid; place-items: center;
+        font-size: 18px; margin-bottom: 12px;
+      }
+      .prob-card h3 { font-size: 16px; margin-bottom: 6px; color: var(--text); }
+      .prob-card p { font-size: 13px; color: var(--muted); line-height: 1.5; }
+
+      /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+         SCENE 3 — Risk Dashboard overview
+      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+      #s3 { padding: 40px 56px; flex-direction: column; align-items: flex-start; gap: 20px; }
+      #s3 .dash-head {
+        display: flex; justify-content: space-between; align-items: center;
+        width: 100%;
+      }
+      #s3 .dash-head h2 { font-size: 22px; font-weight: 800; }
+      .kpi-row {
+        display: grid; grid-template-columns: repeat(4,1fr); gap: 14px; width: 100%;
+      }
+      .kpi {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 18px;
+        opacity: 0; transform: translateY(14px);
+        transition: opacity .4s ease, transform .4s ease;
+        box-shadow: 0 2px 10px rgba(13,31,56,.06);
+      }
+      .kpi.in { opacity: 1; transform: none; }
+      .kpi .k-lbl { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); font-weight: 600; }
+      .kpi .k-val { font-size: 32px; font-weight: 900; margin: 4px 0 2px; }
+      .kpi .k-sub { font-size: 12px; color: var(--muted); }
+      .kpi.red .k-val { color: #dc2626; }
+      .kpi.warn .k-val { color: #d97706; }
+      .kpi.good .k-val { color: #059669; }
+      .kpi.blue .k-val { color: #0284c7; }
+
+      .patient-list {
+        width: 100%;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        overflow: hidden;
+        opacity: 0; transform: translateY(14px);
+        transition: opacity .5s .3s ease, transform .5s .3s ease;
+        box-shadow: 0 2px 10px rgba(13,31,56,.06);
+      }
+      .patient-list.in { opacity: 1; transform: none; }
+      .pt-header {
+        display: grid;
+        grid-template-columns: 2fr 1fr 1fr 1.5fr 1fr;
+        padding: 10px 16px;
+        background: var(--bg-2);
+        border-bottom: 1px solid var(--border);
+        font-size: 11px; font-weight: 700;
+        text-transform: uppercase; letter-spacing: .5px;
+        color: var(--muted);
+      }
+      .pt-row {
+        display: grid;
+        grid-template-columns: 2fr 1fr 1fr 1.5fr 1fr;
+        padding: 11px 16px;
+        border-bottom: 1px solid var(--border);
+        font-size: 13px;
+        align-items: center;
+        color: var(--text);
+        opacity: 0;
+        transition: opacity .35s ease, background .2s;
+      }
+      .pt-row:last-child { border-bottom: none; }
+      .pt-row.in { opacity: 1; }
+      .pt-row:hover { background: var(--bg); }
+      .risk-pill {
+        display: inline-flex; align-items: center; gap: 5px;
+        padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 700;
+      }
+      .risk-high   { background: rgba(220,38,38,.12); color: #991b1b; border: 1px solid rgba(220,38,38,.3); }
+      .risk-mod    { background: rgba(217,119,6,.12); color: #92400e; border: 1px solid rgba(217,119,6,.3); }
+      .risk-low    { background: rgba(5,150,105,.1); color: #065f46; border: 1px solid rgba(5,150,105,.3); }
+      .score-num   { font-weight: 800; font-family: 'JetBrains Mono', monospace; }
+      .pt-factor   { font-size: 12px; color: var(--muted); }
+
+      /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+         SCENE 4 — Risk Card detail
+      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+      #s4 { padding: 40px 56px; gap: 28px; align-items: flex-start; }
+      .risk-card {
+        flex: 1;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        padding: 24px;
+        display: flex; flex-direction: column; gap: 14px;
+        box-shadow: 0 2px 14px rgba(13,31,56,.07);
+      }
+      .risk-card-head {
+        display: flex; justify-content: space-between; align-items: center;
+      }
+      .risk-card-head .title { font-weight: 800; font-size: 15px; }
+      .risk-card-head .badge-high {
+        padding: 4px 12px;
+        border-radius: 999px;
+        background: rgba(220,38,38,.12);
+        color: #991b1b;
+        border: 1px solid rgba(220,38,38,.3);
+        font-size: 12px; font-weight: 700;
+      }
+      .prob-row {
+        display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;
+      }
+      .prob-stat {
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 12px;
+      }
+      .prob-stat .ps-lbl { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); font-weight: 600; }
+      .prob-stat .ps-val { font-size: 26px; font-weight: 900; margin-top: 2px; color: var(--text); }
+      .prob-stat .ps-bar {
+        height: 5px; border-radius: 999px; background: rgba(13,31,56,.1); margin-top: 8px; overflow: hidden;
+      }
+      .prob-stat .ps-bar span {
+        display: block; height: 100%; background: var(--grad); border-radius: 999px;
+        width: 0; transition: width 1.2s ease;
+      }
+      .factor-section h4 { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 10px; font-weight: 700; }
+      .factor-item {
+        display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center;
+        font-size: 13px; margin-bottom: 8px;
+      }
+      .factor-item .fi-name { color: var(--text); }
+      .factor-item .fi-pct { font-weight: 700; font-family: 'JetBrains Mono', monospace; color: #dc2626; }
+      .fi-bar-wrap { grid-column: 1/-1; height: 5px; background: rgba(13,31,56,.1); border-radius: 999px; overflow: hidden; }
+      .fi-bar-fill {
+        height: 100%; border-radius: 999px;
+        background: linear-gradient(90deg, #d97706, #dc2626);
+        width: 0; transition: width 1s ease;
+      }
+
+      .risk-right {
+        width: 340px; display: flex; flex-direction: column; gap: 16px;
+      }
+      .ctf-box {
+        background: rgba(5,150,105,.07);
+        border: 1px solid rgba(5,150,105,.3);
+        border-radius: 14px;
+        padding: 18px;
+      }
+      .ctf-box .ctf-label {
+        font-size: 11px; text-transform: uppercase; letter-spacing: .5px;
+        color: #065f46; font-weight: 700; margin-bottom: 8px;
+      }
+      .ctf-box .ctf-body { font-size: 13px; color: var(--text); line-height: 1.6; }
+      .ctf-box .ctf-body strong { color: #047857; }
+      .score-change {
+        display: flex; align-items: center; gap: 10px; margin-top: 12px;
+      }
+      .score-bubble {
+        width: 54px; height: 54px; border-radius: 50%;
+        display: grid; place-items: center;
+        font-size: 18px; font-weight: 900;
+      }
+      .sb-red { background: rgba(220,38,38,.12); border: 2px solid rgba(220,38,38,.4); color: #991b1b; }
+      .sb-green { background: rgba(5,150,105,.12); border: 2px solid rgba(5,150,105,.4); color: #065f46; }
+      .score-arrow { font-size: 18px; color: var(--muted); }
+
+      .action-list .al-title {
+        font-size: 11px; text-transform: uppercase; letter-spacing: .5px;
+        color: var(--muted); font-weight: 700; margin-bottom: 10px;
+      }
+      .action-item {
+        display: flex; align-items: center; gap: 10px;
+        padding: 10px 12px;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        margin-bottom: 8px;
+        font-size: 13px;
+        box-shadow: 0 1px 4px rgba(13,31,56,.06);
+        opacity: 0; transform: translateX(12px);
+        transition: opacity .4s ease, transform .4s ease;
+      }
+      .action-item.in { opacity: 1; transform: none; }
+      .action-rank {
+        width: 22px; height: 22px; border-radius: 6px;
+        background: var(--grad);
+        color: #fff; font-size: 11px; font-weight: 800;
+        display: grid; place-items: center; flex-shrink: 0;
+      }
+      .action-text { flex: 1; color: var(--text); }
+      .action-delta { font-size: 12px; font-weight: 700; color: #059669; font-family: 'JetBrains Mono', monospace; }
+
+      /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+         SCENE 5 — Transplant Clock
+      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+      #s5 { flex-direction: column; padding: 48px 72px; gap: 28px; }
+      #s5 .clk-title { text-align: center; }
+      #s5 .clk-title h2 { font-size: 38px; font-weight: 900; letter-spacing: -.02em; margin-top: 8px; }
+      .clk-layout { display: grid; grid-template-columns: 240px 1fr; gap: 28px; width: 100%; align-items: center; }
+      .clk-face {
+        width: 200px; height: 200px;
+        border-radius: 50%;
+        background: var(--panel);
+        border: 2px solid var(--border);
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        position: relative;
+        margin: 0 auto;
+        box-shadow: 0 4px 30px rgba(2,132,199,.15);
+      }
+      .clk-face::before {
+        content: '';
+        position: absolute; inset: -8px;
+        border-radius: 50%;
+        border: 2px solid transparent;
+        background: var(--grad) border-box;
+        -webkit-mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
+        -webkit-mask-composite: destination-out;
+        mask-composite: exclude;
+        animation: spin-border 4s linear infinite;
+      }
+      @keyframes spin-border {
+        from { transform: rotate(0deg); }
+        to   { transform: rotate(360deg); }
+      }
+      .clk-hz { font-size: 36px; font-weight: 900; color: #0284c7; font-family: 'JetBrains Mono', monospace; }
+      .clk-unit { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; font-weight: 600; }
+      .clk-label { font-size: 11px; color: var(--muted); margin-top: 4px; font-weight: 500; }
+      .clk-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+      .clk-metric {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 14px;
+        box-shadow: 0 1px 6px rgba(13,31,56,.06);
+        opacity: 0; transform: translateY(10px);
+        transition: opacity .4s ease, transform .4s ease;
+      }
+      .clk-metric.in { opacity: 1; transform: none; }
+      .clk-metric .cm-lbl { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); font-weight: 600; }
+      .clk-metric .cm-val { font-size: 22px; font-weight: 800; margin-top: 4px; }
+      .clk-metric.red .cm-val { color: #dc2626; }
+      .clk-metric.warn .cm-val { color: #d97706; }
+      .clk-metric.good .cm-val { color: #059669; }
+      .clk-metric.blue .cm-val { color: #0284c7; }
+
+      /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+         SCENE 6 — Differentiators
+      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+      #s6 { flex-direction: column; padding: 40px 64px; gap: 24px; }
+      #s6 .diff-intro { text-align: center; }
+      #s6 .diff-intro h2 { font-size: 34px; font-weight: 900; letter-spacing: -.02em; margin-top: 6px; }
+      .diff-grid {
+        display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; width: 100%;
+      }
+      .diff-card {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 18px;
+        box-shadow: 0 2px 10px rgba(13,31,56,.06);
+        opacity: 0; transform: translateY(14px);
+        transition: opacity .4s ease, transform .4s ease;
+        position: relative; overflow: hidden;
+      }
+      .diff-card::before {
+        content: '';
+        position: absolute; inset: 0;
+        background: radial-gradient(400px 160px at 0% 0%, rgba(2,132,199,.05), transparent 60%);
+        pointer-events: none;
+      }
+      .diff-card.in { opacity: 1; transform: none; }
+      .diff-num { font-size: 28px; font-weight: 900; color: rgba(2,132,199,.25); margin-bottom: 8px; font-family: 'JetBrains Mono', monospace; }
+      .diff-card h3 { font-size: 14px; font-weight: 700; margin-bottom: 6px; color: var(--text); }
+      .diff-card p { font-size: 12px; color: var(--muted); line-height: 1.5; }
+      .diff-tag {
+        position: absolute; top: 14px; right: 14px;
+        font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px;
+        color: #059669;
+      }
+
+      /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+         SCENE 7 — Security / Compliance
+      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+      #s7 { flex-direction: column; padding: 56px 80px; gap: 32px; text-align: center; }
+      #s7 h2 { font-size: 38px; font-weight: 900; letter-spacing: -.02em; }
+      .compliance-row {
+        display: grid; grid-template-columns: repeat(4,1fr); gap: 16px; width: 100%;
+      }
+      .comp-badge {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 22px 14px;
+        box-shadow: 0 2px 10px rgba(13,31,56,.06);
+        opacity: 0; transform: scale(.92);
+        transition: opacity .4s ease, transform .4s ease;
+      }
+      .comp-badge.in { opacity: 1; transform: none; }
+      .comp-badge .cb-icon { font-size: 28px; margin-bottom: 10px; }
+      .comp-badge .cb-h { font-size: 15px; font-weight: 700; color: var(--text); }
+      .comp-badge .cb-s { font-size: 12px; color: var(--muted); margin-top: 4px; }
+      .security-row {
+        display: flex; gap: 16px; width: 100%; justify-content: center;
+      }
+      .sec-item {
+        display: flex; align-items: center; gap: 10px;
+        padding: 10px 18px;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        font-size: 13px; font-weight: 600;
+        color: var(--text);
+        box-shadow: 0 1px 4px rgba(13,31,56,.06);
+        opacity: 0;
+        transition: opacity .4s ease;
+      }
+      .sec-item.in { opacity: 1; }
+      .sec-item .si-dot { width: 8px; height: 8px; border-radius: 50%; background: #059669; }
+
+      /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+         SCENE 8 — CTA
+      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+      #s8 { flex-direction: column; text-align: center; gap: 10px; padding: 60px; }
+      #s8 .cta-logo {
+        display: flex; align-items: center; gap: 14px;
+        justify-content: center; margin-bottom: 16px;
+      }
+      #s8 .cta-mark {
+        width: 64px; height: 64px; border-radius: 16px;
+        background: var(--grad);
+        display: grid; place-items: center;
+        font-size: 26px; font-weight: 900; color: #002233;
+      }
+      #s8 .cta-name { font-size: 48px; font-weight: 900; letter-spacing: -.02em; }
+      #s8 h2 { font-size: 34px; font-weight: 900; letter-spacing: -.02em; margin-top: 4px; }
+      #s8 .cta-sub { color: var(--muted); font-size: 18px; max-width: 680px; margin: 10px auto 0; }
+      .cta-buttons { display: flex; gap: 14px; margin-top: 28px; justify-content: center; }
+      .cta-btn {
+        padding: 14px 28px; border-radius: 12px;
+        font-size: 15px; font-weight: 700; cursor: pointer;
+        border: none; text-decoration: none;
+      }
+      .cta-btn-primary { background: var(--grad); color: #fff; }
+      .cta-btn-ghost {
+        background: var(--panel);
+        color: var(--text);
+        border: 1px solid var(--border);
+        box-shadow: 0 1px 4px rgba(13,31,56,.08);
+      }
+      #s8 .stat-row {
+        display: flex; gap: 28px; margin-top: 28px; justify-content: center;
+        color: var(--muted); font-size: 14px;
+      }
+      #s8 .stat-row b { color: var(--text); font-weight: 700; }
+    </style>
+  </head>
+  <body>
+    <div id="stage">
+      <div class="glow-a"></div>
+      <div class="glow-b"></div>
+
+      <!-- ── SCENE 1: Title ── -->
+      <div class="scene active" id="s1">
+        <div class="logo">
+          <div class="mark">TT</div>
+          <div class="brand-name">TransTrack</div>
+        </div>
+        <h1>Stop losing candidates to <span class="grad-text">paperwork</span>,<br><span class="grad-text">expirations</span>, and <span class="grad-text">silent gaps</span>.</h1>
+        <p class="sub">Operational Risk Intelligence for Transplant Centers — offline-first, explainable, and built for the audits you'll actually face.</p>
+        <div class="chips">
+          <div class="chip hi">100% Offline</div>
+          <div class="chip hi">AES-256 Encrypted</div>
+          <div class="chip hi">No Cloud · No Black Box</div>
+          <div class="chip">HIPAA Architected</div>
+          <div class="chip">21 CFR Part 11</div>
+        </div>
+      </div>
+
+      <!-- ── SCENE 2: Problem ── -->
+      <div class="scene" id="s2">
+        <div class="eyebrow"><span class="pulse"></span>The Problem</div>
+        <h2>Transplant operations don't fail <em style="font-style:normal">clinically</em>.<br>They fail <span class="grad-text">operationally.</span></h2>
+        <div class="prob-cards">
+          <div class="prob-card" id="pc1">
+            <div class="prob-icon">⏱</div>
+            <h3>Expirations slip past</h3>
+            <p>Evaluations, labs, and aHHQ documents quietly age out of currency. By the time a coordinator notices, the candidate is already inactive.</p>
+          </div>
+          <div class="prob-card" id="pc2">
+            <div class="prob-icon">🚧</div>
+            <h3>Non-clinical barriers stall</h3>
+            <p>Insurance, transport, caregiver support — the real blockers live in inboxes and spreadsheets, not in your transplant system.</p>
+          </div>
+          <div class="prob-card" id="pc3">
+            <div class="prob-icon">👁</div>
+            <h3>Status churn is invisible</h3>
+            <p>Candidates flapping between active and inactive create downstream risk no UNet view or EHR module surfaces in time to intervene.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── SCENE 3: Dashboard ── -->
+      <div class="scene" id="s3">
+        <div class="dash-head">
+          <div>
+            <div class="eyebrow"><span class="pulse"></span>Live Dashboard</div>
+            <h2>Inactivation Risk Dashboard</h2>
+          </div>
+          <div style="font-size:12px;color:var(--muted);text-align:right;font-weight:500;">
+            Friday, May 22, 2026 &nbsp;·&nbsp; <span style="color:#059669;font-weight:700;">● Live</span>
+          </div>
+        </div>
+        <div class="kpi-row">
+          <div class="kpi red" id="k1">
+            <div class="k-lbl">HIGH Risk</div>
+            <div class="k-val">7</div>
+            <div class="k-sub">candidates · act now</div>
+          </div>
+          <div class="kpi warn" id="k2">
+            <div class="k-lbl">MODERATE Risk</div>
+            <div class="k-val">14</div>
+            <div class="k-sub">candidates · watch</div>
+          </div>
+          <div class="kpi warn" id="k3">
+            <div class="k-lbl">Expirations ≤ 14d</div>
+            <div class="k-val">5</div>
+            <div class="k-sub">open barriers</div>
+          </div>
+          <div class="kpi blue" id="k4">
+            <div class="k-lbl">Active Waitlist</div>
+            <div class="k-val">63</div>
+            <div class="k-sub">candidates total</div>
+          </div>
+        </div>
+        <div class="patient-list" id="pt-list">
+          <div class="pt-header">
+            <div>Candidate</div>
+            <div>Risk Score</div>
+            <div>30-day Prob</div>
+            <div>Top Factor</div>
+            <div>Status</div>
+          </div>
+          <div class="pt-row" id="pr1">
+            <div><strong style="color:var(--text);">#4821</strong> &nbsp;<span style="color:var(--muted);font-size:12px;">Liver · MELD 24</span></div>
+            <div><span class="score-num" style="color:#dc2626;">78</span></div>
+            <div>41%</div>
+            <div class="pt-factor">Open insurance barrier</div>
+            <div><span class="risk-pill risk-high">HIGH</span></div>
+          </div>
+          <div class="pt-row" id="pr2">
+            <div><strong style="color:var(--text);">#3974</strong> &nbsp;<span style="color:var(--muted);font-size:12px;">Kidney · eGFR 9</span></div>
+            <div><span class="score-num" style="color:#d97706;">61</span></div>
+            <div>29%</div>
+            <div class="pt-factor">Evaluation expiring in 6d</div>
+            <div><span class="risk-pill risk-mod">MODERATE</span></div>
+          </div>
+          <div class="pt-row" id="pr3">
+            <div><strong style="color:var(--text);">#5102</strong> &nbsp;<span style="color:var(--muted);font-size:12px;">Heart · INTERMACS 3</span></div>
+            <div><span class="score-num" style="color:#d97706;">54</span></div>
+            <div>23%</div>
+            <div class="pt-factor">Status churn × 4 / 90d</div>
+            <div><span class="risk-pill risk-mod">MODERATE</span></div>
+          </div>
+          <div class="pt-row" id="pr4">
+            <div><strong style="color:var(--text);">#2290</strong> &nbsp;<span style="color:var(--muted);font-size:12px;">Liver · MELD 18</span></div>
+            <div><span class="score-num" style="color:#059669;">22</span></div>
+            <div>8%</div>
+            <div class="pt-factor">Labs current · no barriers</div>
+            <div><span class="risk-pill risk-low">LOW</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── SCENE 4: Risk Card detail ── -->
+      <div class="scene" id="s4">
+        <div class="risk-card">
+          <div class="risk-card-head">
+            <div>
+              <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;font-weight:700;">Inactivation Risk · Explainable</div>
+              <div class="title">Patient #4821 &nbsp;·&nbsp; Liver Transplant &nbsp;·&nbsp; MELD 24</div>
+            </div>
+            <div class="badge-high">HIGH · 78</div>
+          </div>
+          <div class="prob-row">
+            <div class="prob-stat">
+              <div class="ps-lbl">30-day probability</div>
+              <div class="ps-val">41%</div>
+              <div class="ps-bar"><span id="pb30" style="width:0%"></span></div>
+            </div>
+            <div class="prob-stat">
+              <div class="ps-lbl">60-day probability</div>
+              <div class="ps-val">55%</div>
+              <div class="ps-bar"><span id="pb60" style="width:0%"></span></div>
+            </div>
+            <div class="prob-stat">
+              <div class="ps-lbl">90-day probability</div>
+              <div class="ps-val">68%</div>
+              <div class="ps-bar"><span id="pb90" style="width:0%"></span></div>
+            </div>
+          </div>
+          <div class="factor-section">
+            <h4>Why this score — top factors (weighted additive decomposition)</h4>
+            <div class="factor-item">
+              <div class="fi-name">Open insurance barrier</div>
+              <div class="fi-pct">+28%</div>
+              <div class="fi-bar-wrap"><div class="fi-bar-fill" id="f1" style="width:0%"></div></div>
+            </div>
+            <div class="factor-item">
+              <div class="fi-name">Evaluation expiring in 11 days</div>
+              <div class="fi-pct">+22%</div>
+              <div class="fi-bar-wrap"><div class="fi-bar-fill" id="f2" style="width:0%"></div></div>
+            </div>
+            <div class="factor-item">
+              <div class="fi-name">Labs outside currency window</div>
+              <div class="fi-pct">+14%</div>
+              <div class="fi-bar-wrap"><div class="fi-bar-fill" id="f3" style="width:0%"></div></div>
+            </div>
+            <div class="factor-item">
+              <div class="fi-name">Status churn (3 changes / 90d)</div>
+              <div class="fi-pct">+10%</div>
+              <div class="fi-bar-wrap"><div class="fi-bar-fill" id="f4" style="width:0%"></div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="risk-right">
+          <div class="ctf-box">
+            <div class="ctf-label">⚡ Counterfactual Intervention</div>
+            <div class="ctf-body">
+              Resolve the open insurance barrier and score drops:<br><br>
+              <strong>78 → 41</strong> &nbsp;·&nbsp; class shifts <strong>HIGH → MODERATE</strong>
+            </div>
+            <div class="score-change">
+              <div class="score-bubble sb-red">78</div>
+              <div class="score-arrow">→</div>
+              <div class="score-bubble sb-green">41</div>
+            </div>
+          </div>
+          <div class="action-list">
+            <div class="al-title">Ranked interventions — highest impact first</div>
+            <div class="action-item" id="ai1">
+              <div class="action-rank">1</div>
+              <div class="action-text">Resolve insurance barrier</div>
+              <div class="action-delta">−37 pts</div>
+            </div>
+            <div class="action-item" id="ai2">
+              <div class="action-rank">2</div>
+              <div class="action-text">Renew evaluation (due in 11d)</div>
+              <div class="action-delta">−22 pts</div>
+            </div>
+            <div class="action-item" id="ai3">
+              <div class="action-rank">3</div>
+              <div class="action-text">Refresh CBC + BMP labs</div>
+              <div class="action-delta">−14 pts</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── SCENE 5: Transplant Clock ── -->
+      <div class="scene" id="s5">
+        <div class="clk-title">
+          <div class="eyebrow"><span class="pulse"></span>Real-Time Operational Pulse</div>
+          <h2>The <span class="grad-text">Transplant Clock</span></h2>
+        </div>
+        <div class="clk-layout">
+          <div>
+            <div class="clk-face">
+              <div class="clk-hz" id="clk-hz">0.0</div>
+              <div class="clk-unit">Hz</div>
+              <div class="clk-label">Pulse Rate</div>
+            </div>
+          </div>
+          <div class="clk-metrics">
+            <div class="clk-metric red" id="cm1">
+              <div class="cm-lbl">Open Barriers</div>
+              <div class="cm-val">7</div>
+            </div>
+            <div class="clk-metric warn" id="cm2">
+              <div class="cm-lbl">Next Expiration</div>
+              <div class="cm-val">6d 14h</div>
+            </div>
+            <div class="clk-metric blue" id="cm3">
+              <div class="cm-lbl">Avg Resolution Time</div>
+              <div class="cm-val">2.4d</div>
+            </div>
+            <div class="clk-metric good" id="cm4">
+              <div class="cm-lbl">Operational Freshness</div>
+              <div class="cm-val">94%</div>
+            </div>
+            <div class="clk-metric warn" id="cm5">
+              <div class="cm-lbl">Team Load</div>
+              <div class="cm-val">High</div>
+            </div>
+            <div class="clk-metric blue" id="cm6">
+              <div class="cm-lbl">Time Since Update</div>
+              <div class="cm-val">11m ago</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── SCENE 6: Differentiators ── -->
+      <div class="scene" id="s6">
+        <div class="diff-intro">
+          <div class="eyebrow"><span class="pulse"></span>Why TransTrack is different</div>
+          <h2>Six things <span class="grad-text">no other platform</span> does.</h2>
+        </div>
+        <div class="diff-grid">
+          <div class="diff-card" id="dc1">
+            <div class="diff-tag">Unique</div>
+            <div class="diff-num">01</div>
+            <h3>Explainable risk engine</h3>
+            <p>Deterministic, auditable scoring — weighted additive factor decomposition, same inputs → same outputs, every time. No black-box ML.</p>
+          </div>
+          <div class="diff-card" id="dc2">
+            <div class="diff-tag">Unique</div>
+            <div class="diff-num">02</div>
+            <h3>Counterfactual interventions</h3>
+            <p>The highest-impact action, ranked by score drop, handed directly to the coordinator.</p>
+          </div>
+          <div class="diff-card" id="dc3">
+            <div class="diff-tag">Unique</div>
+            <div class="diff-num">03</div>
+            <h3>The Transplant Clock</h3>
+            <p>Real-time operational pulse computed locally — a heartbeat for the entire program.</p>
+          </div>
+          <div class="diff-card" id="dc4">
+            <div class="diff-tag">Unique</div>
+            <div class="diff-num">04</div>
+            <h3>Truly offline-first</h3>
+            <p>AES-256 SQLCipher local database. No external AI. Configurable for fully air-gapped deployment — PHI never has to leave the building.</p>
+          </div>
+          <div class="diff-card" id="dc5">
+            <div class="diff-tag">Unique</div>
+            <div class="diff-num">05</div>
+            <h3>DB-layer tamper evidence</h3>
+            <p>Immutable audit log enforced by database triggers — UPDATE and DELETE are physically blocked at the DB level. SHA-256 hash chain on the optional server tier.</p>
+          </div>
+          <div class="diff-card" id="dc6">
+            <div class="diff-tag">Unique</div>
+            <div class="diff-num">06</div>
+            <h3>Sits between EHR &amp; OPTN</h3>
+            <p>FHIR R4 + HL7 v2 in. OPTN-shaped exports out. Fills the operational layer others ignore.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── SCENE 7: Compliance / Security ── -->
+      <div class="scene" id="s7">
+        <div class="eyebrow"><span class="pulse"></span>Security &amp; Compliance</div>
+        <h2>Designed for the audits<br>you'll <span class="grad-text">actually face</span>.</h2>
+        <div class="compliance-row">
+          <div class="comp-badge" id="cb1">
+            <div class="cb-icon">🔒</div>
+            <div class="cb-h">HIPAA Security Rule</div>
+            <div class="cb-s">Architected to support</div>
+          </div>
+          <div class="comp-badge" id="cb2">
+            <div class="cb-icon">📋</div>
+            <div class="cb-h">21 CFR Part 11</div>
+            <div class="cb-s">Designed for alignment</div>
+          </div>
+          <div class="comp-badge" id="cb3">
+            <div class="cb-icon">🛡</div>
+            <div class="cb-h">GAMP 5 / ISO 14971</div>
+            <div class="cb-s">Risk register included</div>
+          </div>
+          <div class="comp-badge" id="cb4">
+            <div class="cb-icon">✅</div>
+            <div class="cb-h">Validation Package</div>
+            <div class="cb-s">IQ / OQ / PQ templates</div>
+          </div>
+        </div>
+        <div class="security-row">
+          <div class="sec-item" id="si1"><span class="si-dot"></span>AES-256 SQLCipher at rest</div>
+          <div class="sec-item" id="si2"><span class="si-dot"></span>bcrypt password hashing</div>
+          <div class="sec-item" id="si3"><span class="si-dot"></span>Immutable DB-trigger audit log</div>
+          <div class="sec-item" id="si4"><span class="si-dot"></span>OIDC SSO · TOTP MFA</div>
+          <div class="sec-item" id="si5"><span class="si-dot"></span>CI vulnerability audit pipeline</div>
+        </div>
+      </div>
+
+      <!-- ── SCENE 8: CTA ── -->
+      <div class="scene" id="s8">
+        <div class="cta-logo">
+          <div class="cta-mark">TT</div>
+          <div class="cta-name grad-text">TransTrack</div>
+        </div>
+        <h2>See it run on your own data —<br>entirely <span class="grad-text">offline</span>.</h2>
+        <p class="cta-sub">Download for Windows, macOS, or Linux. Or build from source in three commands. No accounts. No cloud. No external AI.</p>
+        <div class="cta-buttons">
+          <a class="cta-btn cta-btn-primary" href="https://github.com/NeuroKoder3/TransTrackMedical-TransTrack/releases">Download Installers →</a>
+          <a class="cta-btn cta-btn-ghost" href="https://github.com/NeuroKoder3/TransTrackMedical-TransTrack">View on GitHub</a>
+          <a class="cta-btn cta-btn-ghost" href="mailto:Trans_Track@outlook.com">Talk to us</a>
+        </div>
+        <div class="stat-row">
+          <span><b>100%</b> offline by default</span>
+          <span><b>CI</b> vuln audit pipeline</span>
+          <span><b>AES-256</b> at rest</span>
+          <span><b>No</b> cloud · no AI black box</span>
+        </div>
+      </div>
+
+      <!-- progress & controls -->
+      <div id="progress-bar"><div id="progress-fill"></div></div>
+      <div id="dots"></div>
+      <div id="controls">
+        <button class="ctrl-btn" id="btn-prev" title="Previous">‹</button>
+        <button class="ctrl-btn" id="btn-play" title="Pause">⏸</button>
+        <button class="ctrl-btn" id="btn-next" title="Next">›</button>
+      </div>
+    </div>
+
+    <script>
+      const SCENE_DURATIONS = [5500, 7000, 7000, 8000, 7000, 7500, 6500, 8000]; // ms per scene
+      const scenes = document.querySelectorAll('.scene');
+      const nScenes = scenes.length;
+      let current = 0;
+      let playing = true;
+      let elapsed = 0;
+      let lastTs = null;
+      let rafId = null;
+
+      // Build dots
+      const dotsEl = document.getElementById('dots');
+      for (let i = 0; i < nScenes; i++) {
+        const d = document.createElement('div');
+        d.className = 'dot' + (i === 0 ? ' active' : '');
+        d.addEventListener('click', () => goTo(i));
+        dotsEl.appendChild(d);
+      }
+
+      function getDots() { return dotsEl.querySelectorAll('.dot'); }
+
+      function triggerSceneAnimations(idx) {
+        if (idx === 1) { // scene 2: problem cards
+          setTimeout(() => document.getElementById('pc1').classList.add('in'), 200);
+          setTimeout(() => document.getElementById('pc2').classList.add('in'), 500);
+          setTimeout(() => document.getElementById('pc3').classList.add('in'), 800);
+        }
+        if (idx === 2) { // scene 3: dashboard
+          ['k1','k2','k3','k4'].forEach((id, i) =>
+            setTimeout(() => document.getElementById(id).classList.add('in'), 150 + i * 120));
+          setTimeout(() => document.getElementById('pt-list').classList.add('in'), 700);
+          ['pr1','pr2','pr3','pr4'].forEach((id, i) =>
+            setTimeout(() => document.getElementById(id).classList.add('in'), 900 + i * 180));
+        }
+        if (idx === 3) { // scene 4: risk card
+          setTimeout(() => {
+            document.getElementById('pb30').style.width = '41%';
+            document.getElementById('pb60').style.width = '55%';
+            document.getElementById('pb90').style.width = '68%';
+            document.getElementById('f1').style.width = '88%';
+            document.getElementById('f2').style.width = '70%';
+            document.getElementById('f3').style.width = '50%';
+            document.getElementById('f4').style.width = '38%';
+          }, 400);
+          ['ai1','ai2','ai3'].forEach((id, i) =>
+            setTimeout(() => document.getElementById(id).classList.add('in'), 900 + i * 220));
+        }
+        if (idx === 4) { // scene 5: clock
+          let hz = 0;
+          const target = 2.4;
+          const el = document.getElementById('clk-hz');
+          const step = () => {
+            hz = Math.min(hz + 0.12, target);
+            el.textContent = hz.toFixed(1);
+            if (hz < target) requestAnimationFrame(step);
+          };
+          setTimeout(step, 300);
+          ['cm1','cm2','cm3','cm4','cm5','cm6'].forEach((id, i) =>
+            setTimeout(() => document.getElementById(id).classList.add('in'), 400 + i * 140));
+        }
+        if (idx === 5) { // scene 6: diffs
+          ['dc1','dc2','dc3','dc4','dc5','dc6'].forEach((id, i) =>
+            setTimeout(() => document.getElementById(id).classList.add('in'), 200 + i * 140));
+        }
+        if (idx === 6) { // scene 7: compliance
+          ['cb1','cb2','cb3','cb4'].forEach((id, i) =>
+            setTimeout(() => document.getElementById(id).classList.add('in'), 200 + i * 130));
+          ['si1','si2','si3','si4','si5'].forEach((id, i) =>
+            setTimeout(() => document.getElementById(id).classList.add('in'), 900 + i * 120));
+        }
+      }
+
+      // Reset per-scene animation classes
+      function resetSceneAnimations(idx) {
+        const animatedIds = {
+          1: ['pc1','pc2','pc3'],
+          2: ['k1','k2','k3','k4','pt-list','pr1','pr2','pr3','pr4'],
+          3: ['ai1','ai2','ai3'],
+          4: ['cm1','cm2','cm3','cm4','cm5','cm6'],
+          5: ['dc1','dc2','dc3','dc4','dc5','dc6'],
+          6: ['cb1','cb2','cb3','cb4','si1','si2','si3','si4','si5'],
+        };
+        if (animatedIds[idx]) {
+          animatedIds[idx].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.classList.remove('in');
+          });
+        }
+        if (idx === 3) {
+          ['pb30','pb60','pb90','f1','f2','f3','f4'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.style.width = '0%';
+          });
+        }
+        if (idx === 4) {
+          const el = document.getElementById('clk-hz');
+          if (el) el.textContent = '0.0';
+        }
+      }
+
+      function goTo(idx) {
+        scenes[current].classList.remove('active');
+        getDots()[current].classList.remove('active');
+        resetSceneAnimations(idx);
+        current = ((idx % nScenes) + nScenes) % nScenes;
+        elapsed = 0;
+        scenes[current].classList.add('active');
+        getDots()[current].classList.add('active');
+        triggerSceneAnimations(current);
+      }
+
+      function tick(ts) {
+        if (!lastTs) lastTs = ts;
+        const dt = ts - lastTs;
+        lastTs = ts;
+        if (playing) {
+          elapsed += dt;
+          const dur = SCENE_DURATIONS[current];
+          const pct = Math.min((elapsed / dur) * 100, 100);
+          document.getElementById('progress-fill').style.width = pct + '%';
+          if (elapsed >= dur) {
+            goTo(current + 1);
+          }
+        }
+        rafId = requestAnimationFrame(tick);
+      }
+
+      document.getElementById('btn-play').addEventListener('click', () => {
+        playing = !playing;
+        document.getElementById('btn-play').textContent = playing ? '⏸' : '▶';
+        if (playing) lastTs = null;
+      });
+      document.getElementById('btn-next').addEventListener('click', () => goTo(current + 1));
+      document.getElementById('btn-prev').addEventListener('click', () => goTo(current - 1));
+
+      // Keyboard nav
+      document.addEventListener('keydown', e => {
+        if (e.key === 'ArrowRight' || e.key === ' ') goTo(current + 1);
+        if (e.key === 'ArrowLeft') goTo(current - 1);
+        if (e.key === 'p' || e.key === 'P') document.getElementById('btn-play').click();
+      });
+
+      // Boot
+      triggerSceneAnimations(0);
+      rafId = requestAnimationFrame(tick);
+    </script>
+  </body>
+</html>

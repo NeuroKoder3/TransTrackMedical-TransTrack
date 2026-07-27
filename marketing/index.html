@@ -1,0 +1,1231 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TransTrack — Operational Risk Intelligence for Transplant Centers</title>
+    <meta
+      name="description"
+      content="TransTrack is the offline-first transplant operations platform that stops candidates from being inactivated for non-clinical reasons. HIPAA-architected. Explainable. No cloud required."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #07101e;
+        --bg-2: #0c1a2e;
+        --panel: #0f213b;
+        --panel-2: #122a49;
+        --border: rgba(120, 170, 220, 0.14);
+        --text: #e7eef9;
+        --muted: #9bb0cc;
+        --accent: #38bdf8;
+        --accent-2: #22d3ee;
+        --warn: #f59e0b;
+        --good: #10b981;
+        --bad: #ef4444;
+        --grad: linear-gradient(135deg, #38bdf8 0%, #22d3ee 50%, #34d399 100%);
+        --grad-soft: linear-gradient(
+          180deg,
+          rgba(56, 189, 248, 0.15),
+          rgba(34, 211, 238, 0)
+        );
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family:
+          "Inter",
+          system-ui,
+          -apple-system,
+          Segoe UI,
+          Roboto,
+          sans-serif;
+        -webkit-font-smoothing: antialiased;
+        line-height: 1.55;
+      }
+      a {
+        color: var(--accent);
+        text-decoration: none;
+      }
+      a:hover {
+        color: #7dd3fc;
+      }
+      code,
+      .mono {
+        font-family: "JetBrains Mono", ui-monospace, Consolas, monospace;
+      }
+
+      .container {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 0 24px;
+      }
+
+      /* NAV */
+      header.nav {
+        position: sticky;
+        top: 0;
+        z-index: 50;
+        backdrop-filter: blur(10px);
+        background: rgba(7, 16, 30, 0.7);
+        border-bottom: 1px solid var(--border);
+      }
+      .nav-inner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 0;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-weight: 800;
+        letter-spacing: 0.2px;
+      }
+      .brand-mark {
+        width: 30px;
+        height: 30px;
+        border-radius: 8px;
+        background: var(--grad);
+        display: grid;
+        place-items: center;
+        color: #002233;
+        font-weight: 800;
+        font-size: 14px;
+      }
+      .brand-name {
+        font-size: 17px;
+      }
+      .nav-links {
+        display: flex;
+        gap: 22px;
+        align-items: center;
+      }
+      .nav-links a {
+        color: var(--muted);
+        font-size: 14px;
+        font-weight: 500;
+      }
+      .nav-links a:hover {
+        color: var(--text);
+      }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        padding: 11px 18px;
+        border-radius: 10px;
+        font-weight: 600;
+        font-size: 14px;
+        border: 1px solid transparent;
+        cursor: pointer;
+        transition:
+          transform 0.15s ease,
+          background 0.2s ease,
+          border-color 0.2s ease;
+      }
+      .btn-primary {
+        background: var(--grad);
+        color: #002233;
+      }
+      .btn-primary:hover {
+        transform: translateY(-1px);
+      }
+      .btn-ghost {
+        background: transparent;
+        color: var(--text);
+        border-color: var(--border);
+      }
+      .btn-ghost:hover {
+        border-color: rgba(120, 170, 220, 0.4);
+      }
+
+      /* HERO */
+      .hero {
+        position: relative;
+        overflow: hidden;
+        padding: 72px 0 64px;
+      }
+      .hero::before {
+        content: "";
+        position: absolute;
+        inset: -200px -100px auto auto;
+        width: 720px;
+        height: 720px;
+        background: radial-gradient(
+          closest-side,
+          rgba(56, 189, 248, 0.18),
+          transparent 70%
+        );
+        filter: blur(20px);
+        pointer-events: none;
+      }
+      .hero::after {
+        content: "";
+        position: absolute;
+        inset: auto auto -260px -160px;
+        width: 700px;
+        height: 700px;
+        background: radial-gradient(
+          closest-side,
+          rgba(52, 211, 153, 0.14),
+          transparent 70%
+        );
+        filter: blur(20px);
+        pointer-events: none;
+      }
+      .hero-grid {
+        display: grid;
+        grid-template-columns: 1.1fr 1fr;
+        gap: 48px;
+        align-items: center;
+      }
+      @media (max-width: 900px) {
+        .hero-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 12px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        background: rgba(56, 189, 248, 0.08);
+        color: #7dd3fc;
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.4px;
+        text-transform: uppercase;
+      }
+      .eyebrow .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #34d399;
+        box-shadow: 0 0 0 4px rgba(52, 211, 153, 0.18);
+      }
+      h1.hero-title {
+        font-size: clamp(34px, 4.6vw, 56px);
+        line-height: 1.05;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        margin: 18px 0 16px;
+      }
+      h1.hero-title .grad {
+        background: var(--grad);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+      .hero-sub {
+        color: var(--muted);
+        font-size: 18px;
+        max-width: 600px;
+      }
+      .hero-cta {
+        display: flex;
+        gap: 12px;
+        margin-top: 28px;
+        flex-wrap: wrap;
+      }
+      .hero-meta {
+        display: flex;
+        gap: 22px;
+        margin-top: 28px;
+        color: var(--muted);
+        font-size: 13px;
+        flex-wrap: wrap;
+      }
+      .hero-meta b {
+        color: var(--text);
+        font-weight: 600;
+      }
+
+      /* HERO CARD MOCK */
+      .mock {
+        background: linear-gradient(
+          180deg,
+          rgba(255, 255, 255, 0.03),
+          rgba(255, 255, 255, 0.01)
+        );
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        padding: 18px;
+        box-shadow: 0 30px 80px -30px rgba(0, 0, 0, 0.7);
+      }
+      .mock-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 14px;
+      }
+      .mock-head .pill {
+        padding: 4px 10px;
+        font-size: 11px;
+        font-weight: 600;
+        border-radius: 999px;
+        background: rgba(239, 68, 68, 0.12);
+        color: #fca5a5;
+        border: 1px solid rgba(239, 68, 68, 0.25);
+      }
+      .mock-head .title {
+        font-weight: 700;
+        font-size: 14px;
+      }
+      .mock-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+      .stat {
+        background: rgba(255, 255, 255, 0.02);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 14px;
+      }
+      .stat .lbl {
+        font-size: 11px;
+        text-transform: uppercase;
+        color: var(--muted);
+        letter-spacing: 0.5px;
+      }
+      .stat .val {
+        font-size: 24px;
+        font-weight: 800;
+        margin-top: 4px;
+      }
+      .bar {
+        position: relative;
+        height: 8px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.06);
+        overflow: hidden;
+        margin-top: 10px;
+      }
+      .bar > span {
+        display: block;
+        height: 100%;
+        background: var(--grad);
+        border-radius: 999px;
+      }
+      .factors {
+        margin-top: 10px;
+        display: grid;
+        gap: 8px;
+      }
+      .factor {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 10px;
+        align-items: center;
+        font-size: 13px;
+      }
+      .factor .name {
+        color: var(--muted);
+      }
+      .factor .pct {
+        font-variant-numeric: tabular-nums;
+        color: var(--text);
+        font-weight: 600;
+      }
+      .factor-bar {
+        grid-column: 1 / -1;
+        height: 6px;
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 999px;
+        overflow: hidden;
+      }
+      .factor-bar > span {
+        display: block;
+        height: 100%;
+        background: linear-gradient(90deg, #f59e0b, #ef4444);
+        border-radius: 999px;
+      }
+      .ctf {
+        margin-top: 14px;
+        padding: 12px 14px;
+        background: rgba(52, 211, 153, 0.07);
+        border: 1px solid rgba(52, 211, 153, 0.25);
+        border-radius: 12px;
+        font-size: 13px;
+      }
+      .ctf b {
+        color: #6ee7b7;
+      }
+
+      /* SECTIONS */
+      section {
+        padding: 72px 0;
+        border-top: 1px solid var(--border);
+      }
+      .section-head {
+        max-width: 760px;
+        margin: 0 auto 40px;
+        text-align: center;
+      }
+      .section-head .eyebrow {
+        margin-bottom: 14px;
+      }
+      h2 {
+        font-size: clamp(26px, 3vw, 38px);
+        line-height: 1.1;
+        font-weight: 800;
+        letter-spacing: -0.01em;
+        margin: 0 0 12px;
+      }
+      h2 .grad {
+        background: var(--grad);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+      .lead {
+        color: var(--muted);
+        font-size: 17px;
+      }
+
+      /* PROBLEM */
+      .problem-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 18px;
+      }
+      @media (max-width: 800px) {
+        .problem-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+      .prob {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 22px;
+      }
+      .prob h3 {
+        margin: 12px 0 6px;
+        font-size: 17px;
+      }
+      .prob p {
+        color: var(--muted);
+        margin: 0;
+        font-size: 14px;
+      }
+      .icon {
+        width: 38px;
+        height: 38px;
+        border-radius: 10px;
+        background: rgba(56, 189, 248, 0.12);
+        color: #7dd3fc;
+        display: grid;
+        place-items: center;
+        font-size: 18px;
+        font-weight: 800;
+      }
+
+      /* DIFFERENT */
+      .diff-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 18px;
+      }
+      @media (max-width: 800px) {
+        .diff-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+      .diff {
+        position: relative;
+        background:
+          var(--grad-soft),
+          linear-gradient(
+            180deg,
+            rgba(255, 255, 255, 0.03),
+            rgba(255, 255, 255, 0.01)
+          );
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 26px;
+        overflow: hidden;
+      }
+      .diff::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background:
+          radial-gradient(
+            600px 200px at 0% 0%,
+            rgba(56, 189, 248, 0.1),
+            transparent 60%
+          ),
+          radial-gradient(
+            400px 200px at 100% 100%,
+            rgba(52, 211, 153, 0.08),
+            transparent 60%
+          );
+        pointer-events: none;
+      }
+      .diff h3 {
+        margin: 12px 0 8px;
+        font-size: 19px;
+        position: relative;
+      }
+      .diff p {
+        color: var(--muted);
+        margin: 0;
+        position: relative;
+      }
+      .diff .icon {
+        background: rgba(52, 211, 153, 0.12);
+        color: #6ee7b7;
+        position: relative;
+      }
+      .diff .tag {
+        position: absolute;
+        top: 18px;
+        right: 18px;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+        color: #6ee7b7;
+        font-weight: 700;
+      }
+
+      /* COMPARE */
+      .compare {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        overflow: hidden;
+      }
+      .compare table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      .compare th,
+      .compare td {
+        padding: 14px 16px;
+        text-align: left;
+        font-size: 14px;
+        border-bottom: 1px solid var(--border);
+        vertical-align: top;
+      }
+      .compare thead th {
+        background: rgba(255, 255, 255, 0.02);
+        color: var(--muted);
+        font-weight: 600;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+      }
+      .compare tbody tr:last-child td {
+        border-bottom: none;
+      }
+      .compare td.col-tt {
+        background: rgba(56, 189, 248, 0.05);
+        color: var(--text);
+      }
+      .ck {
+        color: #6ee7b7;
+        font-weight: 700;
+      }
+      .x {
+        color: #fca5a5;
+      }
+      .compare .row-h {
+        font-weight: 600;
+      }
+      @media (max-width: 800px) {
+        .compare {
+          overflow-x: auto;
+        }
+        .compare table {
+          min-width: 720px;
+        }
+      }
+
+      /* FEATURES */
+      .feat-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 18px;
+      }
+      @media (max-width: 1000px) {
+        .feat-grid {
+          grid-template-columns: repeat(2, 1fr);
+        }
+      }
+      @media (max-width: 640px) {
+        .feat-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+      .feat {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 22px;
+      }
+      .feat h3 {
+        font-size: 16px;
+        margin: 12px 0 6px;
+      }
+      .feat p {
+        color: var(--muted);
+        margin: 0;
+        font-size: 14px;
+      }
+
+      /* TRUST STRIP */
+      .trust {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 14px;
+        margin-top: 26px;
+      }
+      @media (max-width: 800px) {
+        .trust {
+          grid-template-columns: repeat(2, 1fr);
+        }
+      }
+      .badge {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 16px;
+        text-align: center;
+      }
+      .badge .b-h {
+        font-weight: 700;
+        font-size: 14px;
+      }
+      .badge .b-s {
+        color: var(--muted);
+        font-size: 12px;
+        margin-top: 4px;
+      }
+
+      /* CTA */
+      .cta-band {
+        background:
+          var(--grad-soft),
+          linear-gradient(
+            180deg,
+            rgba(255, 255, 255, 0.04),
+            rgba(255, 255, 255, 0.01)
+          );
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        padding: 36px;
+        text-align: center;
+      }
+      .cta-band h3 {
+        font-size: clamp(22px, 2.4vw, 30px);
+        margin: 0 0 8px;
+      }
+      .cta-band p {
+        color: var(--muted);
+        margin: 0 0 20px;
+      }
+
+      /* FOOTER */
+      footer {
+        padding: 36px 0 60px;
+        color: var(--muted);
+        font-size: 13px;
+        border-top: 1px solid var(--border);
+      }
+      .foot-grid {
+        display: flex;
+        justify-content: space-between;
+        gap: 18px;
+        flex-wrap: wrap;
+      }
+      .disclaimer {
+        max-width: 720px;
+        line-height: 1.6;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="nav">
+      <div class="container nav-inner">
+        <div class="brand">
+          <div class="brand-mark">TT</div>
+          <div class="brand-name">TransTrack</div>
+        </div>
+        <nav class="nav-links">
+          <a href="#different">Why different</a>
+          <a href="#features">Features</a>
+          <a href="#compare">Compare</a>
+          <a href="#compliance">Compliance</a>
+          <a
+            class="btn btn-ghost"
+            href="https://github.com/NeuroKoder3/TransTrackMedical-TransTrack"
+            >GitHub</a
+          >
+        </nav>
+      </div>
+    </header>
+
+    <!-- HERO -->
+    <section class="hero" style="border-top: none">
+      <div class="container hero-grid">
+        <div>
+          <span class="eyebrow"
+            ><span class="dot"></span> Operational Risk Intelligence for
+            Transplant</span
+          >
+          <h1 class="hero-title">
+            Stop losing candidates to <span class="grad">paperwork</span>,
+            <span class="grad">expirations</span>, and
+            <span class="grad">silent gaps</span>.
+          </h1>
+          <p class="hero-sub">
+            TransTrack is the offline-first transplant operations platform that
+            sits between your EHR and OPTN/UNet. It surfaces the
+            <b style="color: #fff">non-clinical</b> reasons candidates get
+            inactivated — and tells your coordinators exactly which intervention
+            will move the score the most.
+          </p>
+          <div class="hero-cta">
+            <a class="btn btn-primary" href="#different"
+              >See what makes it different →</a
+            >
+            <a
+              class="btn btn-ghost"
+              href="https://github.com/NeuroKoder3/TransTrackMedical-TransTrack/releases"
+              >Download</a
+            >
+          </div>
+          <div class="hero-meta">
+            <span><b>0</b> known vulnerabilities</span>
+            <span><b>100%</b> offline by default</span>
+            <span><b>AES-256</b> at rest (SQLCipher)</span>
+            <span><b>No</b> cloud, no AI black box</span>
+          </div>
+        </div>
+
+        <!-- Mock Risk Card -->
+        <div class="mock" aria-hidden="true">
+          <div class="mock-head">
+            <div class="title">Inactivation Risk · Patient #4821</div>
+            <div class="pill">HIGH · 78</div>
+          </div>
+          <div class="mock-row">
+            <div class="stat">
+              <div class="lbl">30-day probability</div>
+              <div class="val">41%</div>
+              <div class="bar"><span style="width: 41%"></span></div>
+            </div>
+            <div class="stat">
+              <div class="lbl">90-day probability</div>
+              <div class="val">68%</div>
+              <div class="bar"><span style="width: 68%"></span></div>
+            </div>
+          </div>
+
+          <div style="margin-top: 4px; font-size: 12px; color: var(--muted)">
+            Why this score (top factors)
+          </div>
+          <div class="factors">
+            <div class="factor">
+              <div class="name">Open insurance barrier</div>
+              <div class="pct">28%</div>
+              <div class="factor-bar"><span style="width: 88%"></span></div>
+            </div>
+            <div class="factor">
+              <div class="name">Evaluation expiring in 11 days</div>
+              <div class="pct">22%</div>
+              <div class="factor-bar"><span style="width: 70%"></span></div>
+            </div>
+            <div class="factor">
+              <div class="name">Labs outside currency window</div>
+              <div class="pct">14%</div>
+              <div class="factor-bar"><span style="width: 50%"></span></div>
+            </div>
+            <div class="factor">
+              <div class="name">Status churn (3 changes / 30d)</div>
+              <div class="pct">10%</div>
+              <div class="factor-bar"><span style="width: 38%"></span></div>
+            </div>
+          </div>
+
+          <div class="ctf">
+            <b>Counterfactual:</b> Resolve insurance barrier →
+            score drops <b>78 → 41</b> ·
+            class shifts <b>HIGH → MODERATE</b>.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- PROBLEM -->
+    <section id="problem">
+      <div class="container">
+        <div class="section-head">
+          <span class="eyebrow">The problem</span>
+          <h2>Transplant operations don't fail clinically. They fail <span class="grad">operationally.</span></h2>
+          <p class="lead">
+            Most candidates aren't lost because of medicine. They're lost
+            because an evaluation expired, an insurance form sat in a queue,
+            labs aged out, or a status change slipped through three handoffs.
+            Existing tools — UNet, EHR transplant modules, legacy systems,
+            spreadsheets — weren't built to catch any of that.
+          </p>
+        </div>
+        <div class="problem-grid">
+          <div class="prob">
+            <div class="icon">EX</div>
+            <h3>Expirations slip past</h3>
+            <p>
+              Evaluations, labs, and aHHQ documents quietly age out of currency.
+              By the time a coordinator notices, the candidate has already been
+              moved to inactive.
+            </p>
+          </div>
+          <div class="prob">
+            <div class="icon">BA</div>
+            <h3>Non-clinical barriers stall</h3>
+            <p>
+              Insurance, transport, caregiver support, financial review — these
+              are the real blockers. They live in inboxes and spreadsheets, not
+              in your transplant system.
+            </p>
+          </div>
+          <div class="prob">
+            <div class="icon">CH</div>
+            <h3>Status churn is invisible</h3>
+            <p>
+              Candidates flapping between active and inactive create downstream
+              risk that no UNet view, EHR module, or dashboard surfaces in time
+              to intervene.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- DIFFERENT -->
+    <section id="different">
+      <div class="container">
+        <div class="section-head">
+          <span class="eyebrow">Why TransTrack is different</span>
+          <h2>
+            Six things <span class="grad">no other platform</span> in this
+            space does.
+          </h2>
+          <p class="lead">
+            UNet does allocation. EHRs do encounters. Legacy transplant
+            systems do data entry. TransTrack does the one thing none of them
+            do well: tell you, in real time, which candidates are about to
+            slip — and why — and what to do about it.
+          </p>
+        </div>
+
+        <div class="diff-grid">
+          <div class="diff">
+            <span class="tag">Unique</span>
+            <div class="icon">01</div>
+            <h3>An Inactivation Risk Engine that explains itself</h3>
+            <p>
+              Deterministic, auditable scoring with full per-factor
+              decomposition (SHAP-style additive) and 30 / 60 / 90-day
+              calibrated probabilities. No black-box ML. No cloud inference.
+              Same inputs → same output, every time.
+            </p>
+          </div>
+
+          <div class="diff">
+            <span class="tag">Unique</span>
+            <div class="icon">02</div>
+            <h3>Counterfactual interventions, ranked by impact</h3>
+            <p>
+              "If you resolve this insurance barrier, the score drops from
+              <b>78</b> to <b>41</b>." TransTrack hands the coordinator the
+              highest-impact action first — with the projected score change
+              already calculated.
+            </p>
+          </div>
+
+          <div class="diff">
+            <span class="tag">Unique</span>
+            <div class="icon">03</div>
+            <h3>The Transplant Clock — a real-time operational pulse</h3>
+            <p>
+              Time-since-last-update, open barriers, lab gaps, next expiration,
+              team load, and a live pulse rate that rises as risk accumulates.
+              All computed locally. A heartbeat for the entire program.
+            </p>
+          </div>
+
+          <div class="diff">
+            <span class="tag">Unique</span>
+            <div class="icon">04</div>
+            <h3>Truly offline-first — your PHI never leaves the building</h3>
+            <p>
+              AES-256 SQLCipher database, deterministic encryption, no
+              telemetry, no cloud calls, no external AI. Air-gappable by
+              design. The optional server tier is yours, on your infrastructure,
+              when you want it.
+            </p>
+          </div>
+
+          <div class="diff">
+            <span class="tag">Unique</span>
+            <div class="icon">05</div>
+            <h3>Tamper-evident audit at the database layer</h3>
+            <p>
+              Append-only audit log with a SHA-256 hash chain enforced by
+              database triggers — UPDATE and DELETE are physically blocked.
+              A verification endpoint proves chain integrity to your auditors.
+            </p>
+          </div>
+
+          <div class="diff">
+            <span class="tag">Unique</span>
+            <div class="icon">06</div>
+            <h3>Sits between EHR and OPTN — instead of replacing them</h3>
+            <p>
+              FHIR R4 + HL7 v2 in. OPTN-shaped exports out. TransTrack doesn't
+              try to be your EHR or your registry. It fills the operational
+              layer the others ignore — coordination, readiness, and
+              inactivation prevention.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- COMPARE -->
+    <section id="compare">
+      <div class="container">
+        <div class="section-head">
+          <span class="eyebrow">Side by side</span>
+          <h2>How TransTrack compares</h2>
+          <p class="lead">
+            Most teams cobble together UNet, an EHR module, a couple of
+            spreadsheets, and a vendor system from the 2000s. Here's what each
+            actually delivers.
+          </p>
+        </div>
+
+        <div class="compare">
+          <table>
+            <thead>
+              <tr>
+                <th>Capability</th>
+                <th>TransTrack</th>
+                <th>UNOS UNet</th>
+                <th>EHR transplant module</th>
+                <th>Legacy systems · Spreadsheets</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="row-h">Operational risk intelligence (non-clinical inactivation)</td>
+                <td class="col-tt"><span class="ck">✓</span> Core focus, with explainable scoring</td>
+                <td class="x">— Allocation only</td>
+                <td class="x">— Encounter-centric</td>
+                <td class="x">— Manual tracking</td>
+              </tr>
+              <tr>
+                <td class="row-h">Counterfactual "what if" interventions</td>
+                <td class="col-tt"><span class="ck">✓</span> Ranked by score impact</td>
+                <td class="x">—</td>
+                <td class="x">—</td>
+                <td class="x">—</td>
+              </tr>
+              <tr>
+                <td class="row-h">Offline-first, no cloud required</td>
+                <td class="col-tt"><span class="ck">✓</span> AES-256 local SQLCipher</td>
+                <td class="x">Cloud-only</td>
+                <td class="x">Cloud / hospital network</td>
+                <td>Mixed</td>
+              </tr>
+              <tr>
+                <td class="row-h">Tamper-evident audit (DB-level immutability)</td>
+                <td class="col-tt"><span class="ck">✓</span> SHA-256 hash chain + triggers</td>
+                <td>App-level only</td>
+                <td>App-level only</td>
+                <td class="x">—</td>
+              </tr>
+              <tr>
+                <td class="row-h">FHIR R4 + HL7 v2 ingestion</td>
+                <td class="col-tt"><span class="ck">✓</span> MLLP/TLS, ADT/ORU, ACK</td>
+                <td class="x">—</td>
+                <td><span class="ck">✓</span> Vendor-specific</td>
+                <td class="x">—</td>
+              </tr>
+              <tr>
+                <td class="row-h">Full clinical calculator suite (MELD/MELD-Na/3.0/PELD/LAS/KDPI/EPTS)</td>
+                <td class="col-tt"><span class="ck">✓</span> Reference-grade, audited</td>
+                <td><span class="ck">✓</span></td>
+                <td>Partial</td>
+                <td class="x">—</td>
+              </tr>
+              <tr>
+                <td class="row-h">Real-time operational pulse / Transplant Clock</td>
+                <td class="col-tt"><span class="ck">✓</span> Computed locally</td>
+                <td class="x">—</td>
+                <td class="x">—</td>
+                <td class="x">—</td>
+              </tr>
+              <tr>
+                <td class="row-h">21 CFR Part 11 architecture</td>
+                <td class="col-tt"><span class="ck">✓</span> Validation package included</td>
+                <td>N/A</td>
+                <td>Partial</td>
+                <td class="x">—</td>
+              </tr>
+              <tr>
+                <td class="row-h">Deployable on-prem or fully air-gapped</td>
+                <td class="col-tt"><span class="ck">✓</span></td>
+                <td class="x">—</td>
+                <td class="x">—</td>
+                <td>—</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p
+          style="
+            color: var(--muted);
+            font-size: 12px;
+            margin-top: 14px;
+            text-align: center;
+          "
+        >
+          UNOS UNet, OPTN, Epic, Cerner, OTTR, Phoenix and other names are
+          trademarks of their respective owners and are referenced for
+          comparison only.
+        </p>
+      </div>
+    </section>
+
+    <!-- FEATURES -->
+    <section id="features">
+      <div class="container">
+        <div class="section-head">
+          <span class="eyebrow">What's inside</span>
+          <h2>An entire transplant operations stack — in one signed binary.</h2>
+          <p class="lead">
+            Built as a single Electron desktop app or a Postgres-backed thin
+            client. Same UI. Same code. Your choice of deployment.
+          </p>
+        </div>
+
+        <div class="feat-grid">
+          <div class="feat">
+            <div class="icon">RI</div>
+            <h3>Inactivation Risk Engine v2</h3>
+            <p>
+              8-factor weighted model, calibrated 30/60/90-day probabilities,
+              center-level dollar-impact projection, recalibratable per site
+              during PQ.
+            </p>
+          </div>
+          <div class="feat">
+            <div class="icon">TC</div>
+            <h3>Transplant Clock</h3>
+            <p>
+              Pulse rate (Hz), operational freshness, team load indicator,
+              average resolution time, next expiration countdown.
+            </p>
+          </div>
+          <div class="feat">
+            <div class="icon">WL</div>
+            <h3>Waitlist & candidate management</h3>
+            <p>
+              Demographics, evaluations, configurable readiness indicators,
+              status workflows, search and filter at scale.
+            </p>
+          </div>
+          <div class="feat">
+            <div class="icon">BA</div>
+            <h3>Readiness barriers</h3>
+            <p>
+              Track non-clinical obstacles — insurance, logistics, caregiver
+              support — assigned to social work, financial, or coordinator
+              roles.
+            </p>
+          </div>
+          <div class="feat">
+            <div class="icon">OO</div>
+            <h3>Organ offer state machine</h3>
+            <p>
+              PENDING → ACCEPTED_PROVISIONAL → ACCEPTED_FINAL / DECLINED /
+              EXPIRED / RESCINDED, with structured decline-reason codes.
+            </p>
+          </div>
+          <div class="feat">
+            <div class="icon">PT</div>
+            <h3>Post-transplant follow-up</h3>
+            <p>
+              Transplant events, immunosuppression regimens, rejection
+              episodes, biopsies, post-tx readmissions.
+            </p>
+          </div>
+          <div class="feat">
+            <div class="icon">LD</div>
+            <h3>Living donor workflow</h3>
+            <p>
+              Separate donor record, evaluation steps, status state machine,
+              auto-generated 6/12/24-month OPTN Policy 14-style follow-ups.
+            </p>
+          </div>
+          <div class="feat">
+            <div class="icon">FH</div>
+            <h3>FHIR R4 + HL7 v2</h3>
+            <p>
+              Inbound MLLP/TLS with ACK generation, ADT^A01/A03/A04/A08 +
+              ORU^R01, FHIR R4 Patient/Observation/Encounter/MedicationRequest/
+              AllergyIntolerance.
+            </p>
+          </div>
+          <div class="feat">
+            <div class="icon">CA</div>
+            <h3>Calculators</h3>
+            <p>
+              MELD · MELD-Na · MELD 3.0 · PELD · LAS · KDPI/KDRI · EPTS — with
+              percentile mapping. Reference-only; allocation stays in UNet.
+            </p>
+          </div>
+          <div class="feat">
+            <div class="icon">AU</div>
+            <h3>Hash-chained audit</h3>
+            <p>
+              Append-only with DB-trigger UPDATE/DELETE blocks. SHA-256 prev/
+              entry hashes. Verification endpoint for auditors. Optional SIEM
+              forwarding.
+            </p>
+          </div>
+          <div class="feat">
+            <div class="icon">SO</div>
+            <h3>Hospital SSO + MFA</h3>
+            <p>
+              SAML 2.0, OIDC, TOTP MFA with recovery codes, account lockout,
+              password policy + history. Argon2id at rest.
+            </p>
+          </div>
+          <div class="feat">
+            <div class="icon">DR</div>
+            <h3>Backup & disaster recovery</h3>
+            <p>
+              Encrypted local backups, restore tooling, validation IQ/OQ/PQ
+              templates, runbooks, and incident response policies in the box.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- COMPLIANCE -->
+    <section id="compliance">
+      <div class="container">
+        <div class="section-head">
+          <span class="eyebrow">Compliance posture</span>
+          <h2>Designed for the audits you'll face — not the ones you won't.</h2>
+          <p class="lead">
+            TransTrack is architected to support HIPAA Security Rule controls
+            and aligned with 21 CFR Part 11 electronic-records requirements.
+            "Aligned" describes the design controls — formal certification is
+            performed by the deploying organization.
+          </p>
+        </div>
+
+        <div class="trust">
+          <div class="badge">
+            <div class="b-h">HIPAA Security Rule</div>
+            <div class="b-s">Architected to support</div>
+          </div>
+          <div class="badge">
+            <div class="b-h">21 CFR Part 11</div>
+            <div class="b-s">Designed for alignment</div>
+          </div>
+          <div class="badge">
+            <div class="b-h">GAMP 5 / ISO 14971</div>
+            <div class="b-s">Risk register included</div>
+          </div>
+          <div class="badge">
+            <div class="b-h">Validation package</div>
+            <div class="b-s">IQ / OQ / PQ templates</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CTA -->
+    <section>
+      <div class="container">
+        <div class="cta-band">
+          <h3>See it run on your own data — entirely offline.</h3>
+          <p>
+            Download the Windows, macOS, or Linux build. Or build from source
+            in three commands. No accounts, no cloud, no telemetry.
+          </p>
+          <div
+            style="
+              display: flex;
+              gap: 12px;
+              justify-content: center;
+              flex-wrap: wrap;
+            "
+          >
+            <a
+              class="btn btn-primary"
+              href="https://github.com/NeuroKoder3/TransTrackMedical-TransTrack/releases"
+              >Download installers</a
+            >
+            <a
+              class="btn btn-ghost"
+              href="https://github.com/NeuroKoder3/TransTrackMedical-TransTrack"
+              >View on GitHub</a
+            >
+            <a class="btn btn-ghost" href="mailto:Trans_Track@outlook.com"
+              >Talk to us</a
+            >
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      <div class="container foot-grid">
+        <div>
+          <div class="brand" style="margin-bottom: 10px">
+            <div class="brand-mark">TT</div>
+            <div class="brand-name">TransTrack</div>
+          </div>
+          <div>© TransTrack Medical Software. All rights reserved.</div>
+        </div>
+        <div class="disclaimer">
+          TransTrack is operational decision-support software, not a clinical
+          decision-making system. It does not perform organ allocation and
+          does not replace UNOS/OPTN systems. "HIPAA aligned" and "Part 11
+          architected" describe design controls, not certifications. Any
+          formal certification (SOC 2 / HITRUST / 21 CFR Part 11 validation /
+          FDA determinations) is the responsibility of the deploying
+          organization and its qualified auditors.
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>

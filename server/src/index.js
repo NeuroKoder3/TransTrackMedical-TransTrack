@@ -16,6 +16,7 @@ const fs = require('fs');
 const path = require('path');
 const Fastify = require('fastify');
 const cors = require('@fastify/cors');
+const cookie = require('@fastify/cookie');
 const helmet = require('@fastify/helmet');
 const sensible = require('@fastify/sensible');
 const rateLimit = require('@fastify/rate-limit');
@@ -64,6 +65,11 @@ async function build() {
         }
       : config.NODE_ENV === 'development',
     credentials: true,
+  });
+  await app.register(cookie, {
+    secret: config.JWT_SECRET,
+    hook: 'onRequest',
+    parseOptions: {},
   });
   await app.register(helmet, {
     contentSecurityPolicy: false, // SPA-served separately; FHIR clients break with strict CSP

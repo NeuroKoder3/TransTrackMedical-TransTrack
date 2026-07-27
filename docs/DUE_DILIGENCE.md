@@ -122,31 +122,38 @@ All renderer-to-main communication passes through a secure IPC bridge with conte
 
 ## 4. Regulatory Compliance
 
+> **Status terminology.** "Implemented (self-assessed)" means the control
+> exists in the shipping code and has been verified by the vendor's own
+> automated tests and review. Independent third-party assessment
+> (security audit / compliance attestation) has **not yet** been
+> performed; buyers should treat these rows as vendor claims pending
+> external validation.
+
 ### 4.1 HIPAA Technical Safeguards (45 CFR § 164.312)
 
 | Requirement | Status | Implementation |
 |---|---|---|
-| Access Control (§164.312(a)) | Compliant | RBAC with per-entity permission enforcement |
-| Audit Controls (§164.312(b)) | Compliant | Immutable audit logs with WHO/WHAT/WHEN/WHERE |
-| Integrity Controls (§164.312(c)) | Compliant | Database triggers prevent audit log modification |
-| Transmission Security (§164.312(e)) | N/A | Offline application — no data transmission |
-| Authentication (§164.312(d)) | Compliant | bcrypt password hashing, account lockout, session management |
+| Access Control (§164.312(a)) | Implemented (self-assessed) | RBAC with per-entity permission enforcement |
+| Audit Controls (§164.312(b)) | Implemented (self-assessed) | Immutable audit logs with WHO/WHAT/WHEN/WHERE |
+| Integrity Controls (§164.312(c)) | Implemented (self-assessed) | Database triggers prevent audit log modification |
+| Transmission Security (§164.312(e)) | N/A (desktop) / Implemented (server tier) | Desktop is offline; the optional server tier enforces TLS |
+| Authentication (§164.312(d)) | Implemented (self-assessed) | bcrypt password hashing, account lockout, session management |
 
 ### 4.2 FDA 21 CFR Part 11
 
 | Requirement | Status | Implementation |
 |---|---|---|
-| Electronic Signatures | Compliant | Password-based authentication for all operations |
-| Audit Trail | Compliant | Append-only audit logs capture all data changes |
-| Record Integrity | Compliant | SQLCipher encryption + HMAC integrity on license data |
+| Electronic Signatures | Implemented (self-assessed) | Password-based authentication for all operations |
+| Audit Trail | Implemented (self-assessed) | Append-only audit logs capture all data changes |
+| Record Integrity | Implemented (self-assessed) | SQLCipher encryption + HMAC integrity on license data |
 
 ### 4.3 AATB Standards
 
 | Requirement | Status | Implementation |
 |---|---|---|
-| Donor tracking | Compliant | Full donor lifecycle management with matching |
-| Traceability | Compliant | End-to-end audit trail from donor to recipient |
-| Data retention | Compliant | Configurable retention policies per organization |
+| Donor tracking | Implemented (self-assessed) | Full donor lifecycle management with matching |
+| Traceability | Implemented (self-assessed) | End-to-end audit trail from donor to recipient |
+| Data retention | Implemented (self-assessed) | Configurable retention policies per organization |
 
 ---
 
@@ -193,27 +200,25 @@ All renderer-to-main communication passes through a secure IPC bridge with conte
 
 ## 6. License & Distribution Model
 
-### 6.1 Current public release: open, no license keys
+### 6.1 Signed per-customer licenses with trial fallback
 
-The public **TransTrack 1.0** distribution ships with **all features unlocked
-and no activation requirement**. There are no tiers, license keys, evaluation
-windows, or paywalls in the publicly published binaries or source. This is
-consistent with the README and was a deliberate decision to maximise
-adoption inside transplant centers and OPOs without procurement friction.
+TransTrack ships with a cryptographic licensing system
+(`electron/license/`). Each customer receives a unique Ed25519-signed
+license file (`LIC1.` prefix) encoding organization, tier, expiry,
+user/patient/install limits, feature flags, and optional machine binding.
+With no license file present, the application runs a **30-day
+full-feature trial**, after which creation paths lock (reads remain
+available) until a license is activated.
 
-### 6.2 License modules are no-op stubs
+### 6.2 Runtime states
 
-`electron/license/manager.cjs` and `electron/license/tiers.cjs` are explicitly
-labelled "the licensing/activation system has been removed" and exist solely
-as compatibility shims so existing imports keep resolving. Every function in
-the module reports the application as fully licensed, every tier resolves to
-the same unlimited feature set, and there is no key validation, machine
-binding, HMAC seal, or expiration tracking present in the running code path.
-
-If a future OEM, enterprise, or distribution partner requires license
-gating, that work would be a deliberate re-introduction behind a build flag
-and would be released as a delta product. It is **not** present in the
-generally-available 1.0 build.
+The license manager (`electron/license/manager.cjs`) resolves one of five
+states at launch: `trial`, `trial_expired`, `active`, `in_grace`, or
+`invalid` (signature failure, machine mismatch, or expiry past grace).
+Signature verification, machine binding, and expiration tracking are
+enforced in the running code path. Operational procedures — issuing
+licenses, rotating the publisher keypair, handling verification failures —
+are documented in `docs/LICENSING.md`.
 
 ---
 
@@ -335,7 +340,7 @@ These items should be completed before first customer delivery:
 | Unauthorized data access | Low | RBAC + audit logging + org isolation |
 | Supply chain attack via dependencies | Low | Pinned versions, `npm audit` in CI, SBOM generation |
 | Data loss | Low | Single-file database, standard backup procedures |
-| License circumvention | N/A | The 1.0 build has no license enforcement; the modules under `electron/license/` are no-op stubs that always report fully licensed. |
+| License circumvention | Low | Ed25519 signature verification with optional machine binding; the private signing key is never distributed with the application. |
 
 ---
 

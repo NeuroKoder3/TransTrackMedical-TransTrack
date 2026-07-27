@@ -20,6 +20,7 @@ import PostTransplant from './pages/PostTransplant';
 import LivingDonors from './pages/LivingDonors';
 import Hl7Inbox from './pages/Hl7Inbox';
 import License from './pages/License';
+import PreventionQueue from './pages/PreventionQueue';
 import __Layout from './Layout.jsx';
 
 
@@ -46,6 +47,7 @@ export const PAGES = {
     "LivingDonors": LivingDonors,
     "Hl7Inbox": Hl7Inbox,
     "License": License,
+    "PreventionQueue": PreventionQueue,
 }
 
 export const pagesConfig = {

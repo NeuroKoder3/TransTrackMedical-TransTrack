@@ -5,11 +5,11 @@
 | Field | Value |
 |-------|-------|
 | Document ID | TT-VAL-001 |
-| Version | 1.0.0 |
-| Status | Approved |
+| Version | 1.0.1 |
+| Status | Vendor-approved template — site execution (IQ/OQ/PQ sign-off) pending |
 | Effective Date | 2026-01-24 |
 | Author | TransTrack Development Team |
-| Approved By | Quality Assurance |
+| Approved By | Vendor internal QA (customer/site countersignature pending) |
 
 ---
 

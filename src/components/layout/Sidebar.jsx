@@ -4,7 +4,7 @@ import { createPageUrl } from '@/utils';
 import {
   Activity, Users, FileText, Settings, Shield, Heart, Database,
   AlertTriangle, HardDrive, BarChart3, Brain, ListTodo, ClipboardCheck,
-  Stethoscope, Inbox, KeyRound, UserPlus, X, Key,
+  Stethoscope, Inbox, KeyRound, UserPlus, X, Key, ListChecks,
 } from 'lucide-react';
 
 /**
@@ -61,6 +61,7 @@ export default function Sidebar({ user, isOpen = true, onClose }) {
       items: [
         { name: 'Reports', page: 'Reports', icon: FileText, show: true },
         { name: 'Tasks', page: 'TaskCenter', icon: ListTodo, show: isClinicalStaff },
+        { name: 'Prevention Queue', page: 'PreventionQueue', icon: ListChecks, show: isClinicalStaff },
         { name: 'Risk Intel', page: 'RiskDashboard', icon: AlertTriangle, show: isClinicalStaff },
         { name: 'Predictive', page: 'PredictiveRisk', icon: Brain, show: isClinicalStaff },
         { name: 'Outcomes', page: 'OutcomesDashboard', icon: BarChart3, show: isAdmin },

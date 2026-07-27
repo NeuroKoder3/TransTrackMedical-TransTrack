@@ -100,15 +100,17 @@ TransTrack is an **offline-first, HIPAA-compliant Electron desktop application**
 | IPC Handlers | 25+ modules under `electron/ipc/handlers/` | Auth, entities, admin, MFA, barriers, aHHQ, labs, clinical, operations, organ-offer state machine, living-donor workflow, post-transplant follow-up, OPTN/SRTR exports, HL7, SIEM, calculators, predictions, inactivation-risk, etc. |
 | Services | 10+ | Inactivation Risk Engine v2 (`inactivationRiskEngine.cjs`), risk engine v1, barriers, aHHQ, labs, clock, access, recovery, compliance, reconciliation |
 | Database | `init.cjs`, `schema.cjs` (27 tables), `migrations.cjs` | Schema definitions, SQLCipher encryption, versioned migrations |
-| License | `manager.cjs`, `tiers.cjs` (no-op stubs) | The licensing/activation system has been removed; these files exist as compatibility shims that always report fully licensed |
+| License | `electron/license/` (`manager.cjs`, `verifier.cjs`, `storage.cjs`, `machineId.cjs`, `tiers.cjs`) | Ed25519-signed per-customer license files with a 30-day full-feature trial fallback; states: `trial`, `trial_expired`, `active`, `in_grace`, `invalid`. See `docs/LICENSING.md` |
 | Functions | `lib/` | Priority scoring, donor matching, FHIR import |
 
 ## Build Variants
 
-The 1.0 distribution ships as a single unrestricted build. There are no
-evaluation / enterprise variants, no watermark, no patient/user limits, and
-no license activation requirement. (See `docs/DUE_DILIGENCE.md` §6 for the
-full statement and the historical rationale.)
+The distribution ships as a single build. Feature availability is governed
+at runtime by the license file: with no license present the app runs a
+30-day full-feature trial, after which creation paths lock until a signed
+license is activated. Per-customer licenses encode tier, expiry,
+user/patient/install limits, and feature flags. See `docs/LICENSING.md`
+for the operator's guide.
 
 ## Technology Stack
 
