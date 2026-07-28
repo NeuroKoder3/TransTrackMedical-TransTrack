@@ -133,16 +133,43 @@ function createMainWindow() {
     return { action: 'deny' };
   });
 
-  // Security: Content Security Policy and response headers
+  // Security: Content Security Policy and response headers.
+  // When the renderer talks to the TransTrack API server (Epic import,
+  // remote login), connect-src must include that origin — otherwise
+  // Chromium blocks /auth/login with default-src 'self'.
   mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+    const connectSrc = ["'self'"];
+    if (isDev) {
+      connectSrc.push(
+        'http://localhost:5173', 'ws://localhost:5173',
+        'http://127.0.0.1:5173', 'ws://127.0.0.1:5173',
+        // Local API server (default HTTP_PORT=8080) + any localhost port
+        // used during development.
+        'http://localhost:*', 'http://127.0.0.1:*',
+        'ws://localhost:*', 'ws://127.0.0.1:*',
+      );
+    }
+    const apiBase =
+      process.env.TRANSTRACK_API_URL
+      || process.env.VITE_TRANSTRACK_API_URL
+      || '';
+    if (apiBase) {
+      try {
+        const u = new URL(apiBase);
+        connectSrc.push(`${u.protocol}//${u.host}`);
+      } catch {
+        // Ignore malformed API URL — login will fail loudly elsewhere.
+      }
+    }
+
     const cspDirectives = isDev
       ? [
           "default-src 'self'",
           "script-src 'self'",
           "style-src 'self' 'unsafe-inline'",
-          "img-src 'self' data:",
+          "img-src 'self' data: blob:",
           "font-src 'self' data:",
-          "connect-src 'self' http://localhost:5173 ws://localhost:5173",
+          `connect-src ${connectSrc.join(' ')}`,
           "object-src 'none'",
           "base-uri 'self'",
           "form-action 'self'",
@@ -152,9 +179,9 @@ function createMainWindow() {
           "default-src 'self'",
           "script-src 'self'",
           "style-src 'self' 'unsafe-inline'",
-          "img-src 'self' data:",
+          "img-src 'self' data: blob:",
           "font-src 'self' data:",
-          "connect-src 'self'",
+          `connect-src ${connectSrc.join(' ')}`,
           "object-src 'none'",
           "base-uri 'self'",
           "form-action 'self'",
