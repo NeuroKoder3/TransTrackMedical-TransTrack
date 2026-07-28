@@ -2,6 +2,17 @@
 
 const { contextBridge, ipcRenderer } = require('electron');
 
+// Prefer an explicit API URL from the shell env so Epic/remote mode works
+// even when Vite was started without VITE_TRANSTRACK_API_URL baked in.
+const apiBaseUrl =
+  process.env.TRANSTRACK_API_URL
+  || process.env.VITE_TRANSTRACK_API_URL
+  || '';
+
+if (apiBaseUrl) {
+  contextBridge.exposeInMainWorld('transtrackConfig', { apiBaseUrl });
+}
+
 contextBridge.exposeInMainWorld('electronAPI', {
   // Application info
   getAppInfo: () => ipcRenderer.invoke('app:getInfo'),

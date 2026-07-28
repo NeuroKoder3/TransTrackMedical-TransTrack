@@ -133,34 +133,39 @@ function createMainWindow() {
     return { action: 'deny' };
   });
 
-  // Security: Content Security Policy and response headers
+  // Security: Content Security Policy and response headers.
+  // Dev must allow the local API (default :8080) or Chromium blocks
+  // fetch('http://localhost:8080/auth/login') under default-src 'self'.
   mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
-    const cspDirectives = isDev
-      ? [
-          "default-src 'self'",
-          "script-src 'self'",
-          "style-src 'self' 'unsafe-inline'",
-          "img-src 'self' data:",
-          "font-src 'self' data:",
-          "connect-src 'self' http://localhost:5173 ws://localhost:5173",
-          "object-src 'none'",
-          "base-uri 'self'",
-          "form-action 'self'",
-          "frame-ancestors 'none'",
-        ]
-      : [
-          "default-src 'self'",
-          "script-src 'self'",
-          "style-src 'self' 'unsafe-inline'",
-          "img-src 'self' data:",
-          "font-src 'self' data:",
-          "connect-src 'self'",
-          "object-src 'none'",
-          "base-uri 'self'",
-          "form-action 'self'",
-          "frame-ancestors 'none'",
-          "upgrade-insecure-requests",
-        ];
+    const apiBase =
+      process.env.TRANSTRACK_API_URL
+      || process.env.VITE_TRANSTRACK_API_URL
+      || '';
+    let apiOrigin = '';
+    if (apiBase) {
+      try { apiOrigin = new URL(apiBase).origin; } catch { /* ignore */ }
+    }
+
+    // In development, allow any http(s)/ws(s) connect so local API + Vite HMR
+    // work. Production stays locked to 'self' (+ optional configured API origin).
+    const connectSrc = isDev
+      ? ["'self'", 'http:', 'https:', 'ws:', 'wss:', 'http://localhost:8080', 'http://127.0.0.1:8080']
+      : ["'self'"];
+    if (apiOrigin && !connectSrc.includes(apiOrigin)) connectSrc.push(apiOrigin);
+
+    const cspDirectives = [
+      "default-src 'self'",
+      "script-src 'self'",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: blob:",
+      "font-src 'self' data:",
+      `connect-src ${connectSrc.join(' ')}`,
+      "object-src 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+      "frame-ancestors 'none'",
+    ];
+    if (!isDev) cspDirectives.push('upgrade-insecure-requests');
 
     callback({
       responseHeaders: {
