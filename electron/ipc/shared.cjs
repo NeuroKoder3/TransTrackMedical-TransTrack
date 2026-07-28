@@ -211,8 +211,14 @@ const ALLOWED_WRITE_COLUMNS = {
     'evaluation_decay_rate', 'is_active',
   ],
   ehr_integrations: [
+    // Canonical columns (schema.cjs)
     'name', 'type', 'base_url', 'api_key_encrypted', 'is_active',
     'last_sync_date', 'sync_frequency_minutes',
+    // Extended columns (migrations.cjs) used by the Integrations UI
+    'integration_name', 'ehr_system_type', 'endpoint_url', 'auth_type',
+    'enable_bidirectional_sync', 'sync_fields_to_ehr',
+    'auto_create_patients', 'auto_update_existing', 'sync_frequency',
+    'total_imports', 'total_exports', 'last_export_date',
   ],
   ehr_imports: [
     'integration_id', 'import_type', 'status', 'records_imported',
