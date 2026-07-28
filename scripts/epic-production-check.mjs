@@ -23,7 +23,9 @@
  * Usage: node scripts/epic-production-check.mjs
  *
  * NOTE ON PHI: when EPIC_PROD_TEST_PATIENT is set, the evidence file records
- * resource COUNTS only — no names, DOBs, MRNs, or values are written to disk.
+ * pass/fail status only — no names, DOBs, MRNs, values, or raw HTTP response
+ * bodies are written to disk. Network-derived detail is printed to stdout
+ * only so it never reaches the filesystem (CodeQL js/http-to-file-access).
  */
 import { createRequire } from 'module';
 import fs from 'fs';
@@ -47,14 +49,17 @@ function fail(label) { process.stdout.write(`\n  \x1b[31m✗\x1b[0m ${label}`); 
 function info(label) { process.stdout.write(`\n  \x1b[36m·\x1b[0m ${label}`); }
 function section(title) { console.log(`\n\x1b[1m\x1b[34m── ${title} ──\x1b[0m`); }
 
-const evidence = [];
-// Evidence lines may embed fragments of HTTP error responses; strip control
-// characters and cap length so a hostile/misconfigured endpoint cannot
-// inject arbitrary content into the evidence file.
-function record(line) {
-  const clean = String(line).replace(/[^\x20-\x7E]/g, ' ').slice(0, 500);
-  evidence.push(clean);
-}
+/**
+ * Evidence statuses are closed enums of string literals only.
+ * Never assign err.message, response bodies, or other network-derived
+ * strings into this object — that is what CodeQL flags as http-to-file.
+ */
+const evidenceStatus = {
+  tokenExchange: 'NOT_RUN',
+  scopes: 'NOT_RUN',
+  metadata: 'NOT_RUN',
+  patientPull: 'NOT_RUN',
+};
 
 function redactHost(url) {
   try {
@@ -62,6 +67,36 @@ function redactHost(url) {
   } catch {
     return '(invalid URL)';
   }
+}
+
+/**
+ * Build the evidence file from local timestamps, env-derived host, and the
+ * closed-enum status object. No network-derived strings are included.
+ */
+function buildEvidenceBody(exitCode) {
+  const lines = [
+    'TransTrack Epic production verification',
+    `Run at (UTC): ${new Date().toISOString()}`,
+    `Endpoint host: ${redactHost(FHIR_BASE)}`,
+    `Client ID: ${String(CLIENT_ID).slice(0, 8)}... (truncated)`,
+    '',
+    `Token exchange: ${evidenceStatus.tokenExchange}`,
+    `Scopes: ${evidenceStatus.scopes}`,
+    `Metadata: ${evidenceStatus.metadata}`,
+    `Patient pull: ${evidenceStatus.patientPull}`,
+    '',
+    `Exit code: ${Number(exitCode) || 0}`,
+  ];
+  return lines.join('\n') + '\n';
+}
+
+function writeEvidence(exitCode) {
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+/, '').replace('T', '-');
+  const dir = path.join(__dirname, '..', 'demo-evidence');
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, `epic-production-${stamp}.txt`);
+  fs.writeFileSync(file, buildEvidenceBody(exitCode), 'utf8');
+  console.log(`\n\n  Evidence written to ${file}`);
 }
 
 async function run() {
@@ -78,12 +113,6 @@ async function run() {
     process.exit(2);
   }
 
-  record(`TransTrack Epic production verification`);
-  record(`Run at (UTC): ${new Date().toISOString()}`);
-  record(`Endpoint host: ${redactHost(FHIR_BASE)}`);
-  record(`Client ID: ${CLIENT_ID.slice(0, 8)}… (truncated)`);
-  record('');
-
   // 1. Token exchange
   section('1 · Token Exchange (SMART Backend Services)');
   let client;
@@ -98,10 +127,11 @@ async function run() {
     });
     tok = await client.getAccessToken();
     tick(`Access token obtained (expires in ~${Math.round((tok.expiresAt - Date.now()) / 1000)}s)`);
-    record('Token exchange: OK');
+    evidenceStatus.tokenExchange = 'OK';
   } catch (err) {
+    // Network error detail stays on stdout only — never in the evidence file.
     fail(`Token exchange FAILED: ${err.message}`);
-    record(`Token exchange: FAILED — ${err.message}`);
+    evidenceStatus.tokenExchange = 'FAILED';
     writeEvidence(1);
     process.exit(1);
   }
@@ -114,48 +144,46 @@ async function run() {
   info(`Granted: ${grantedScopes.length} scope(s); requested: ${requested.length}`);
   if (missing.length === 0) {
     tick('All requested scopes granted');
-    record(`Scopes: all ${requested.length} requested scopes granted`);
+    evidenceStatus.scopes = 'OK';
   } else {
     fail(`${missing.length} scope(s) NOT granted: ${missing.join(', ')}`);
-    record(`Scopes: MISSING — ${missing.join(', ')}`);
+    evidenceStatus.scopes = 'MISSING';
   }
 
   // 3. FHIR metadata
   section('3 · FHIR Server Metadata');
   try {
     const meta = await client.fhirGet('metadata');
+    // Print network fields to stdout; do not persist them.
     tick(`FHIR version: ${meta.fhirVersion}`);
     tick(`Software: ${meta.software?.name || 'unknown'} ${meta.software?.version || ''}`);
-    record(`Metadata: OK — FHIR ${meta.fhirVersion}, ${meta.software?.name || 'unknown'} ${meta.software?.version || ''}`);
+    evidenceStatus.metadata = 'OK';
   } catch (err) {
     fail(`Metadata fetch failed: ${err.message}`);
-    record(`Metadata: FAILED — ${err.message}`);
+    evidenceStatus.metadata = 'FAILED';
   }
 
-  // 4. Optional patient pull (counts only — no PHI persisted)
+  // 4. Optional patient pull (counts only — printed, not persisted)
   if (TEST_PATIENT) {
     section('4 · Patient Bundle Fetch (counts only)');
     try {
       const bundle = await client.fetchPatientBundle(TEST_PATIENT);
-      tick(`Patient resource fetched (id supplied via env; details not persisted)`);
+      tick('Patient resource fetched (id supplied via env; details not persisted)');
       info(`Observations: ${bundle.observations.length}`);
       info(`Conditions: ${bundle.conditions.length}`);
       info(`MedicationRequests: ${bundle.medicationRequests.length}`);
       info(`AllergyIntolerances: ${bundle.allergies.length}`);
-      record(
-        `Patient pull: OK — obs=${bundle.observations.length} cond=${bundle.conditions.length} ` +
-        `meds=${bundle.medicationRequests.length} allergies=${bundle.allergies.length}`
-      );
+      evidenceStatus.patientPull = 'OK';
     } catch (err) {
       fail(`Patient bundle fetch FAILED: ${err.message}`);
-      record(`Patient pull: FAILED — ${err.message}`);
+      evidenceStatus.patientPull = 'FAILED';
       writeEvidence(1);
       process.exit(1);
     }
   } else {
     section('4 · Patient Bundle Fetch');
     info('Skipped (EPIC_PROD_TEST_PATIENT not set — connectivity verified without touching PHI)');
-    record('Patient pull: skipped (no test patient configured)');
+    evidenceStatus.patientPull = 'SKIPPED';
   }
 
   section('Summary');
@@ -164,20 +192,8 @@ async function run() {
   console.log('\n');
 }
 
-function writeEvidence(exitCode) {
-  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+/, '').replace('T', '-');
-  const dir = path.join(__dirname, '..', 'demo-evidence');
-  fs.mkdirSync(dir, { recursive: true });
-  const file = path.join(dir, `epic-production-${stamp}.txt`);
-  record('');
-  record(`Exit code: ${exitCode}`);
-  fs.writeFileSync(file, evidence.join('\n') + '\n', 'utf8');
-  console.log(`\n\n  Evidence written to ${file}`);
-}
-
 run().catch((err) => {
   console.error('\nFatal:', err.message);
-  record(`Fatal: ${err.message}`);
   writeEvidence(1);
   process.exit(1);
 });
