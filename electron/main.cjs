@@ -134,60 +134,38 @@ function createMainWindow() {
   });
 
   // Security: Content Security Policy and response headers.
-  // When the renderer talks to the TransTrack API server (Epic import,
-  // remote login), connect-src must include that origin — otherwise
-  // Chromium blocks /auth/login with default-src 'self'.
+  // Dev must allow the local API (default :8080) or Chromium blocks
+  // fetch('http://localhost:8080/auth/login') under default-src 'self'.
   mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
-    const connectSrc = ["'self'"];
-    if (isDev) {
-      connectSrc.push(
-        'http://localhost:5173', 'ws://localhost:5173',
-        'http://127.0.0.1:5173', 'ws://127.0.0.1:5173',
-        // Local API server (default HTTP_PORT=8080) + any localhost port
-        // used during development.
-        'http://localhost:*', 'http://127.0.0.1:*',
-        'ws://localhost:*', 'ws://127.0.0.1:*',
-      );
-    }
     const apiBase =
       process.env.TRANSTRACK_API_URL
       || process.env.VITE_TRANSTRACK_API_URL
       || '';
+    let apiOrigin = '';
     if (apiBase) {
-      try {
-        const u = new URL(apiBase);
-        connectSrc.push(`${u.protocol}//${u.host}`);
-      } catch {
-        // Ignore malformed API URL — login will fail loudly elsewhere.
-      }
+      try { apiOrigin = new URL(apiBase).origin; } catch { /* ignore */ }
     }
 
-    const cspDirectives = isDev
-      ? [
-          "default-src 'self'",
-          "script-src 'self'",
-          "style-src 'self' 'unsafe-inline'",
-          "img-src 'self' data: blob:",
-          "font-src 'self' data:",
-          `connect-src ${connectSrc.join(' ')}`,
-          "object-src 'none'",
-          "base-uri 'self'",
-          "form-action 'self'",
-          "frame-ancestors 'none'",
-        ]
-      : [
-          "default-src 'self'",
-          "script-src 'self'",
-          "style-src 'self' 'unsafe-inline'",
-          "img-src 'self' data: blob:",
-          "font-src 'self' data:",
-          `connect-src ${connectSrc.join(' ')}`,
-          "object-src 'none'",
-          "base-uri 'self'",
-          "form-action 'self'",
-          "frame-ancestors 'none'",
-          "upgrade-insecure-requests",
-        ];
+    // In development, allow any http(s)/ws(s) connect so local API + Vite HMR
+    // work. Production stays locked to 'self' (+ optional configured API origin).
+    const connectSrc = isDev
+      ? ["'self'", 'http:', 'https:', 'ws:', 'wss:', 'http://localhost:8080', 'http://127.0.0.1:8080']
+      : ["'self'"];
+    if (apiOrigin && !connectSrc.includes(apiOrigin)) connectSrc.push(apiOrigin);
+
+    const cspDirectives = [
+      "default-src 'self'",
+      "script-src 'self'",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: blob:",
+      "font-src 'self' data:",
+      `connect-src ${connectSrc.join(' ')}`,
+      "object-src 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+      "frame-ancestors 'none'",
+    ];
+    if (!isDev) cspDirectives.push('upgrade-insecure-requests');
 
     callback({
       responseHeaders: {

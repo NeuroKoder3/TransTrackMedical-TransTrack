@@ -57,17 +57,24 @@ export const AuthProvider = ({ children }) => {
 
       const result = await api.auth.login({ email, password });
 
-      if (result?.mfa_required) {
-        setMfaChallenge({ challenge_token: result.challenge_token, email });
+      // Local IPC shape: { mfa_required, challenge_token }
+      // Remote API shape: { kind: 'mfa_required', challengeId } | { kind: 'session', user, access }
+      if (result?.mfa_required || result?.kind === 'mfa_required') {
+        setMfaChallenge({
+          challenge_token: result.challenge_token || result.challengeId,
+          email,
+          mustEnroll: !!result.mustEnroll,
+        });
         setIsLoadingAuth(false);
         return { mfa_required: true };
       }
 
-      setUser(result.user);
+      const user = result.user || result;
+      setUser(user);
       setIsAuthenticated(true);
       setMfaChallenge(null);
       setIsLoadingAuth(false);
-      return result;
+      return { user, ...result };
     } catch (error) {
       setAuthError({
         type: 'login_failed',
