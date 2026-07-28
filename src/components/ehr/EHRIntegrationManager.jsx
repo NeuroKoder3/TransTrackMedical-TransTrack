@@ -10,12 +10,20 @@ import { api } from '@/api/apiClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Settings, Plus, X, Save, Link as LinkIcon, Copy, ArrowLeftRight, AlertCircle } from 'lucide-react';
 import { format } from 'date-fns';
+import { toast } from 'sonner';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import SyncFieldSelector from './SyncFieldSelector';
+
+function normalizeFhirEndpoint(url) {
+  // Windows paste often flips path separators to backslashes — FHIR URLs
+  // must use forward slashes.
+  return String(url || '').trim().replace(/\\/g, '/');
+}
 
 export default function EHRIntegrationManager() {
   const [showForm, setShowForm] = useState(false);
   const [editingIntegration, setEditingIntegration] = useState(null);
+  const [formError, setFormError] = useState(null);
   const queryClient = useQueryClient();
   
   const [formData, setFormData] = useState({
@@ -42,6 +50,13 @@ export default function EHRIntegrationManager() {
       queryClient.invalidateQueries({ queryKey: ['ehrIntegrations'] });
       setShowForm(false);
       setEditingIntegration(null);
+      setFormError(null);
+      toast.success('EHR integration saved');
+    },
+    onError: (err) => {
+      const message = err?.message || 'Failed to save integration';
+      setFormError(message);
+      toast.error(message);
     },
   });
 
@@ -50,11 +65,48 @@ export default function EHRIntegrationManager() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ehrIntegrations'] });
       setEditingIntegration(null);
+      toast.success('Sync settings updated');
+    },
+    onError: (err) => {
+      toast.error(err?.message || 'Failed to update integration');
     },
   });
 
   const handleSave = () => {
-    createIntegrationMutation.mutate(formData);
+    setFormError(null);
+    const name = String(formData.integration_name || '').trim();
+    const endpoint = normalizeFhirEndpoint(formData.endpoint_url);
+
+    if (!name) {
+      setFormError('Integration name is required.');
+      return;
+    }
+    if (!endpoint) {
+      setFormError('FHIR Endpoint URL is required.');
+      return;
+    }
+    if (!/^https?:\/\//i.test(endpoint)) {
+      setFormError('FHIR Endpoint URL must start with https:// (use forward slashes, not backslashes).');
+      return;
+    }
+
+    // Persist both the canonical schema columns (name/type/base_url — name
+    // is NOT NULL) and the extended UI columns from migrations.
+    createIntegrationMutation.mutate({
+      name,
+      type: formData.ehr_system_type,
+      base_url: endpoint,
+      integration_name: name,
+      ehr_system_type: formData.ehr_system_type,
+      endpoint_url: endpoint,
+      is_active: formData.is_active,
+      sync_frequency: formData.sync_frequency,
+      auto_create_patients: formData.auto_create_patients,
+      auto_update_existing: formData.auto_update_existing,
+      enable_bidirectional_sync: formData.enable_bidirectional_sync,
+      sync_fields_to_ehr: formData.sync_fields_to_ehr,
+      auth_type: formData.auth_type,
+    });
   };
 
   const handleSaveSyncFields = (fields) => {
@@ -135,8 +187,13 @@ export default function EHRIntegrationManager() {
               <Input
                 value={formData.endpoint_url}
                 onChange={(e) => setFormData({ ...formData, endpoint_url: e.target.value })}
-                placeholder="https://fhir.example.com/R4"
+                onBlur={(e) => setFormData({ ...formData, endpoint_url: normalizeFhirEndpoint(e.target.value) })}
+                placeholder="https://fhir.epic.com/interconnect-fhir-oauth/api/FHIR/R4"
               />
+              <p className="text-xs text-slate-500 mt-1">
+                Use forward slashes only. Epic sandbox example:
+                https://fhir.epic.com/interconnect-fhir-oauth/api/FHIR/R4
+              </p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -160,7 +217,9 @@ export default function EHRIntegrationManager() {
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <Label>Enable Bi-Directional Sync</Label>
-                  <p className="text-xs text-slate-500">Push TransTrack updates back to EHR</p>
+                  <p className="text-xs text-slate-500">
+                    Not supported for Epic — leave OFF. Epic import is read-only (Epic → TransTrack).
+                  </p>
                 </div>
                 <Switch
                   checked={formData.enable_bidirectional_sync}
@@ -170,6 +229,12 @@ export default function EHRIntegrationManager() {
 
               {formData.enable_bidirectional_sync && (
                 <div>
+                  <Alert className="mb-3 bg-amber-50 border-amber-200">
+                    <AlertCircle className="h-4 w-4 text-amber-600" />
+                    <AlertDescription className="text-amber-900 text-sm">
+                      Bi-directional push to Epic is not implemented. Turn this off for Epic integrations.
+                    </AlertDescription>
+                  </Alert>
                   <Label>Authentication Type</Label>
                   <Select value={formData.auth_type} onValueChange={(value) => setFormData({ ...formData, auth_type: value })}>
                     <SelectTrigger className="mt-1">
@@ -189,14 +254,25 @@ export default function EHRIntegrationManager() {
               )}
             </div>
 
+            {formError && (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{formError}</AlertDescription>
+              </Alert>
+            )}
+
             <div className="flex justify-end space-x-3">
-              <Button variant="outline" onClick={() => setShowForm(false)}>
+              <Button variant="outline" onClick={() => { setShowForm(false); setFormError(null); }}>
                 <X className="w-4 h-4 mr-2" />
                 Cancel
               </Button>
-              <Button onClick={handleSave} className="bg-blue-600 hover:bg-blue-700">
+              <Button
+                onClick={handleSave}
+                disabled={createIntegrationMutation.isPending}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
                 <Save className="w-4 h-4 mr-2" />
-                Save Integration
+                {createIntegrationMutation.isPending ? 'Saving…' : 'Save Integration'}
               </Button>
             </div>
           </CardContent>
