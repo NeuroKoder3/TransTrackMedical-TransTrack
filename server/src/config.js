@@ -7,12 +7,26 @@
 
 const { z } = require('zod');
 
+/**
+ * Env-safe boolean. Zod's `z.coerce.boolean()` treats the string "false" as
+ * true (Boolean("false") === true). Parse common truthy/falsy env spellings
+ * instead.
+ */
+const envBool = z.preprocess((val) => {
+  if (typeof val === 'boolean') return val;
+  if (val === undefined || val === null || val === '') return undefined;
+  const s = String(val).trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(s)) return true;
+  if (['0', 'false', 'no', 'off'].includes(s)) return false;
+  return val;
+}, z.boolean());
+
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'staging', 'production']).default('development'),
   HTTP_HOST: z.string().default('0.0.0.0'),
   HTTP_PORT: z.coerce.number().int().positive().default(8080),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
-  TRUST_PROXY: z.coerce.boolean().default(false),
+  TRUST_PROXY: envBool.default(false),
 
   DATABASE_URL: z.string().url().or(z.string().startsWith('postgres')),
   PGSSL: z.enum(['disable', 'require', 'verify-full']).default('disable'),
@@ -35,7 +49,7 @@ const schema = z.object({
   PASSWORD_MIN_LENGTH: z.coerce.number().int().min(8).default(12),
   PASSWORD_HISTORY_COUNT: z.coerce.number().int().nonnegative().default(10),
 
-  SAML_ENABLED: z.coerce.boolean().default(false),
+  SAML_ENABLED: envBool.default(false),
   SAML_ENTRY_POINT: z.string().optional().default(''),
   SAML_ISSUER: z.string().optional().default('urn:transtrack:sp'),
   SAML_CALLBACK_URL: z.string().optional().default(''),
@@ -44,7 +58,7 @@ const schema = z.object({
   SAML_EMAIL_ATTRIBUTE: z.string().optional().default('urn:oid:0.9.2342.19200300.100.1.3'),
   SAML_NAME_ATTRIBUTE: z.string().optional().default('urn:oid:2.16.840.1.113730.3.1.241'),
 
-  OIDC_ENABLED: z.coerce.boolean().default(false),
+  OIDC_ENABLED: envBool.default(false),
   OIDC_ISSUER: z.string().optional().default(''),
   OIDC_CLIENT_ID: z.string().optional().default(''),
   OIDC_CLIENT_SECRET: z.string().optional().default(''),
@@ -52,19 +66,19 @@ const schema = z.object({
   OIDC_SCOPES: z.string().optional().default('openid profile email'),
   OIDC_ROLE_CLAIM: z.string().optional().default('transtrack_role'),
 
-  HL7_MLLP_ENABLED: z.coerce.boolean().default(true),
+  HL7_MLLP_ENABLED: envBool.default(true),
   HL7_MLLP_HOST: z.string().default('0.0.0.0'),
   HL7_MLLP_PORT: z.coerce.number().int().positive().default(2575),
   HL7_MLLP_TLS_CERT_FILE: z.string().optional().default(''),
   HL7_MLLP_TLS_KEY_FILE: z.string().optional().default(''),
   HL7_MLLP_TLS_CA_FILE: z.string().optional().default(''),
-  HL7_MLLP_TLS_REQUIRE_CLIENT_CERT: z.coerce.boolean().default(true),
+  HL7_MLLP_TLS_REQUIRE_CLIENT_CERT: envBool.default(true),
   HL7_DEFAULT_ORG_ID: z.string().optional().default(''),
 
   FHIR_BASE_URL: z.string().default('http://localhost:8080/fhir'),
-  FHIR_REQUIRE_AUTH: z.coerce.boolean().default(true),
+  FHIR_REQUIRE_AUTH: envBool.default(true),
 
-  SIEM_ENABLED: z.coerce.boolean().default(false),
+  SIEM_ENABLED: envBool.default(false),
   SIEM_ENDPOINT: z.string().optional().default(''),
   SIEM_TOKEN: z.string().optional().default(''),
 
@@ -102,7 +116,7 @@ const schema = z.object({
   // Optional SMTP for emailing license files to customers post-checkout.
   SMTP_HOST: z.string().optional().default(''),
   SMTP_PORT: z.coerce.number().int().positive().optional().default(587),
-  SMTP_SECURE: z.coerce.boolean().optional().default(false),
+  SMTP_SECURE: envBool.optional().default(false),
   SMTP_USER: z.string().optional().default(''),
   SMTP_PASSWORD: z.string().optional().default(''),
   SMTP_FROM: z.string().optional().default(''),
