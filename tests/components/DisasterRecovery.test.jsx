@@ -23,6 +23,7 @@ vi.mock('sonner', () => ({
 }));
 
 beforeEach(() => {
+  window.transtrackConfig = { apiBaseUrl: null };
   window.electronAPI = {
     ...window.electronAPI,
     recovery: {

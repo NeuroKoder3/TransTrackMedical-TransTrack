@@ -4,9 +4,6 @@
  * Provides the API interface using Electron IPC for local database operations.
  */
 
-// Check if running in Electron
-const isElectron = typeof window !== 'undefined' && window.electronAPI;
-
 // mock client for browser dev — keeps hot-reload working without electron
 const mockClient = {
   auth: {
@@ -795,10 +792,30 @@ const productionGuardClient = new Proxy({}, {
 const isProductionBuild =
   typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.PROD === true;
 
-// Export the appropriate client
-export const localClient = isElectron
-  ? createElectronClient()
-  : (isProductionBuild ? productionGuardClient : mockClient);
+/**
+ * Resolve the desktop client at ACCESS time, not module-load time.
+ * Vitest setup files import apiClient before assigning window.electronAPI;
+ * a one-shot `const isElectron = !!window.electronAPI` at import would lock
+ * every component test onto the empty browser mockClient forever.
+ */
+function resolveLocalClient() {
+  if (typeof window !== 'undefined' && window.electronAPI) {
+    return createElectronClient();
+  }
+  return isProductionBuild ? productionGuardClient : mockClient;
+}
+
+export const localClient = new Proxy(
+  {},
+  {
+    get(_target, prop) {
+      if (prop === 'then') return undefined;
+      const client = resolveLocalClient();
+      const value = client[prop];
+      return typeof value === 'function' ? value.bind(client) : value;
+    },
+  }
+);
 
 // Default export for compatibility
 export default localClient;

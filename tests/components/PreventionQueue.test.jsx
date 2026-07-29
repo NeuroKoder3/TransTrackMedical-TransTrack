@@ -106,6 +106,7 @@ const DIGEST = {
 };
 
 beforeEach(() => {
+  window.transtrackConfig = { apiBaseUrl: null };
   window.electronAPI = {
     ...window.electronAPI,
     actionQueue: {

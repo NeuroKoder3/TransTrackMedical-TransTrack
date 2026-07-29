@@ -397,10 +397,37 @@ function validateBaseUrl(raw) {
   }
 }
 
+/**
+ * Desktop-only IPC surface. When the renderer is in remote API mode inside
+ * Electron, pages like Prevention Queue / Disaster Recovery still talk to
+ * local SQLite via preload. Component tests mock window.electronAPI the
+ * same way.
+ */
+function createElectronPassthrough(namespace) {
+  return new Proxy(
+    {},
+    {
+      get(_target, method) {
+        if (typeof method === 'symbol') return undefined;
+        return async (...args) => {
+          const ns = typeof window !== 'undefined' ? window.electronAPI?.[namespace] : null;
+          const fn = ns?.[method];
+          if (typeof fn !== 'function') {
+            throw new Error(
+              `${namespace}.${method} requires the TransTrack desktop runtime (Electron IPC).`
+            );
+          }
+          return fn(...args);
+        };
+      },
+    }
+  );
+}
+
 function resolveBaseUrl() {
-  // Prefer an explicit API origin (Electron preload / env). Use the API
-  // directly on :8080 — CSP allows it, and it does not depend on the Vite
-  // process staying up to proxy /__api.
+  // Remote mode is OPT-IN only. Never infer it from import.meta.env.DEV —
+  // Vitest sets DEV=true and would otherwise force every component test
+  // onto the HTTP client (breaking electronAPI mocks).
   if (typeof window !== 'undefined' && window.transtrackConfig?.apiBaseUrl) {
     const fromPreload = validateBaseUrl(window.transtrackConfig.apiBaseUrl);
     if (fromPreload) return fromPreload;
@@ -415,9 +442,6 @@ function resolveBaseUrl() {
     const fromEnv = validateBaseUrl(raw);
     if (fromEnv) return fromEnv;
   }
-  if (typeof import.meta !== 'undefined' && import.meta.env?.DEV) {
-    return validateBaseUrl('http://127.0.0.1:8080');
-  }
   return null;
 }
 
@@ -428,7 +452,18 @@ export function isRemoteEnabled() {
 export function createRemoteClient() {
   const base = resolveBaseUrl();
   if (!base) throw new Error('No TRANSTRACK_API_URL configured');
-  return new RemoteClient(base);
+  const client = new RemoteClient(base);
+  // Hybrid desktop + API: keep local IPC for operational desktop pages.
+  client.actionQueue = createElectronPassthrough('actionQueue');
+  client.recovery = createElectronPassthrough('recovery');
+  client.risk = createElectronPassthrough('risk');
+  client.outcomes = createElectronPassthrough('outcomes');
+  client.compliance = createElectronPassthrough('compliance');
+  client.predictions = createElectronPassthrough('predictions');
+  client.tasks = createElectronPassthrough('tasks');
+  client.srtr = createElectronPassthrough('srtr');
+  client.sso = createElectronPassthrough('sso');
+  return client;
 }
 
 export { resolveBaseUrl };

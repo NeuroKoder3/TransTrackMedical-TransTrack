@@ -3,6 +3,16 @@
  * Adds jest-dom matchers and mocks browser / Electron APIs.
  */
 import '@testing-library/jest-dom';
+import { vi } from 'vitest';
+import { resetApiClient } from '../src/api/apiClient.js';
+
+// Component tests exercise the offline desktop (local IPC) path. Clear any
+// accidental remote-API config so apiClient resolves to localClient and
+// window.electronAPI mocks are used.
+if (typeof window !== 'undefined') {
+  window.transtrackConfig = { apiBaseUrl: null };
+}
+resetApiClient();
 
 // ---------------------------------------------------------------------------
 // jsdom polyfills for browser APIs that Radix UI primitives depend on
@@ -60,6 +70,18 @@ window.electronAPI = {
     logout: vi.fn(),
     isAuthenticated: vi.fn().mockResolvedValue(false),
     me: vi.fn(),
+    loginHints: vi.fn().mockResolvedValue({
+      isPackaged: false,
+      setupTokenPresent: false,
+      hasAdmin: true,
+      defaultAdminEmail: 'admin@transtrack.local',
+    }),
+  },
+  sso: {
+    status: vi.fn().mockResolvedValue({ configured: false }),
+    start: vi.fn(),
+    cancel: vi.fn(),
+    onCompleted: () => () => {},
   },
   functions: {
     invoke: vi.fn(),

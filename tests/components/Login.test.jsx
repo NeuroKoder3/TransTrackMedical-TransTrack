@@ -8,22 +8,29 @@
  * - Displays error messages on failure
  */
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { HashRouter } from 'react-router-dom';
+import { resetApiClient } from '@/api/apiClient';
 
-// We need to mock the AuthContext used by Login
 const mockLogin = vi.fn();
+const mockSubmitMfa = vi.fn();
+const mockCancelMfa = vi.fn();
+const mockRefreshAuth = vi.fn();
+
 vi.mock('@/lib/AuthContext', () => ({
   useAuth: () => ({
     login: mockLogin,
     isLoadingAuth: false,
+    mfaChallenge: null,
+    submitMfa: mockSubmitMfa,
+    cancelMfa: mockCancelMfa,
+    refreshAuth: mockRefreshAuth,
   }),
 }));
 
-// Import after mock so the mock takes effect
 import Login from '@/pages/Login';
 
 function renderLogin() {
@@ -39,7 +46,12 @@ function renderLogin() {
 
 describe('Login Page', () => {
   beforeEach(() => {
+    resetApiClient();
+    window.transtrackConfig = { apiBaseUrl: null };
     mockLogin.mockReset();
+    mockSubmitMfa.mockReset();
+    mockCancelMfa.mockReset();
+    mockRefreshAuth.mockReset();
   });
 
   it('renders email and password inputs', () => {
@@ -50,8 +62,6 @@ describe('Login Page', () => {
 
   it('renders the Sign In button', () => {
     renderLogin();
-    // Anchored regex so we don't accidentally match the
-    // "Sign in with your organization (SSO)" button rendered alongside it.
     expect(screen.getByRole('button', { name: /^sign in$/i })).toBeInTheDocument();
   });
 
@@ -65,7 +75,10 @@ describe('Login Page', () => {
     renderLogin();
 
     const user = userEvent.setup();
-    await user.type(screen.getByLabelText(/email/i), 'admin@transtrack.local');
+    // Email is pre-filled for enterprise admin convenience — clear before typing.
+    const emailInput = screen.getByLabelText(/email/i);
+    await user.clear(emailInput);
+    await user.type(emailInput, 'admin@transtrack.local');
     await user.type(screen.getByLabelText(/password/i), 'TestPassword123!');
     await user.click(screen.getByRole('button', { name: /^sign in$/i }));
 
@@ -79,12 +92,21 @@ describe('Login Page', () => {
     renderLogin();
 
     const user = userEvent.setup();
-    await user.type(screen.getByLabelText(/email/i), 'bad@test.com');
+    const emailInput = screen.getByLabelText(/email/i);
+    await user.clear(emailInput);
+    await user.type(emailInput, 'bad@test.com');
     await user.type(screen.getByLabelText(/password/i), 'wrong');
     await user.click(screen.getByRole('button', { name: /^sign in$/i }));
 
     await waitFor(() => {
       expect(screen.getByText('Invalid credentials')).toBeInTheDocument();
+    });
+  });
+
+  it('does not show the SSO button when SSO is unconfigured', async () => {
+    renderLogin();
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: /sign in with your organization/i })).not.toBeInTheDocument();
     });
   });
 });

@@ -55,6 +55,11 @@ export default defineConfig({
     setupFiles: ['./tests/setup-react.js'],
     include: ['tests/components/**/*.test.{js,jsx}'],
     css: true,
+    // Keep component tests on the offline desktop client. Remote API mode
+    // is opt-in via VITE_TRANSTRACK_API_URL / window.transtrackConfig.
+    env: {
+      VITE_TRANSTRACK_API_URL: '',
+    },
     coverage: {
       provider: 'v8',
       reporter: ['text', 'text-summary', 'lcov', 'json-summary'],
