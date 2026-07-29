@@ -38,6 +38,16 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
+    // Same-origin proxy so Electron CSP (default-src 'self') never blocks
+    // login/API calls to :8080. Renderer uses http://localhost:5173/__api/...
+    proxy: {
+      '/__api': {
+        target: 'http://127.0.0.1:8080',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (p) => p.replace(/^\/__api/, ''),
+      },
+    },
   },
   test: {
     globals: true,

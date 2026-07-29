@@ -442,6 +442,18 @@ const createElectronClient = () => {
       changePassword: async (data) => {
         return await api.auth.changePassword(data);
       },
+      loginHints: async () => {
+        if (typeof api.auth.loginHints === 'function') {
+          return await api.auth.loginHints();
+        }
+        return {
+          isPackaged: false,
+          setupTokenPresent: false,
+          setupTokenPath: null,
+          hasAdmin: true,
+          defaultAdminEmail: 'admin@transtrack.local',
+        };
+      },
     },
     mfa: {
       status: () => api.mfa.status(),
@@ -657,6 +669,13 @@ const createElectronClient = () => {
     // callable unsubscribe so React effect cleanup doesn't crash when SSO
     // isn't available (e.g. in unit tests).
     sso: {
+      status:      async () => {
+        const fn = window.electronAPI?.sso?.status;
+        if (typeof fn !== 'function') {
+          return { configured: false, issuerConfigured: false, clientIdConfigured: false };
+        }
+        return await fn();
+      },
       start:       async () => await window.electronAPI?.sso?.start?.(),
       cancel:      async () => await window.electronAPI?.sso?.cancel?.(),
       onCompleted: (cb) => {

@@ -18,15 +18,23 @@ const shared = require('../shared.cjs');
 function register() {
   const db = getDatabase();
 
-  ipcMain.handle('app:getInfo', () => ({
-    name: 'TransTrack',
-    version: '1.0.0',
-    designAlignment: ['HIPAA Security Rule', '21 CFR Part 11', 'AATB Standards'],
-    certificationDisclaimer: 'Design alignment statements describe product controls only and are not certifications.',
-    encryptionEnabled: isEncryptionEnabled(),
-  }));
+  ipcMain.handle('app:getInfo', () => {
+    let isPackaged = false;
+    try {
+      const { app } = require('electron');
+      isPackaged = !!(app && app.isPackaged);
+    } catch { /* plain node */ }
+    return {
+      name: 'TransTrack',
+      version: '1.2.0',
+      isPackaged,
+      designAlignment: ['HIPAA Security Rule', '21 CFR Part 11', 'AATB Standards'],
+      certificationDisclaimer: 'Design alignment statements describe product controls only and are not certifications.',
+      encryptionEnabled: isEncryptionEnabled(),
+    };
+  });
 
-  ipcMain.handle('app:getVersion', () => '1.0.0');
+  ipcMain.handle('app:getVersion', () => '1.2.0');
 
   // Encryption status
   ipcMain.handle('encryption:getStatus', async () => getEncryptionStatus());

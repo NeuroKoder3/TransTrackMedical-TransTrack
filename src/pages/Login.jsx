@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/AuthContext';
-import { api } from '@/api/apiClient';
+import { api, getApiMode, getApiBaseUrl } from '@/api/apiClient';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -10,12 +10,36 @@ import { Loader2, Shield, Lock, KeyRound, ArrowLeft, Building2 } from 'lucide-re
 
 export default function Login() {
   const { login, isLoadingAuth, mfaChallenge, submitMfa, cancelMfa, refreshAuth } = useAuth();
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState('admin@transtrack.local');
   const [password, setPassword] = useState('');
   const [mfaCode, setMfaCode] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [ssoInFlight, setSsoInFlight] = useState(false);
+  const [ssoConfigured, setSsoConfigured] = useState(false);
+  const [loginHints, setLoginHints] = useState(null);
+  const mode = getApiMode();
+  const apiBase = getApiBaseUrl();
+  const isPackaged = !!loginHints?.isPackaged;
+  const showDevRemoteBanner = !isPackaged && mode !== 'remote' && import.meta.env.DEV;
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [status, hints] = await Promise.all([
+          api.sso?.status?.().catch(() => ({ configured: false })),
+          api.auth?.loginHints?.().catch(() => null),
+        ]);
+        if (cancelled) return;
+        setSsoConfigured(!!status?.configured);
+        if (hints) setLoginHints(hints);
+      } catch {
+        if (!cancelled) setSsoConfigured(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   // Subscribe to the broadcast emitted by the protocol handler after the
   // OIDC token exchange completes. The renderer's job is to refresh its
@@ -96,6 +120,35 @@ export default function Login() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
+                {mode === 'remote' && (
+                  <Alert className="mb-4 bg-green-50 border-green-200">
+                    <AlertDescription className="text-green-800 text-sm">
+                      <strong>Connected to API:</strong> {apiBase}
+                    </AlertDescription>
+                  </Alert>
+                )}
+
+                {showDevRemoteBanner && (
+                  <Alert className="mb-4 bg-amber-50 border-amber-200">
+                    <AlertDescription className="text-amber-900 text-sm">
+                      <strong>Developer mode</strong> — local SQLite. For live Epic/API testing,
+                      restart with <code>scripts\dev-with-api.ps1</code> while the API is on :8080.
+                    </AlertDescription>
+                  </Alert>
+                )}
+
+                {isPackaged && loginHints?.setupTokenPresent && (
+                  <Alert className="mb-4 bg-cyan-50 border-cyan-200">
+                    <AlertDescription className="text-cyan-900 text-sm">
+                      <strong>First launch:</strong> sign in as{' '}
+                      <code>{loginHints.defaultAdminEmail || 'admin@transtrack.local'}</code> using
+                      the one-time password in{' '}
+                      <code className="break-all">%APPDATA%\TransTrack Enterprise\INITIAL_ADMIN_PASSWORD.txt</code>
+                      {' '}(you will be asked to change it after signing in).
+                    </AlertDescription>
+                  </Alert>
+                )}
+
                 <form onSubmit={handleSubmit} className="space-y-4">
                   {error && (
                     <Alert variant="destructive" className="mb-4">
@@ -114,7 +167,7 @@ export default function Login() {
                       required
                       disabled={isLoading}
                       className="h-11"
-                      autoComplete="off"
+                      autoComplete="username"
                     />
                   </div>
 
@@ -129,7 +182,7 @@ export default function Login() {
                       required
                       disabled={isLoading}
                       className="h-11"
-                      autoComplete="off"
+                      autoComplete="current-password"
                     />
                   </div>
 
@@ -152,35 +205,41 @@ export default function Login() {
                   </Button>
                 </form>
 
-                <div className="my-4 flex items-center gap-3">
-                  <div className="h-px flex-1 bg-slate-200" />
-                  <span className="text-xs text-slate-400 uppercase tracking-wide">or</span>
-                  <div className="h-px flex-1 bg-slate-200" />
-                </div>
+                {ssoConfigured && (
+                  <>
+                    <div className="my-4 flex items-center gap-3">
+                      <div className="h-px flex-1 bg-slate-200" />
+                      <span className="text-xs text-slate-400 uppercase tracking-wide">or</span>
+                      <div className="h-px flex-1 bg-slate-200" />
+                    </div>
 
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="w-full h-11"
-                  disabled={ssoInFlight || isLoading || isLoadingAuth}
-                  onClick={handleSso}
-                >
-                  {ssoInFlight ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Waiting for identity provider…
-                    </>
-                  ) : (
-                    <>
-                      <Building2 className="w-4 h-4 mr-2" />
-                      Sign in with your organization (SSO)
-                    </>
-                  )}
-                </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full h-11"
+                      disabled={ssoInFlight || isLoading || isLoadingAuth}
+                      onClick={handleSso}
+                    >
+                      {ssoInFlight ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Waiting for identity provider…
+                        </>
+                      ) : (
+                        <>
+                          <Building2 className="w-4 h-4 mr-2" />
+                          Sign in with your organization (SSO)
+                        </>
+                      )}
+                    </Button>
+                  </>
+                )}
 
                 <div className="mt-6 pt-4 border-t border-slate-100">
                   <p className="text-xs text-center text-slate-500">
-                    First-time users: Check the setup documentation for initial credentials.
+                    {isPackaged
+                      ? 'Enterprise desktop — encrypted local database. Local administrator sign-in is always available.'
+                      : 'First-time users: check INITIAL_ADMIN_PASSWORD.txt in the app data folder for the setup token.'}
                   </p>
                 </div>
               </CardContent>
@@ -217,7 +276,7 @@ export default function Login() {
                       required
                       disabled={isLoading}
                       className="h-11 tracking-[0.3em] text-center text-lg font-mono"
-                      autoComplete="off"
+                      autoComplete="one-time-code"
                       autoFocus
                     />
                   </div>

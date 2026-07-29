@@ -52,7 +52,8 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (email, password) => {
     try {
-      setIsLoadingAuth(true);
+      // Do NOT set isLoadingAuth here — that unmounts <Login> in App.jsx
+      // (full-screen spinner) and remounts a blank form on failure ("reset").
       setAuthError(null);
 
       const result = await api.auth.login({ email, password });
@@ -65,7 +66,6 @@ export const AuthProvider = ({ children }) => {
           email,
           mustEnroll: !!result.mustEnroll,
         });
-        setIsLoadingAuth(false);
         return { mfa_required: true };
       }
 
@@ -73,14 +73,10 @@ export const AuthProvider = ({ children }) => {
       setUser(user);
       setIsAuthenticated(true);
       setMfaChallenge(null);
-      setIsLoadingAuth(false);
       return { user, ...result };
     } catch (error) {
-      setAuthError({
-        type: 'login_failed',
-        message: error.message || 'Login failed'
-      });
-      setIsLoadingAuth(false);
+      // Keep authError null for credential failures so App.jsx does not
+      // remount Login and wipe the form. Login.jsx shows the message.
       throw error;
     }
   };
@@ -88,19 +84,17 @@ export const AuthProvider = ({ children }) => {
   const submitMfa = async (code) => {
     if (!mfaChallenge) throw new Error('No MFA challenge in progress');
     try {
-      setIsLoadingAuth(true);
       setAuthError(null);
       const result = await api.auth.loginMfa({
         challenge_token: mfaChallenge.challenge_token,
+        challengeId: mfaChallenge.challenge_token,
         code,
       });
       setUser(result.user);
       setIsAuthenticated(true);
       setMfaChallenge(null);
-      setIsLoadingAuth(false);
       return result;
     } catch (error) {
-      setIsLoadingAuth(false);
       throw error;
     }
   };

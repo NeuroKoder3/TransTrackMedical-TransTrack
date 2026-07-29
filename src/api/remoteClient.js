@@ -28,17 +28,105 @@ function purgeLegacyLocalStorage() {
 
 purgeLegacyLocalStorage();
 
+function readWindowToken() {
+  try {
+    return typeof window !== 'undefined' ? (window.__transtrackAccess || null) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeWindowToken(access) {
+  try {
+    if (typeof window !== 'undefined') {
+      window.__transtrackAccess = access || null;
+    }
+  } catch { /* ignore */ }
+}
+
 function tokenStore() {
   return {
-    getAccess: () => memoryAccessToken,
+    getAccess: () => memoryAccessToken || readWindowToken(),
     setAccess: (access) => {
       memoryAccessToken = access || null;
+      writeWindowToken(memoryAccessToken);
     },
     clear: () => {
       memoryAccessToken = null;
+      writeWindowToken(null);
     },
   };
 }
+
+function browserEntityStore(entityName) {
+  const key = `transtrack:remote-entity:${entityName}`;
+  const read = () => {
+    try {
+      if (typeof sessionStorage === 'undefined') return [];
+      const raw = sessionStorage.getItem(key);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  };
+  const write = (rows) => {
+    if (typeof sessionStorage === 'undefined') return;
+    sessionStorage.setItem(key, JSON.stringify(rows));
+  };
+  const newId = () =>
+    (typeof crypto !== 'undefined' && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : `id-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+  return {
+    list: async () => read(),
+    filter: async (filters = {}) =>
+      read().filter((row) =>
+        Object.entries(filters).every(([k, v]) => {
+          if (v === undefined || v === null || v === '') return true;
+          return row[k] === v;
+        })
+      ),
+    get: async (id) => read().find((r) => r.id === id) || null,
+    create: async (data) => {
+      const rows = read();
+      const row = {
+        id: newId(),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        ...data,
+      };
+      rows.unshift(row);
+      write(rows);
+      return row;
+    },
+    update: async (id, data) => {
+      const rows = read();
+      const i = rows.findIndex((r) => r.id === id);
+      if (i < 0) throw new Error(`${entityName} not found`);
+      rows[i] = { ...rows[i], ...data, updated_at: new Date().toISOString() };
+      write(rows);
+      return rows[i];
+    },
+    delete: async (id) => {
+      write(read().filter((r) => r.id !== id));
+      return { success: true };
+    },
+  };
+}
+
+/** Config entities that live in the desktop UI (not the Postgres API). */
+const LOCAL_CONFIG_ENTITIES = new Set([
+  'EHRIntegration',
+  'EHRImport',
+  'EHRSyncLog',
+  'EHRValidationRule',
+  'PriorityWeights',
+  'Notification',
+  'NotificationRule',
+  'DonorOrgan',
+  'Match',
+]);
 
 class RemoteClient {
   constructor(baseUrl) {
@@ -101,8 +189,9 @@ class RemoteClient {
       if (r.kind === 'session') this.tokens.setAccess(r.access);
       return r;
     },
-    loginMfa: async ({ challengeId, code }) => {
-      const r = await this._fetch('/auth/mfa/verify', { method: 'POST', body: { challengeId, code } });
+    loginMfa: async ({ challengeId, challenge_token, code }) => {
+      const id = challengeId || challenge_token;
+      const r = await this._fetch('/auth/mfa/verify', { method: 'POST', body: { challengeId: id, code } });
       if (r.kind === 'session') this.tokens.setAccess(r.access);
       return r;
     },
@@ -185,27 +274,149 @@ class RemoteClient {
     kdpi:   (input) => this._fetch('/calculators/kdpi',    { method: 'POST', body: input }),
     epts:   (input) => this._fetch('/calculators/epts',    { method: 'POST', body: input }),
   };
+
+  /**
+   * Entity facade matching localClient / Electron IPC shape.
+   * - Patient: HTTP API (shared waitlist with Epic import)
+   * - Everything else that exists on window.electronAPI.entities: local SQLite
+   *   via IPC (EHRIntegration profiles, validation rules, etc.)
+   */
+  entities = new Proxy(
+    {},
+    {
+      get: (_target, entityName) => {
+        if (typeof entityName === 'symbol') return undefined;
+        const self = this;
+
+        if (entityName === 'Patient') {
+          return {
+            list: async (_orderBy, limit = 50) => {
+              const rows = await self._fetch(
+                '/patients?' + new URLSearchParams({ limit: String(limit || 50) })
+              );
+              return Array.isArray(rows) ? rows : [];
+            },
+            get: async (id) => self._fetch(`/patients/${id}`),
+            create: async (data) =>
+              self._fetch('/patients', { method: 'POST', body: data }),
+            update: async (id, data) =>
+              self._fetch(`/patients/${id}`, { method: 'PATCH', body: data }),
+            filter: async (filters = {}, _orderBy, limit = 50) => {
+              const params = { limit: String(limit || 50) };
+              if (filters.waitlist_status) params.status = filters.waitlist_status;
+              if (filters.organ_needed) params.organ = filters.organ_needed;
+              if (filters.search) params.search = filters.search;
+              let rows = await self._fetch('/patients?' + new URLSearchParams(params));
+              rows = Array.isArray(rows) ? rows : [];
+              const skip = new Set(['waitlist_status', 'organ_needed', 'search']);
+              return rows.filter((row) =>
+                Object.entries(filters).every(([k, v]) => {
+                  if (skip.has(k) || v === undefined || v === null || v === '') return true;
+                  return row[k] === v;
+                })
+              );
+            },
+            delete: async () => {
+              throw new Error('Patient delete is not available via the remote API');
+            },
+          };
+        }
+
+        if (entityName === 'AuditLog') {
+          return {
+            list: async (_orderBy, limit = 50) => {
+              const rows = await self._fetch(
+                '/audit?' + new URLSearchParams({ limit: String(limit || 50) })
+              );
+              return Array.isArray(rows) ? rows : (rows?.items || []);
+            },
+            filter: async (filters = {}, _orderBy, limit = 50) => {
+              const params = { limit: String(limit || 50) };
+              if (filters.entity_id) params.entityId = filters.entity_id;
+              const rows = await self._fetch('/audit?' + new URLSearchParams(params));
+              return Array.isArray(rows) ? rows : (rows?.items || []);
+            },
+            create: async () => ({}),
+            get: async () => null,
+            update: async () => ({}),
+            delete: async () => ({}),
+          };
+        }
+
+        // EHRIntegration / rules / etc. are desktop config — not on the HTTP API.
+        // Remote login has no Electron SQLite session, so IPC entity:create would
+        // fail with "Session expired". Persist in sessionStorage instead.
+        if (LOCAL_CONFIG_ENTITIES.has(entityName)) {
+          return browserEntityStore(entityName);
+        }
+
+        return {
+          list: async () => [],
+          filter: async () => [],
+          get: async () => null,
+          create: async () => {
+            throw new Error(
+              `${entityName} is not available in remote API mode. ` +
+              'For live Epic import use the "Epic on FHIR" tab.'
+            );
+          },
+          update: async () => {
+            throw new Error(`${entityName} is not available in remote API mode.`);
+          },
+          delete: async () => {
+            throw new Error(`${entityName} is not available in remote API mode.`);
+          },
+        };
+      },
+    }
+  );
+
+  functions = {
+    invoke: async (functionName, params) => {
+      // Local-only IPC functions (priority recalc, etc.) are not on the HTTP API yet.
+      console.warn(`[remoteClient] functions.invoke(${functionName}) not implemented remotely`, params);
+      return { data: null };
+    },
+  };
 }
 
 function validateBaseUrl(raw) {
   if (!raw) return null;
+  // Strip UTF-8 BOM / whitespace — PowerShell Set-Content -Encoding utf8
+  // often prefixes .env files with U+FEFF, which breaks `new URL(...)`.
+  const cleaned = String(raw).replace(/^\uFEFF/, '').trim();
+  if (!cleaned) return null;
   try {
-    const url = new URL(raw);
+    const url = new URL(cleaned);
     if (url.protocol !== 'https:' && url.protocol !== 'http:') return null;
-    if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') return raw;
+    if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') return cleaned;
     if (url.protocol !== 'https:') return null;
-    return raw;
+    return cleaned;
   } catch {
     return null;
   }
 }
 
 function resolveBaseUrl() {
+  // Prefer an explicit API origin (Electron preload / env). Use the API
+  // directly on :8080 — CSP allows it, and it does not depend on the Vite
+  // process staying up to proxy /__api.
   if (typeof window !== 'undefined' && window.transtrackConfig?.apiBaseUrl) {
-    return validateBaseUrl(window.transtrackConfig.apiBaseUrl);
+    const fromPreload = validateBaseUrl(window.transtrackConfig.apiBaseUrl);
+    if (fromPreload) return fromPreload;
   }
   if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_TRANSTRACK_API_URL) {
-    return validateBaseUrl(import.meta.env.VITE_TRANSTRACK_API_URL);
+    const raw = String(import.meta.env.VITE_TRANSTRACK_API_URL).replace(/^\uFEFF/, '').trim();
+    // Old proxy URL — rewrite to the real API so login keeps working if Vite
+    // proxy is unavailable mid-session.
+    if (raw.includes('/__api')) {
+      return validateBaseUrl('http://127.0.0.1:8080');
+    }
+    const fromEnv = validateBaseUrl(raw);
+    if (fromEnv) return fromEnv;
+  }
+  if (typeof import.meta !== 'undefined' && import.meta.env?.DEV) {
+    return validateBaseUrl('http://127.0.0.1:8080');
   }
   return null;
 }
@@ -220,4 +431,6 @@ export function createRemoteClient() {
   return new RemoteClient(base);
 }
 
-export default { createRemoteClient, isRemoteEnabled };
+export { resolveBaseUrl };
+
+export default { createRemoteClient, isRemoteEnabled, resolveBaseUrl };

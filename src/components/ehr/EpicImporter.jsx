@@ -15,7 +15,7 @@ import {
   ClipboardList,
   Loader2,
 } from 'lucide-react';
-import { api, apiMode } from '@/api/apiClient';
+import { api, getApiMode } from '@/api/apiClient';
 
 const DEFAULT_TEST_PATIENT = 'erXuFYUfucBZaryVksYEcMg3'; // Camila Maria Lopez
 
@@ -77,7 +77,7 @@ export default function EpicImporter({ onImportComplete }) {
               Import from Epic on FHIR
             </span>
             <div className="flex items-center gap-2">
-              {apiMode === 'remote' && status && (
+              {getApiMode() === 'remote' && status && (
                 <Badge
                   variant={enabled ? 'default' : 'outline'}
                   className={
@@ -89,9 +89,9 @@ export default function EpicImporter({ onImportComplete }) {
                   {enabled ? 'Server-fetch enabled' : 'Server-fetch not configured'}
                 </Badge>
               )}
-              {apiMode === 'local' && (
+              {getApiMode() === 'local' && (
                 <Badge variant="outline" className="border-slate-300 text-slate-700">
-                  Local mode
+                  Offline desktop
                 </Badge>
               )}
             </div>
@@ -107,14 +107,13 @@ export default function EpicImporter({ onImportComplete }) {
             stored as FHIR R4 resources scoped to your organisation.
           </p>
 
-          {apiMode === 'local' && (
+          {getApiMode() === 'local' && (
             <Alert className="bg-slate-50 border-slate-200">
               <AlertCircle className="w-4 h-4 text-slate-500" />
               <AlertDescription>
-                Epic on FHIR import requires the API server. Configure
-                {' '}<code>VITE_TRANSTRACK_API_URL</code> at build time, or{' '}
-                <code>window.transtrackConfig.apiBaseUrl</code> at runtime, to
-                enable this panel.
+                Live Epic FHIR import uses the optional server tier. This Enterprise
+                desktop remains fully usable offline with local encrypted storage;
+                use Import Bundle or CSV on the Patients page when the API is unavailable.
               </AlertDescription>
             </Alert>
           )}
@@ -126,7 +125,7 @@ export default function EpicImporter({ onImportComplete }) {
             </Alert>
           )}
 
-          {apiMode === 'remote' && status && !enabled && (
+          {getApiMode() === 'remote' && status && !enabled && (
             <Alert className="bg-amber-50 border-amber-200">
               <AlertCircle className="w-4 h-4 text-amber-600" />
               <AlertDescription className="text-amber-900">

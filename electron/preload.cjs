@@ -1,16 +1,22 @@
-// preload.cjs — exposes IPC bridge to renderer
-
 const { contextBridge, ipcRenderer } = require('electron');
 
 // Prefer an explicit API URL from the shell env so Epic/remote mode works
 // even when Vite was started without VITE_TRANSTRACK_API_URL baked in.
-const apiBaseUrl =
+// Always expose transtrackConfig so the renderer can detect mode reliably.
+const apiBaseUrl = (
   process.env.TRANSTRACK_API_URL
   || process.env.VITE_TRANSTRACK_API_URL
-  || '';
+  || ''
+).replace(/^\uFEFF/, '').trim();
+
+contextBridge.exposeInMainWorld('transtrackConfig', {
+  apiBaseUrl: apiBaseUrl || null,
+});
 
 if (apiBaseUrl) {
-  contextBridge.exposeInMainWorld('transtrackConfig', { apiBaseUrl });
+  console.log('[preload] remote API base URL:', apiBaseUrl);
+} else {
+  console.log('[preload] no TRANSTRACK_API_URL — local IPC mode');
 }
 
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -30,7 +36,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     createUser: (userData) => ipcRenderer.invoke('auth:createUser', userData),
     listUsers: () => ipcRenderer.invoke('auth:listUsers'),
     updateUser: (id, userData) => ipcRenderer.invoke('auth:updateUser', id, userData),
-    deleteUser: (id) => ipcRenderer.invoke('auth:deleteUser', id)
+    deleteUser: (id) => ipcRenderer.invoke('auth:deleteUser', id),
+    loginHints: () => ipcRenderer.invoke('auth:loginHints'),
   },
 
   // Multi-Factor Authentication (TOTP per RFC 6238 + backup codes)
@@ -300,6 +307,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // SSO (OIDC) on the desktop — see electron/auth/oidcDesktop.cjs
   sso: {
+    status: () => ipcRenderer.invoke('auth:ssoStatus'),
     start:  () => ipcRenderer.invoke('auth:ssoStart'),
     cancel: () => ipcRenderer.invoke('auth:ssoCancel'),
     // Subscribe to the broadcast emitted by the protocol handler in main.cjs

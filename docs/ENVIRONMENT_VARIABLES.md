@@ -128,3 +128,10 @@ omitted: `EPIC_CLIENT_ID`, `EPIC_PRIVATE_KEY_FILE`, etc.
 | Variable                       | Required? | Default | Notes |
 |--------------------------------|-----------|---------|-------|
 | `TRANSTRACK_DB_KEY_OVERRIDE`   | No        | —       | Diagnostic-only; bypasses key derivation. Production builds reject this. |
+
+## Desktop authentication (enterprise)
+
+| Variable                                  | Required? | Default | Notes |
+|-------------------------------------------|-----------|---------|-------|
+| `TRANSTRACK_INITIAL_ADMIN_PASSWORD`       | Optional  | random setup token | Used only on first launch when no admin exists. Forces password change after sign-in. |
+| `TRANSTRACK_ADMIN_BREAK_GLASS_PASSWORD`   | Optional  | unset   | When set (≥12 chars) at process start, resets `admin@transtrack.local`, clears lockouts and MFA for that account, and forces password change. Unset after recovery. |

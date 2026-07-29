@@ -590,6 +590,11 @@ async function initDatabase() {
   // Seed default data if needed
   await seedDefaultData(defaultOrg.id);
 
+  // Optional operator break-glass: reset the local admin password and clear
+  // lockouts when TRANSTRACK_ADMIN_BREAK_GLASS_PASSWORD is set. Enables the
+  // site administrator to regain access without wiping the database.
+  await applyAdminBreakGlass(defaultOrg.id);
+
   // Seed demo data for evaluation builds so buyers see a populated system
   seedDemoData(defaultOrg.id);
   
@@ -600,6 +605,53 @@ async function initDatabase() {
   }
   
   return db;
+}
+
+/**
+ * Enterprise break-glass recovery for the local admin account.
+ *
+ * When TRANSTRACK_ADMIN_BREAK_GLASS_PASSWORD is set (≥12 chars) at process
+ * start, this:
+ *   1. Sets admin@transtrack.local's password to that value
+ *   2. Clears any login lockout for that account
+ *   3. Forces a password change on next successful sign-in
+ *
+ * The env var is never echoed. Remove it after recovering access.
+ */
+async function applyAdminBreakGlass(defaultOrgId) {
+  const breakGlass = process.env.TRANSTRACK_ADMIN_BREAK_GLASS_PASSWORD;
+  if (!breakGlass || breakGlass.length < 12) return;
+
+  const bcrypt = require('bcryptjs');
+  const admin = db.prepare(
+    "SELECT id, email FROM users WHERE org_id = ? AND LOWER(email) = LOWER(?) AND role = 'admin' AND is_active = 1 LIMIT 1"
+  ).get(defaultOrgId, 'admin@transtrack.local');
+
+  if (!admin) {
+    console.warn('[break-glass] admin@transtrack.local not found — no password reset applied');
+    return;
+  }
+
+  const hashedPassword = await bcrypt.hash(breakGlass, 12);
+  db.prepare(
+    "UPDATE users SET password_hash = ?, must_change_password = 1, password_changed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?"
+  ).run(hashedPassword, admin.id);
+
+  try {
+    db.prepare('DELETE FROM login_attempts WHERE email = ?').run(admin.email.toLowerCase().trim());
+  } catch { /* table may not exist yet in odd upgrade paths */ }
+
+  // Clear MFA enrollment so a lost authenticator cannot permanently lock out
+  // the sole local administrator during break-glass recovery.
+  try {
+    db.prepare('DELETE FROM user_mfa_backup_codes WHERE user_id = ?').run(admin.id);
+    db.prepare('DELETE FROM user_mfa WHERE user_id = ?').run(admin.id);
+  } catch { /* MFA tables may not exist on very old DBs */ }
+
+  process.stdout.write(
+    '\n[break-glass] admin@transtrack.local password reset from TRANSTRACK_ADMIN_BREAK_GLASS_PASSWORD.\n' +
+    '[break-glass] MFA cleared for this account. Sign in, change the password, re-enroll MFA, then unset the env var.\n\n'
+  );
 }
 
 // Default data seeding
