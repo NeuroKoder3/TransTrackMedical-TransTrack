@@ -24,6 +24,7 @@ out/
 .env.local
 .env.production
 .env.*.local
+server/.seed-admin-password
 
 # IDE and editor files
 .vscode/

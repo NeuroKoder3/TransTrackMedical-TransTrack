@@ -46,7 +46,7 @@ if (-not (Test-Api)) {
 
 Write-Host "API health: OK"
 Write-Host "Desktop will call API at: $env:TRANSTRACK_API_URL"
-Write-Host "Credentials: admin@transtrack.local / ChangeMeNow!123456"
+Write-Host "Sign in with the seeded API admin (see server/.seed-admin-password or SEED_ADMIN_PASSWORD)."
 Write-Host ""
 Write-Host "IMPORTANT: Leave this window open. Do not edit code while logging in."
 npm run dev:electron
