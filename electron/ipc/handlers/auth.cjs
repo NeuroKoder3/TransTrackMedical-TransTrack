@@ -250,6 +250,47 @@ function register() {
   ipcMain.handle('auth:isAuthenticated', async () => shared.validateSession());
 
   // ---- SSO (OIDC) on the desktop --------------------------------------------
+  // Non-throwing status probe so the login UI can hide SSO when unconfigured
+  // (enterprise offline installs ship without IdP settings by default).
+  ipcMain.handle('auth:ssoStatus', async () => {
+    try {
+      const issuer = db.prepare("SELECT value FROM app_settings WHERE key = 'sso_oidc_issuer'").get()?.value;
+      const clientId = db.prepare("SELECT value FROM app_settings WHERE key = 'sso_oidc_client_id'").get()?.value;
+      return {
+        configured: !!(issuer && clientId),
+        issuerConfigured: !!issuer,
+        clientIdConfigured: !!clientId,
+      };
+    } catch {
+      return { configured: false, issuerConfigured: false, clientIdConfigured: false };
+    }
+  });
+
+  // Login-page hints (never includes secrets). Used for first-launch UX and
+  // packaged vs developer messaging.
+  ipcMain.handle('auth:loginHints', async () => {
+    let setupTokenPresent = false;
+    let setupTokenPath = null;
+    try {
+      if (app && typeof app.getPath === 'function') {
+        setupTokenPath = path.join(app.getPath('userData'), 'INITIAL_ADMIN_PASSWORD.txt');
+        setupTokenPresent = fs.existsSync(setupTokenPath);
+      }
+    } catch { /* ignore */ }
+
+    const adminCount = db.prepare(
+      "SELECT COUNT(*) AS n FROM users WHERE role = 'admin' AND is_active = 1"
+    ).get()?.n || 0;
+
+    return {
+      isPackaged: !!(app && app.isPackaged),
+      setupTokenPresent,
+      setupTokenPath: setupTokenPresent ? setupTokenPath : null,
+      hasAdmin: adminCount > 0,
+      defaultAdminEmail: 'admin@transtrack.local',
+    };
+  });
+
   // The renderer asks main to BEGIN a flow; main opens the system browser.
   // The actual callback arrives via the custom-protocol handler in main.cjs
   // (not via IPC), which finalizes the session and emits an

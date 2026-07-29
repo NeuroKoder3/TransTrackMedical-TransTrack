@@ -134,28 +134,36 @@ function createMainWindow() {
   });
 
   // Security: Content Security Policy and response headers.
-  // Dev must allow the local API (default :8080) or Chromium blocks
-  // fetch('http://localhost:8080/auth/login') under default-src 'self'.
+  // IMPORTANT: replace any existing CSP header (do not stack policies).
+  // Multiple CSPs are AND-ed — a strict HTML/meta policy without connect-src
+  // will still block :8080 even if this header allows it.
   mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
     const apiBase =
       process.env.TRANSTRACK_API_URL
       || process.env.VITE_TRANSTRACK_API_URL
-      || '';
+      || 'http://localhost:8080';
     let apiOrigin = '';
-    if (apiBase) {
-      try { apiOrigin = new URL(apiBase).origin; } catch { /* ignore */ }
-    }
+    try { apiOrigin = new URL(apiBase).origin; } catch { /* ignore */ }
 
-    // In development, allow any http(s)/ws(s) connect so local API + Vite HMR
-    // work. Production stays locked to 'self' (+ optional configured API origin).
+    // Dev: allow Vite (:5173), HMR websockets, API (:8080), and the /__api proxy.
     const connectSrc = isDev
-      ? ["'self'", 'http:', 'https:', 'ws:', 'wss:', 'http://localhost:8080', 'http://127.0.0.1:8080']
+      ? [
+          "'self'",
+          'http://localhost:*',
+          'http://127.0.0.1:*',
+          'ws://localhost:*',
+          'ws://127.0.0.1:*',
+          'http:',
+          'https:',
+          'ws:',
+          'wss:',
+        ]
       : ["'self'"];
     if (apiOrigin && !connectSrc.includes(apiOrigin)) connectSrc.push(apiOrigin);
 
     const cspDirectives = [
       "default-src 'self'",
-      "script-src 'self'",
+      "script-src 'self' 'unsafe-inline'",
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob:",
       "font-src 'self' data:",
@@ -167,17 +175,19 @@ function createMainWindow() {
     ];
     if (!isDev) cspDirectives.push('upgrade-insecure-requests');
 
-    callback({
-      responseHeaders: {
-        ...details.responseHeaders,
-        'Content-Security-Policy': [cspDirectives.join('; ')],
-        'X-Content-Type-Options': ['nosniff'],
-        'X-Frame-Options': ['DENY'],
-        'X-XSS-Protection': ['1; mode=block'],
-        'Referrer-Policy': ['strict-origin-when-cross-origin'],
-        'Permissions-Policy': ['camera=(), microphone=(), geolocation=(), payment=()'],
-      }
-    });
+    const headers = { ...details.responseHeaders };
+    // Strip any prior CSP so we do not create an intersecting second policy.
+    for (const key of Object.keys(headers)) {
+      if (key.toLowerCase() === 'content-security-policy') delete headers[key];
+    }
+    headers['Content-Security-Policy'] = [cspDirectives.join('; ')];
+    headers['X-Content-Type-Options'] = ['nosniff'];
+    headers['X-Frame-Options'] = ['DENY'];
+    headers['X-XSS-Protection'] = ['1; mode=block'];
+    headers['Referrer-Policy'] = ['strict-origin-when-cross-origin'];
+    headers['Permissions-Policy'] = ['camera=(), microphone=(), geolocation=(), payment=()'];
+
+    callback({ responseHeaders: headers });
   });
 }
 
@@ -347,7 +357,10 @@ function initAutoUpdater() {
 // App lifecycle
 app.whenReady().then(async () => {
   initCrashReporter();
-  logger.info('TransTrack starting...');
+  logger.info('TransTrack starting...', {
+    isDev,
+    apiUrl: process.env.TRANSTRACK_API_URL || process.env.VITE_TRANSTRACK_API_URL || '(none — local IPC)',
+  });
 
   createSplashWindow();
 

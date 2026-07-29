@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Database, Upload, Settings, FileText, CloudDownload } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import ErrorState from '@/components/ui/ErrorState';
 import FHIRImporter from '../components/ehr/FHIRImporter';
 import EpicImporter from '../components/ehr/EpicImporter';
@@ -88,6 +89,12 @@ export default function EHRIntegration() {
           </TabsContent>
 
           <TabsContent value="integrations" className="mt-6">
+            <Alert className="mb-4 bg-slate-50 border-slate-200">
+              <AlertDescription className="text-sm text-slate-700">
+                Saved profiles are stored on this desktop. Live Epic patient pull uses the{' '}
+                <strong>Epic on FHIR</strong> tab (server credentials in <code>server/.env</code>).
+              </AlertDescription>
+            </Alert>
             <EHRIntegrationManager />
           </TabsContent>
 

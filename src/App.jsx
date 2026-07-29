@@ -51,10 +51,13 @@ const AuthenticatedApp = () => {
         return <UserNotRegisteredError />;
       case 'auth_failed':
         return <Login />;
+      case 'login_failed':
+        // Credential errors are shown inline on Login — do not remount via this gate.
+        break;
       default:
-        return <Login />;
+        if (!isAuthenticated) return <Login />;
     }
-  } else if (authError) {
+  } else if (authError && !isAuthenticated) {
     return <Login />;
   }
 

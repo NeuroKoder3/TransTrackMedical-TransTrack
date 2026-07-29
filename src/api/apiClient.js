@@ -1,32 +1,66 @@
 /**
  * TransTrack - API Client
  *
- * Provides a unified API interface with environment detection and
- * centralized error handling. In Electron, delegates to the IPC-based
- * localClient. In browser dev mode, uses a mock client.
+ * Resolves the active binding LAZILY at call time (not at module load).
+ * That matters in Electron: preload sets window.transtrackConfig.apiBaseUrl
+ * before renderer JS runs, but a static `const api = ...` evaluated too early
+ * (or against a stale Vite env) can lock the app into local IPC mode and
+ * make remote Epic/API login look "broken".
  */
 
 import { localClient } from './localClient';
-import { isRemoteEnabled, createRemoteClient } from './remoteClient';
+import { isRemoteEnabled, createRemoteClient, resolveBaseUrl } from './remoteClient';
+
+let _cached = null;
+let _cachedMode = null;
+
+function resolveClient() {
+  const mode = isRemoteEnabled() ? 'remote' : 'local';
+  if (_cached && _cachedMode === mode) return _cached;
+  _cachedMode = mode;
+  _cached = mode === 'remote' ? createRemoteClient() : localClient;
+  return _cached;
+}
+
+/** Force re-resolve (e.g. after runtime config changes). */
+export function resetApiClient() {
+  _cached = null;
+  _cachedMode = null;
+}
+
+export function getApiMode() {
+  return isRemoteEnabled() ? 'remote' : 'local';
+}
+
+export function getApiBaseUrl() {
+  return resolveBaseUrl();
+}
 
 /**
- * Active API binding.
- *
- * When a remote API base URL is configured (via VITE_TRANSTRACK_API_URL at
- * build time, or window.transtrackConfig.apiBaseUrl at runtime), the renderer
- * speaks to the TransTrack server over HTTPS and the local SQLite + IPC
- * surface is bypassed. In all other cases the local Electron IPC client is
- * used so existing single-machine deployments continue to work unchanged.
+ * Lazy proxy — every property access hits the currently resolved client.
  */
-export const api = isRemoteEnabled() ? createRemoteClient() : localClient;
-export const apiMode = isRemoteEnabled() ? 'remote' : 'local';
+export const api = new Proxy(
+  {},
+  {
+    get(_target, prop) {
+      if (prop === 'then') return undefined; // not a Promise
+      const client = resolveClient();
+      const value = client[prop];
+      return typeof value === 'function' ? value.bind(client) : value;
+    },
+  }
+);
+
+/** @deprecated Prefer getApiMode() — kept as a function-compatible alias. */
+export const apiMode = {
+  toString: () => getApiMode(),
+  valueOf: () => getApiMode(),
+  [Symbol.toPrimitive]: () => getApiMode(),
+  get current() { return getApiMode(); },
+};
 
 /**
  * Wrap an API call with standardized error handling.
- * Catches IPC / network errors and returns a consistent shape.
- *
- * @param {Function} fn - Async function returning a result
- * @returns {Promise<{ data: any, error: null } | { data: null, error: string }>}
  */
 export async function safeApiCall(fn) {
   try {

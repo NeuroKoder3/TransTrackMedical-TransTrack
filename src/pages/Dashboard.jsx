@@ -86,7 +86,12 @@ export default function Dashboard() {
   };
 
   if (isError) {
-    return <ErrorState title="Dashboard unavailable" message="Could not load dashboard data." />;
+    return (
+      <ErrorState
+        title="Dashboard unavailable"
+        message="Could not load dashboard data. If you just signed into the API, try Refresh — an empty waitlist is normal until you import patients (Epic on FHIR)."
+      />
+    );
   }
 
   return (
