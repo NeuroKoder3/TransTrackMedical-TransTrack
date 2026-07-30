@@ -1026,13 +1026,34 @@ async function closeDatabase() {
 }
 
 /**
- * Backup database (encrypted backup)
- * The backup will also be encrypted with the same key
+ * Backup database (encrypted backup).
+ * SQLCipher cannot use the SQLite backup API into an unkeyed path
+ * ("incompatible source and target"). Checkpoint WAL, then copy the
+ * already-encrypted database file so the backup stays encrypted at rest.
  */
 async function backupDatabase(targetPath) {
   if (!db) throw new Error('Database not initialized');
-  
-  await db.backup(targetPath);
+
+  const sourcePath = getDatabasePath();
+  const dir = path.dirname(targetPath);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  if (fs.existsSync(targetPath)) {
+    fs.unlinkSync(targetPath);
+  }
+
+  try {
+    db.pragma('wal_checkpoint(TRUNCATE)');
+  } catch { /* best-effort; copy still works with WAL sidecar */ }
+
+  fs.copyFileSync(sourcePath, targetPath);
+  for (const suffix of ['-wal', '-shm']) {
+    const side = sourcePath + suffix;
+    if (fs.existsSync(side)) {
+      try { fs.copyFileSync(side, targetPath + suffix); } catch { /* ignore */ }
+    }
+  }
   
   // Log backup action
   const { v4: uuidv4 } = require('uuid');
@@ -1198,7 +1219,18 @@ async function restoreDatabaseFromBackup(backupPath) {
     throw new Error('Restore failed: ' + restoreErr.message);
   }
 
-  // Step 6: Schedule app relaunch
+  // Step 6: In E2E/test, reopen the DB in-process so the suite can continue.
+  // Production always relaunches so all handles bind to the restored file.
+  if (process.env.NODE_ENV === 'test' || process.env.TRANSTRACK_E2E === '1') {
+    await initDatabase();
+    return {
+      success: true,
+      preRestoreBackup: preRestorePath,
+      restoredFrom: backupPath,
+      requiresRestart: false,
+    };
+  }
+
   if (app) {
     app.relaunch();
     app.exit(0);

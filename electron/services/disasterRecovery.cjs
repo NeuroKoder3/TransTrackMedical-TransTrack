@@ -65,8 +65,19 @@ async function createBackup(options = {}) {
     ? db.prepare('SELECT COUNT(*) as count FROM audit_logs WHERE org_id = ?').get(orgId).count
     : db.prepare('SELECT COUNT(*) as count FROM audit_logs').get().count;
   
-  // Create backup using SQLite backup API
-  await db.backup(backupPath);
+  // SQLCipher: checkpoint + copy preserves encryption (db.backup(path) cannot
+  // open an encrypted destination and fails with incompatible source/target).
+  try {
+    db.pragma('wal_checkpoint(TRUNCATE)');
+  } catch { /* best-effort */ }
+  if (fs.existsSync(backupPath)) fs.unlinkSync(backupPath);
+  fs.copyFileSync(dbPath, backupPath);
+  for (const suffix of ['-wal', '-shm']) {
+    const side = dbPath + suffix;
+    if (fs.existsSync(side)) {
+      try { fs.copyFileSync(side, backupPath + suffix); } catch { /* ignore */ }
+    }
+  }
   
   // Generate checksum
   const checksum = generateChecksum(backupPath);
@@ -92,20 +103,21 @@ async function createBackup(options = {}) {
   // Save metadata
   fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
   
-  // Log backup in audit trail
-  db.prepare(`
-    INSERT INTO audit_logs (id, org_id, action, entity_type, details, user_email, user_role, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    uuidv4(),
-    orgId,
-    'backup_created',
-    'System',
-    `Backup created: ${backupFileName} (${patientCount} patients, checksum: ${checksum.substring(0, 16)}...)`,
-    options.createdBy || 'system',
-    'system',
-    new Date().toISOString()
-  );
+  // Log backup in audit trail (hash-chained via shared.logAudit)
+  try {
+    const shared = require('../ipc/shared.cjs');
+    shared.logAudit(
+      'backup_created',
+      'System',
+      backupId,
+      null,
+      `Backup created: ${backupFileName} (${patientCount} patients, checksum: ${checksum.substring(0, 16)}...)`,
+      options.createdBy || 'system',
+      'admin',
+    );
+  } catch (auditErr) {
+    logger.error('Failed to audit backup creation', { error: auditErr.message });
+  }
   
   // Cleanup old backups if auto-backup
   if (options.type === 'auto') {
@@ -279,21 +291,25 @@ async function restoreFromBackup(backupId, options = {}) {
   const backupDir = getBackupDir();
   const backupPath = path.join(backupDir, backup.fileName);
 
-  // Log restore attempt with proper org scope
-  const orgId = options.orgId || 'SYSTEM';
-  db.prepare(`
-    INSERT INTO audit_logs (id, org_id, action, entity_type, details, user_email, user_role, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    uuidv4(),
-    orgId,
-    'restore_initiated',
-    'System',
-    `Restore initiated from: ${backup.fileName}`,
-    options.restoredBy || 'system',
-    'system',
-    new Date().toISOString()
-  );
+  // Log restore attempt with proper org scope (never use orphan SYSTEM org)
+  const orgId = options.orgId;
+  if (!orgId || orgId === 'SYSTEM') {
+    throw new Error('Restore requires an authenticated organization context');
+  }
+  try {
+    const shared = require('../ipc/shared.cjs');
+    shared.logAudit(
+      'restore_initiated',
+      'System',
+      backupId,
+      null,
+      `Restore initiated from: ${backup.fileName}`,
+      options.restoredBy || 'system',
+      'admin',
+    );
+  } catch (auditErr) {
+    logger.error('Failed to audit restore initiation', { error: auditErr.message });
+  }
 
   return await restoreDatabaseFromBackup(backupPath);
 }

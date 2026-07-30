@@ -70,7 +70,10 @@ function register() {
     if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
     const { currentUser } = shared.getSessionState();
     if (!currentUser || currentUser.role !== 'admin') throw new Error('Admin access required for restore');
-    return await disasterRecovery.restoreFromBackup(backupId, { restoredBy: currentUser.email });
+    return await disasterRecovery.restoreFromBackup(backupId, {
+      restoredBy: currentUser.email,
+      orgId: shared.getSessionOrgId(),
+    });
   });
 
   ipcMain.handle('recovery:getStatus', async () => {

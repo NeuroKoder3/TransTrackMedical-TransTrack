@@ -21,12 +21,23 @@ if (process.defaultApp) {
   app.setAsDefaultProtocolClient(TRANSTRACK_PROTOCOL);
 }
 
+// E2E / hermetic runs get an isolated userData so parallel or sequential
+// Electron launches do not share a locked SQLCipher DB or single-instance lock.
+if (process.env.TRANSTRACK_USERDATA_DIR) {
+  const fs = require('fs');
+  fs.mkdirSync(process.env.TRANSTRACK_USERDATA_DIR, { recursive: true });
+  app.setPath('userData', process.env.TRANSTRACK_USERDATA_DIR);
+}
+
 // Single-instance lock — on Windows/Linux the second app launch triggered
 // by `transtrack://...` is delivered to the first instance via the
 // second-instance event below; without this lock, both would race.
-const gotLock = app.requestSingleInstanceLock();
-if (!gotLock) {
-  app.quit();
+// Skip in NODE_ENV=test so Playwright can relaunch cleanly between files.
+if (process.env.NODE_ENV !== 'test') {
+  const gotLock = app.requestSingleInstanceLock();
+  if (!gotLock) {
+    app.quit();
+  }
 }
 
 // Disable hardware acceleration for better compatibility
@@ -75,12 +86,14 @@ function createMainWindow() {
     height: 900,
     minWidth: 1024,
     minHeight: 768,
-    show: false,
+    // Show immediately in E2E so Playwright can attach; production keeps splash→show.
+    show: process.env.NODE_ENV === 'test' || process.env.TRANSTRACK_E2E === '1',
     title: 'TransTrack - Transplant Waitlist Management',
     icon: path.join(__dirname, 'assets', 'icon.png'),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      sandbox: false, // preload uses CommonJS require (securityPolicy); keep contextIsolation
       enableRemoteModule: false,
       preload: path.join(__dirname, 'preload.cjs'),
       // Security settings
@@ -365,7 +378,12 @@ app.whenReady().then(async () => {
     apiUrl: process.env.TRANSTRACK_API_URL || process.env.VITE_TRANSTRACK_API_URL || '(none — local IPC)',
   });
 
-  createSplashWindow();
+  // Splash has no preload bridge — skip it in E2E so Playwright always
+  // attaches to the main window that exposes electronAPI.
+  const skipSplash = process.env.NODE_ENV === 'test' || process.env.TRANSTRACK_E2E === '1';
+  if (!skipSplash) {
+    createSplashWindow();
+  }
 
   try {
     await initDatabase();
@@ -390,7 +408,10 @@ app.whenReady().then(async () => {
     createMainWindow();
   } catch (error) {
     logger.fatal('Failed to initialize application', { error: error.message, stack: error.stack });
-    dialog.showErrorBox('Startup Error', `Failed to initialize TransTrack: ${error.message}`);
+    // Modal error boxes hang forever under xvfb/Playwright — never block E2E.
+    if (process.env.NODE_ENV !== 'test' && process.env.TRANSTRACK_E2E !== '1') {
+      dialog.showErrorBox('Startup Error', `Failed to initialize TransTrack: ${error.message}`);
+    }
     app.quit();
   }
 

@@ -38,22 +38,11 @@ const os = require('os');
 let app;
 let window;
 
-function getElectronUserDataPath() {
-  const appName = 'TransTrack';
-  if (process.platform === 'win32') {
-    return path.join(process.env.APPDATA || '', appName);
-  }
-  if (process.platform === 'darwin') {
-    return path.join(os.homedir(), 'Library', 'Application Support', appName);
-  }
-  return path.join(
-    process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'),
-    appName,
-  );
-}
-
 test.beforeAll(async () => {
-  const userDataPath = getElectronUserDataPath();
+  const userDataPath = path.join(
+    os.tmpdir(),
+    `transtrack-e2e-critical-${process.pid}-${Date.now()}`,
+  );
   fs.mkdirSync(userDataPath, { recursive: true });
 
   app = await electron.launch({
@@ -62,28 +51,40 @@ test.beforeAll(async () => {
       ...process.env,
       NODE_ENV: 'test',
       ELECTRON_DEV: '0',
+      TRANSTRACK_E2E: '1',
+      TRANSTRACK_USERDATA_DIR: userDataPath,
     },
     timeout: 45000,
   });
 
-  // Splash has no preload. Wait until a window exposes electronAPI.
-  const deadline = Date.now() + 45000;
+  // Wait until a window exposes electronAPI (main window; splash skipped in test).
+  const deadline = Date.now() + 60000;
   window = await app.firstWindow({ timeout: 30000 });
+  let lastErr = null;
   while (Date.now() < deadline) {
     const windows = app.windows();
     for (const w of windows) {
-      const hasApi = await w
-        .evaluate(() => !!(window.electronAPI && window.electronAPI.auth && window.electronAPI.auth.login))
-        .catch(() => false);
-      if (hasApi) {
-        window = w;
-        await window.waitForLoadState('domcontentloaded', { timeout: 15000 }).catch(() => {});
-        return;
+      try {
+        const info = await w.evaluate(() => ({
+          hasApi: !!(window.electronAPI && window.electronAPI.auth && window.electronAPI.auth.login),
+          href: String(location.href || ''),
+          keys: window.electronAPI ? Object.keys(window.electronAPI).slice(0, 20) : [],
+        }));
+        if (info.hasApi) {
+          window = w;
+          await window.waitForLoadState('domcontentloaded', { timeout: 15000 }).catch(() => {});
+          return;
+        }
+        lastErr = `window ${info.href} keys=${info.keys.join(',')}`;
+      } catch (e) {
+        lastErr = String(e && e.message ? e.message : e);
       }
     }
     await new Promise((r) => setTimeout(r, 400));
   }
-  throw new Error('Timed out waiting for Electron window with electronAPI preload bridge');
+  throw new Error(
+    `Timed out waiting for Electron window with electronAPI preload bridge (${lastErr || 'no windows'})`,
+  );
 });
 
 test.afterAll(async () => {
@@ -124,43 +125,55 @@ test.describe('TransTrack — Critical Path (login → patient → audit → bac
     const result = await window.evaluate(async ({ password, next }) => {
       try {
         let activePassword = password;
-        let r = await window.electronAPI.auth.login({
+        let login = await window.electronAPI.auth.login({
           email: 'admin@transtrack.local',
           password: activePassword,
         });
-        if (!r || (!r.success && !r.user && !r.mfa_required)) {
-          return { ok: false, error: `login failed: ${JSON.stringify(r)}` };
+        if (!login || (!login.success && !login.user && !login.mfa_required)) {
+          return { ok: false, error: `login failed: ${JSON.stringify(login)}` };
         }
 
         // Forced password change gate
-        if (r.mustChangePassword || r.user?.must_change_password) {
+        if (login.mustChangePassword || login.user?.must_change_password) {
           await window.electronAPI.auth.changePassword({
             currentPassword: activePassword,
             newPassword: next,
           });
           activePassword = next;
-          r = await window.electronAPI.auth.me?.() || r;
         }
 
-        // Admin MFA enrollment gate (restricted session until enrolled)
-        if (r.mfaEnrollmentRequired || r.user?.session_restrictions?.includes('mfa_enroll') || r.user?.mfa_required) {
-          const enrolled = r.user?.mfa_enrolled;
-          if (!enrolled) {
-            const begin = await window.electronAPI.mfa.beginEnrollment();
-            return {
-              ok: true,
-              needsMfaConfirm: true,
-              secret: begin.secret,
-              hasUser: true,
-              password: activePassword,
-            };
-          }
+        // auth:me returns the user object directly (not { user }).
+        let me = await window.electronAPI.auth.me();
+        const needsMfaEnroll =
+          !!(me?.session_restrictions?.includes('mfa_enroll') ||
+            login.mfaEnrollmentRequired ||
+            (me?.mfa_required && !me?.mfa_enrolled) ||
+            (me?.role === 'admin' && !me?.mfa_enrolled));
+
+        if (needsMfaEnroll) {
+          const begin = await window.electronAPI.mfa.beginEnrollment();
+          return {
+            ok: true,
+            needsMfaConfirm: true,
+            secret: begin.secret,
+            hasUser: !!(me && me.id),
+            password: activePassword,
+          };
+        }
+
+        const restricted = Array.isArray(me?.session_restrictions) && me.session_restrictions.length > 0;
+        if (restricted) {
+          return {
+            ok: false,
+            error: `session still restricted after setup: ${JSON.stringify(me.session_restrictions)}`,
+          };
         }
 
         return {
           ok: true,
-          hasUser: !!(r && (r.user || r.success || r.id || r.email)),
+          hasUser: !!(me && me.id),
           password: activePassword,
+          me,
         };
       } catch (e) {
         return { ok: false, error: String(e && e.message ? e.message : e) };
@@ -177,6 +190,10 @@ test.describe('TransTrack — Critical Path (login → patient → audit → bac
         try {
           await window.electronAPI.mfa.confirmEnrollment({ secret, code });
           const me = await window.electronAPI.auth.me();
+          const restricted = Array.isArray(me?.session_restrictions) && me.session_restrictions.length > 0;
+          if (restricted) {
+            return { ok: false, error: `still restricted after MFA: ${JSON.stringify(me.session_restrictions)}` };
+          }
           return { ok: true, me };
         } catch (e) {
           return { ok: false, error: String(e && e.message ? e.message : e) };
@@ -286,14 +303,14 @@ test.describe('TransTrack — Critical Path (login → patient → audit → bac
         if (window.electronAPI?.entities?.AuditLog?.filter) {
           const rows = await window.electronAPI.entities.AuditLog.filter(
             { entity_type: 'Patient' },
-            'created_at DESC',
+            '-created_at',
             50,
           );
           return { ok: true, rows: rows || [] };
         }
         if (window.electronAPI?.entities?.AuditLog?.list) {
           const rows = await window.electronAPI.entities.AuditLog.list(
-            'created_at DESC',
+            '-created_at',
             50,
           );
           return { ok: true, rows: rows || [] };

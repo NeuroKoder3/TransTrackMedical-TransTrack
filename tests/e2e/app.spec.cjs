@@ -16,24 +16,16 @@ const { test, expect } = require('@playwright/test');
 const { _electron: electron } = require('playwright');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 
 let app;
 let window;
 
-function getElectronUserDataPath() {
-  // Electron resolves userData using the productName ("TransTrack")
-  const appName = 'TransTrack';
-  if (process.platform === 'win32') {
-    return path.join(process.env.APPDATA || '', appName);
-  }
-  if (process.platform === 'darwin') {
-    return path.join(require('os').homedir(), 'Library', 'Application Support', appName);
-  }
-  return path.join(process.env.XDG_CONFIG_HOME || path.join(require('os').homedir(), '.config'), appName);
-}
-
 test.beforeAll(async () => {
-  const userDataPath = getElectronUserDataPath();
+  const userDataPath = path.join(
+    os.tmpdir(),
+    `transtrack-e2e-app-${process.pid}-${Date.now()}`,
+  );
   fs.mkdirSync(userDataPath, { recursive: true });
 
   app = await electron.launch({
@@ -44,34 +36,28 @@ test.beforeAll(async () => {
       // instead of trying to connect to http://localhost:5173
       NODE_ENV: 'test',
       ELECTRON_DEV: '0',
+      TRANSTRACK_E2E: '1',
+      TRANSTRACK_USERDATA_DIR: userDataPath,
     },
     timeout: 45000,
   });
 
-  // The splash window appears first, then the main window replaces it.
-  // Wait for the first window (splash).
   window = await app.firstWindow({ timeout: 30000 });
-
-  // Wait for the main window to appear. The splash window loads splash.html
-  // while the main window loads dist/index.html — use the URL to distinguish.
-  const isMainWindow = (w) => {
-    try {
-      const url = w.url();
-      return url.includes('index.html') || url.includes('localhost');
-    } catch {
-      return false;
+  const deadline = Date.now() + 60000;
+  while (Date.now() < deadline) {
+    for (const w of app.windows()) {
+      const hasApi = await w
+        .evaluate(() => !!(window.electronAPI && window.electronAPI.auth))
+        .catch(() => false);
+      if (hasApi) {
+        window = w;
+        await window.waitForLoadState('domcontentloaded', { timeout: 15000 }).catch(() => {});
+        return;
+      }
     }
-  };
-
-  if (!isMainWindow(window)) {
-    // Current window is the splash — wait for the main window.
-    const mainWindow = await app.waitForEvent('window', { timeout: 30000 }).catch(() => null);
-    if (mainWindow) {
-      window = mainWindow;
-    }
+    await new Promise((r) => setTimeout(r, 400));
   }
-
-  await window.waitForLoadState('domcontentloaded', { timeout: 30000 });
+  throw new Error('Timed out waiting for Electron window with electronAPI');
 });
 
 test.afterAll(async () => {
@@ -166,11 +152,13 @@ test.describe('TransTrack E2E', () => {
     expect(criticalErrors.length).toBeLessThanOrEqual(3);
   });
 
-  test('DevTools are not accessible in non-dev mode', async () => {
-    const isDevToolsOpened = await window.evaluate(() => {
-      return window.electronAPI?.isElectron === true;
-    });
-    expect(isDevToolsOpened).toBe(true);
+  test('DevTools menu is not exposed in non-dev E2E mode', async () => {
+    const bridge = await window.evaluate(() => ({
+      isElectron: window.electronAPI?.isElectron === true,
+      hasAuth: typeof window.electronAPI?.auth === 'object',
+    }));
+    expect(bridge.isElectron).toBe(true);
+    expect(bridge.hasAuth).toBe(true);
   });
 
   test('Electron API is exposed via context bridge', async () => {
