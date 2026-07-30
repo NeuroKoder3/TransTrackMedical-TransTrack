@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const mfa = require('../../src/auth/mfa');
-const { authenticator } = require('otplib');
 
 const MASTER = 'unit-test-master-aaaaaaaaaaaaaaaaa';
 
@@ -16,7 +15,7 @@ describe('mfa', () => {
 
   it('verifies a current TOTP code', () => {
     const secret = mfa.generateSecret();
-    const code = authenticator.generate(secret);
+    const code = mfa.generateCode(secret);
     expect(mfa.verifyCode(secret, code)).toBe(true);
   });
 
@@ -29,5 +28,16 @@ describe('mfa', () => {
     const codes = mfa.generateRecoveryCodes(10);
     expect(codes).toHaveLength(10);
     expect(new Set(codes).size).toBe(10);
+  });
+
+  it('builds an otpauth URI', () => {
+    const secret = mfa.generateSecret();
+    const uri = mfa.buildOtpauthUrl({
+      secret,
+      label: 'admin@transtrack.local',
+      issuer: 'TransTrack',
+    });
+    expect(uri).toMatch(/^otpauth:\/\/totp\//);
+    expect(uri).toContain('secret=');
   });
 });
