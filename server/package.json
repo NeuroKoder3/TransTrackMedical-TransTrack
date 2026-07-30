@@ -1,6 +1,6 @@
 {
   "name": "@transtrack/server",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "TransTrack API server: REST + FHIR R4 + MLLP/TLS HL7 v2 listener backed by PostgreSQL",
   "private": true,
   "license": "MIT",

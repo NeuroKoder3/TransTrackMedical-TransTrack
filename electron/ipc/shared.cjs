@@ -1,6 +1,7 @@
 // Shared IPC state, session management, and entity helpers
 
 const { v4: uuidv4 } = require('uuid');
+const { createHash } = require('crypto');
 const { getDatabase } = require('../database/init.cjs');
 const { checkRateLimit } = require('./rateLimiter.cjs');
 
@@ -416,20 +417,46 @@ function sanitizeForSQLite(entityData) {
 
 // --- audit logging ---
 
+function sha256(input) {
+  return createHash('sha256').update(input).digest('hex');
+}
+
 function logAudit(action, entityType, entityId, patientName, details, userEmail, userRole, requestId) {
   const db = getDatabase();
   const id = uuidv4();
   const orgId = currentUser?.org_id || 'SYSTEM';
   const now = new Date().toISOString();
 
+  // Hash chain: prev_hash is the most recent record_hash for this org
+  let prevHash = 'GENESIS';
+  try {
+    const prev = db.prepare(
+      'SELECT record_hash FROM audit_logs WHERE org_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1'
+    ).get(orgId);
+    if (prev?.record_hash) prevHash = prev.record_hash;
+  } catch { /* table may lack column on first run before migration */ }
+
+  const payload = {
+    org_id: orgId,
+    action,
+    entity_type: entityType || null,
+    entity_id: entityId || null,
+    patient_name: patientName || null,
+    details: details || null,
+    user_email: userEmail || null,
+    user_role: userRole || null,
+  };
+  const canonical = JSON.stringify(payload, Object.keys(payload).sort());
+  const recordHash = sha256(prevHash + canonical);
+
   try {
     db.prepare(
-      'INSERT INTO audit_logs (id, org_id, action, entity_type, entity_id, patient_name, details, user_email, user_role, request_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-    ).run(id, orgId, action, entityType, entityId, patientName, details, userEmail, userRole, requestId || null, now);
+      'INSERT INTO audit_logs (id, org_id, action, entity_type, entity_id, patient_name, details, user_email, user_role, prev_hash, record_hash, request_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run(id, orgId, action, entityType, entityId, patientName, details, userEmail, userRole, prevHash, recordHash, requestId || null, now);
   } catch {
     db.prepare(
-      'INSERT INTO audit_logs (id, org_id, action, entity_type, entity_id, patient_name, details, user_email, user_role, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-    ).run(id, orgId, action, entityType, entityId, patientName, details, userEmail, userRole, now);
+      'INSERT INTO audit_logs (id, org_id, action, entity_type, entity_id, patient_name, details, user_email, user_role, prev_hash, record_hash, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run(id, orgId, action, entityType, entityId, patientName, details, userEmail, userRole, prevHash, recordHash, now);
   }
 
   // Best-effort forwarding to SIEM destinations. Forwarder absorbs all
@@ -439,9 +466,47 @@ function logAudit(action, entityType, entityId, patientName, details, userEmail,
     siem.forwardAuditRow({
       id, org_id: orgId, action, entity_type: entityType, entity_id: entityId,
       patient_name: patientName, details, user_email: userEmail, user_role: userRole,
+      prev_hash: prevHash, record_hash: recordHash,
       request_id: requestId || null, created_at: now,
     });
   } catch { /* ignore */ }
+}
+
+/**
+ * Verify the integrity of the audit log hash chain for an org.
+ * Returns { ok: true } or { ok: false, brokenAt: <row id> }.
+ */
+function verifyAuditChain(orgId) {
+  const db = getDatabase();
+  const rows = db.prepare(
+    `SELECT id, org_id, action, entity_type, entity_id, patient_name, details,
+            user_email, user_role, prev_hash, record_hash
+     FROM audit_logs
+     WHERE org_id = ?
+     ORDER BY created_at ASC, rowid ASC`
+  ).all(orgId || currentUser?.org_id || 'SYSTEM');
+
+  let prev = 'GENESIS';
+  for (const r of rows) {
+    if (!r.record_hash) continue; // pre-migration rows lack hashes
+    const payload = {
+      org_id: r.org_id,
+      action: r.action,
+      entity_type: r.entity_type,
+      entity_id: r.entity_id,
+      patient_name: r.patient_name,
+      details: r.details,
+      user_email: r.user_email,
+      user_role: r.user_role,
+    };
+    const canonical = JSON.stringify(payload, Object.keys(payload).sort());
+    const expected = sha256(prev + canonical);
+    if (r.prev_hash !== prev || r.record_hash !== expected) {
+      return { ok: false, brokenAt: r.id };
+    }
+    prev = r.record_hash;
+  }
+  return { ok: true };
 }
 
 module.exports = {
@@ -488,4 +553,5 @@ module.exports = {
 
   // Audit
   logAudit,
+  verifyAuditChain,
 };
