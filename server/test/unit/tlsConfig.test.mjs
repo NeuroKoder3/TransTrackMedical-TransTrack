@@ -52,6 +52,7 @@ describe('TLS fail-closed config', () => {
 
   it('defaults REQUIRE_TLS_TERMINATION to true', () => {
     process.env.NODE_ENV = 'development';
+    delete process.env.REQUIRE_TLS_TERMINATION;
     const { load } = require('../../src/config.js');
     const cfg = load();
     expect(cfg.REQUIRE_TLS_TERMINATION).toBe(true);
@@ -59,6 +60,7 @@ describe('TLS fail-closed config', () => {
 
   it('defaults ALLOW_INSECURE_HTTP to false', () => {
     process.env.NODE_ENV = 'development';
+    delete process.env.ALLOW_INSECURE_HTTP;
     const { load } = require('../../src/config.js');
     const cfg = load();
     expect(cfg.ALLOW_INSECURE_HTTP).toBe(false);
