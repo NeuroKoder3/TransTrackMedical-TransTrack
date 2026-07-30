@@ -129,6 +129,10 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "stripe"
         update-types: ["version-update:semver-major"]
+      # otplib v13 is a full rewrite; MFA module supports both APIs, but majors
+      # must be upgraded intentionally with a Node-matched lockfile regenerate.
+      - dependency-name: "otplib"
+        update-types: ["version-update:semver-major"]
 
   # GitHub Actions - be conservative
   - package-ecosystem: "github-actions"

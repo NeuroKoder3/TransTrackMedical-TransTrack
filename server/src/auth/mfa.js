@@ -1,30 +1,34 @@
 'use strict';
 
 const crypto = require('crypto');
-const {
-  generateSecret: otplibGenerateSecret,
-  generateSync,
-  verifySync,
-  generateURI,
-} = require('otplib');
+const otplib = require('otplib');
 const QRCode = require('qrcode');
 
 /**
  * TOTP (RFC 6238) helpers, plus AES-256-GCM encryption of the shared secret
  * at rest. The encryption key is derived from JWT_SECRET so existing
- * deployments do not require a separate key rotation pipeline; deployments
- * that need stronger separation should override deriveKey().
+ * deployments do not require a separate key rotation pipeline.
  *
- * Uses otplib v13 functional sync API (generateSync / verifySync).
+ * Compatible with otplib v12 (authenticator singleton) and v13
+ * (functional generateSync / verifySync / generateURI).
  */
+
+const isV13 = typeof otplib.generateSync === 'function';
 
 const TOTP_OPTIONS = {
   algorithm: 'sha1',
   digits: 6,
   period: 30,
-  // Allow ±1 step drift for clock skew between client and server.
   window: { past: 1, future: 1 },
 };
+
+if (!isV13 && otplib.authenticator) {
+  otplib.authenticator.options = {
+    step: 30,
+    window: 1,
+    digits: 6,
+  };
+}
 
 function deriveKey(masterSecret) {
   return crypto.createHash('sha256').update('mfa:v1:' + masterSecret).digest();
@@ -50,31 +54,42 @@ function decryptSecret(buf, masterSecret) {
 }
 
 function generateSecret() {
-  // 20 bytes → 160-bit secret (above otplib v13's 16-byte minimum).
-  return otplibGenerateSecret(20);
+  if (isV13) return otplib.generateSecret(20);
+  if (!otplib.authenticator) {
+    throw new Error('otplib authenticator unavailable — unsupported otplib version');
+  }
+  return otplib.authenticator.generateSecret();
 }
 
 function verifyCode(secret, code) {
   if (!secret || !code) return false;
+  const token = String(code).replace(/\s+/g, '');
   try {
-    const result = verifySync({
-      secret,
-      token: String(code).replace(/\s+/g, ''),
-      ...TOTP_OPTIONS,
-    });
-    return !!(result && result.valid);
+    if (isV13) {
+      const result = otplib.verifySync({ secret, token, ...TOTP_OPTIONS });
+      return !!(result && result.valid);
+    }
+    return otplib.authenticator.check(token, secret);
   } catch {
     return false;
   }
 }
 
+function generateCode(secret) {
+  if (isV13) return otplib.generateSync({ secret, ...TOTP_OPTIONS });
+  return otplib.authenticator.generate(secret);
+}
+
 function buildOtpauthUrl({ secret, label, issuer }) {
-  return generateURI({
-    issuer: issuer || 'TransTrack',
-    label: label || 'user',
-    secret,
-    ...TOTP_OPTIONS,
-  });
+  if (isV13) {
+    return otplib.generateURI({
+      issuer: issuer || 'TransTrack',
+      label: label || 'user',
+      secret,
+      ...TOTP_OPTIONS,
+    });
+  }
+  return otplib.authenticator.keyuri(label, issuer, secret);
 }
 
 async function buildQrCodeDataUrl(otpauthUrl) {
@@ -91,11 +106,6 @@ function generateRecoveryCodes(n = 10) {
 
 function hashRecoveryCode(code) {
   return crypto.createHash('sha256').update(code.toUpperCase().trim()).digest('hex');
-}
-
-/** Generate a current TOTP code (tests / admin tooling). */
-function generateCode(secret) {
-  return generateSync({ secret, ...TOTP_OPTIONS });
 }
 
 module.exports = {
