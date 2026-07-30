@@ -466,7 +466,6 @@ async function verifySmartMfa({ challengeId, code, userId }) {
 
 /** @deprecated Use authenticateForSmart instead. Kept for test compatibility. */
 async function authenticatePassword({ orgHint, email, password: plaintext }) {
-  const { withTransaction } = require('../db/pool');
   const config = require('../config').load();
   try {
     return await authenticateForSmart(null, config, { orgHint, email, plaintext, ip: null });

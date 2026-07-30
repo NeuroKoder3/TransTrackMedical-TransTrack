@@ -82,7 +82,8 @@ describe('SMART authz MFA denial', () => {
     // and refuses to issue an auth code for mfa_required or must_enroll.
     // We test the route logic indirectly by verifying the scope helper
     // doesn't accidentally mask the MFA requirement.
-    const client = { client_type: 'public', redirect_uris: ['http://localhost/cb'] };
+    const _client = { client_type: 'public', redirect_uris: ['http://localhost/cb'] };
+    void _client;
     // If constrainScopes succeeds, MFA check still must happen after
     const constrained = constrainScopes('patient/Patient.rs', 'patient/Patient.rs');
     expect(constrained).toBeTruthy();

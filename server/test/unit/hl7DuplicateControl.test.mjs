@@ -6,11 +6,8 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { createRequire } from 'module';
 import fs from 'fs';
 import path from 'path';
-
-const require = createRequire(import.meta.url);
 
 describe('HL7 message_control_id handling', () => {
   const ingestSource = fs.readFileSync(

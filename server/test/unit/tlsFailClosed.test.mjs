@@ -6,19 +6,18 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { createRequire } from 'module';
 import fs from 'fs';
 import path from 'path';
-
-const require = createRequire(import.meta.url);
 
 describe('HL7 MLLP TLS fail-closed', () => {
   const serverSource = fs.readFileSync(
     path.resolve('src/hl7/server.js'), 'utf8'
   );
 
-  it('warns when running plaintext in production', () => {
+  it('refuses plaintext in production unless HL7_ALLOW_PLAINTEXT is set', () => {
     expect(serverSource).toContain("config.NODE_ENV === 'production'");
+    expect(serverSource).toContain('HL7_ALLOW_PLAINTEXT');
+    expect(serverSource).toContain('throw new Error');
     expect(serverSource).toContain('PLAINTEXT');
   });
 
