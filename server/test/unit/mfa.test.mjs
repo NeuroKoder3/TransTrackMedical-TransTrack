@@ -41,14 +41,6 @@ describe('mfa', () => {
     expect(await mfa.verifyRecoveryCode('DEADBEEFDEADBEEFDEAD', hash)).toBe(false);
   });
 
-  it('still accepts legacy SHA-256 recovery hashes', async () => {
-    const code = 'ABCDEF1234567890ABCD';
-    const crypto = require('crypto');
-    const legacy = crypto.createHash('sha256').update(code).digest('hex');
-    expect(mfa.isLegacySha256Hash(legacy)).toBe(true);
-    expect(await mfa.verifyRecoveryCode(code, legacy)).toBe(true);
-  });
-
   it('builds an otpauth URI', () => {
     const secret = mfa.generateSecret();
     const uri = mfa.buildOtpauthUrl({

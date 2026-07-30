@@ -204,16 +204,13 @@ async function consumeMfaChallenge(client, config, { challengeId, code, ip, user
   const secret = mfa.decryptSecret(ch.secret_encrypted, config.JWT_SECRET);
   const ok = mfa.verifyCode(secret, code);
   if (!ok) {
-    // Try recovery codes (one-time). Argon2id (with legacy SHA-256 upgrade).
+    // Try recovery codes (one-time), stored as Argon2id hashes.
     const list = ch.recovery_codes || [];
     let matched = false;
     for (let i = 0; i < list.length; i++) {
       if (list[i].used_at) continue;
       if (!(await mfa.verifyRecoveryCode(code, list[i].hash))) continue;
       list[i].used_at = new Date().toISOString();
-      if (mfa.isLegacySha256Hash(list[i].hash)) {
-        list[i].hash = await mfa.hashRecoveryCode(code);
-      }
       matched = true;
       break;
     }
@@ -458,9 +455,6 @@ async function verifySmartMfa({ challengeId, code, userId }) {
         if (list[i].used_at) continue;
         if (!(await mfa.verifyRecoveryCode(code, list[i].hash))) continue;
         list[i].used_at = new Date().toISOString();
-        if (mfa.isLegacySha256Hash(list[i].hash)) {
-          list[i].hash = await mfa.hashRecoveryCode(code);
-        }
         matched = true;
         break;
       }
