@@ -43,12 +43,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (mllp) await new Promise(r => mllp.close(r));
-  if (orgId) {
-    await query(`DELETE FROM audit_logs WHERE org_id = $1`, [orgId]).catch(() => {});
-    await query(`DELETE FROM hl7_messages WHERE org_id = $1`, [orgId]).catch(() => {});
-    await query(`DELETE FROM hl7_dead_letters WHERE org_id = $1`, [orgId]).catch(() => {});
-    await query(`DELETE FROM organizations WHERE id = $1`, [orgId]).catch(() => {});
-  }
+  await destroyTestOrg(query, orgId);
   if (app) await app.close();
 });
 
