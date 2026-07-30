@@ -12,6 +12,7 @@ const require = createRequire(import.meta.url);
 const { build } = require('../../src/index');
 const { withTransaction, query } = require('../../src/db/pool');
 const password = require('../../src/auth/password');
+const { destroyTestOrg } = require('./cleanup.cjs');
 
 let app;
 let orgId;
@@ -39,8 +40,8 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await query(`DELETE FROM organizations WHERE id = $1`, [orgId]);
-  await app.close();
+  await destroyTestOrg(query, orgId);
+  if (app) await app.close();
 });
 
 describe('API smoke', () => {

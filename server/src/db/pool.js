@@ -6,7 +6,12 @@ let pool = null;
 
 function init(config, logger) {
   if (pool) return pool;
-  const ssl = config.PGSSL === 'disable' ? false : { rejectUnauthorized: config.PGSSL !== 'disable' };
+  let ssl = false;
+  if (config.PGSSL === 'require') {
+    ssl = { rejectUnauthorized: false };
+  } else if (config.PGSSL === 'verify-full') {
+    ssl = { rejectUnauthorized: true };
+  }
   pool = new Pool({
     connectionString: config.DATABASE_URL,
     max: config.PG_POOL_MAX,

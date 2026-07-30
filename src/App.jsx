@@ -9,6 +9,8 @@ import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import Login from '@/pages/Login';
+import ForcePasswordChange from '@/pages/ForcePasswordChange';
+import ForceMfaEnrollment from '@/pages/ForceMfaEnrollment';
 import IdleTimeoutManager from '@/components/session/IdleTimeoutManager';
 import RouteErrorBoundary from '@/components/RouteErrorBoundary';
 
@@ -32,7 +34,7 @@ function isAuthError(error) {
 }
 
 const AuthenticatedApp = () => {
-  const { isLoadingAuth, isLoadingPublicSettings, authError, isAuthenticated } = useAuth();
+  const { isLoadingAuth, isLoadingPublicSettings, authError, isAuthenticated, mustChangePassword, mfaEnrollmentRequired } = useAuth();
 
   if (isLoadingPublicSettings || isLoadingAuth) {
     return (
@@ -63,6 +65,14 @@ const AuthenticatedApp = () => {
 
   if (!isAuthenticated) {
     return <Login />;
+  }
+
+  if (mustChangePassword) {
+    return <ForcePasswordChange />;
+  }
+
+  if (mfaEnrollmentRequired) {
+    return <ForceMfaEnrollment />;
   }
 
   return (

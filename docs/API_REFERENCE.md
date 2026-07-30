@@ -6,6 +6,10 @@ TransTrack uses Electron IPC (Inter-Process Communication) for all communication
 
 All data operations are org-scoped: queries automatically filter by the logged-in user's organization. No cross-org data access is possible through the API.
 
+### Optional server HTTP API
+
+The optional Fastify server tier (REST, FHIR R4, SMART on FHIR, HL7 admin, billing) is documented in OpenAPI form at [`docs/server/openapi.yaml`](server/openapi.yaml). Desktop IPC remains the primary production surface for the offline workstation product.
+
 ---
 
 ## Authentication

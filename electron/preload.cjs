@@ -1,4 +1,5 @@
 const { contextBridge, ipcRenderer } = require('electron');
+const securityPolicy = require('./config/securityPolicy.cjs');
 
 // Prefer an explicit API URL from the shell env so Epic/remote mode works
 // even when Vite was started without VITE_TRANSTRACK_API_URL baked in.
@@ -11,6 +12,11 @@ const apiBaseUrl = (
 
 contextBridge.exposeInMainWorld('transtrackConfig', {
   apiBaseUrl: apiBaseUrl || null,
+  securityPolicy: {
+    IDLE_TIMEOUT_MS: securityPolicy.IDLE_TIMEOUT_MS,
+    SESSION_ABSOLUTE_MS: securityPolicy.SESSION_ABSOLUTE_MS,
+    WARNING_BEFORE_MS: securityPolicy.WARNING_BEFORE_MS,
+  },
 });
 
 if (apiBaseUrl) {
@@ -506,6 +512,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     validateRequest: (permission, justification) => ipcRenderer.invoke('access:validateRequest', permission, justification),
     logJustifiedAccess: (permission, entityType, entityId, justification) => 
       ipcRenderer.invoke('access:logJustifiedAccess', permission, entityType, entityId, justification),
+    authorizePhiAccess: (params) => ipcRenderer.invoke('access:authorizePhiAccess', params),
     getRoles: () => ipcRenderer.invoke('access:getRoles'),
     getJustificationReasons: () => ipcRenderer.invoke('access:getJustificationReasons'),
   },
@@ -518,6 +525,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     restoreBackup: (backupId) => ipcRenderer.invoke('recovery:restoreBackup', backupId),
     getStatus: () => ipcRenderer.invoke('recovery:getStatus'),
   },
+  // Flat aliases (E2E + older bridge consumers)
+  createBackup: (options) => ipcRenderer.invoke('recovery:createBackup', options),
+  listBackups: () => ipcRenderer.invoke('recovery:listBackups'),
+  verifyBackup: (backupId) => ipcRenderer.invoke('recovery:verifyBackup', backupId),
+  restoreBackup: (backupId) => ipcRenderer.invoke('recovery:restoreBackup', backupId),
+  getHealth: () => ipcRenderer.invoke('system:getHealth'),
   
   // Compliance View
   compliance: {
@@ -537,6 +550,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getMode: () => ipcRenderer.invoke('reconciliation:getMode'),
   },
   
+  // Electronic Signatures (21 CFR Part 11)
+  esig: {
+    sign: (params) => ipcRenderer.invoke('esig:sign', params),
+    list: (params) => ipcRenderer.invoke('esig:list', params),
+    verify: (signatureId) => ipcRenderer.invoke('esig:verify', signatureId),
+  },
+
+  // Audit chain verification
+  auditChain: {
+    verify: () => ipcRenderer.invoke('audit:verifyChain'),
+  },
+
   // Platform info
   platform: process.platform,
   isElectron: true

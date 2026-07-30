@@ -104,6 +104,32 @@ updates:
       - dependency-name: "better-sqlite3-multiple-ciphers"
         update-types: ["version-update:semver-major"]
 
+  - package-ecosystem: "npm"
+    directory: "/server"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "server"
+    commit-message:
+      prefix: "deps(server)"
+    versioning-strategy: increase-if-necessary
+    ignore:
+      - dependency-name: "fastify"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "pg"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "openid-client"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "zod"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "stripe"
+        update-types: ["version-update:semver-major"]
+
   # GitHub Actions - be conservative
   - package-ecosystem: "github-actions"
     directory: "/"

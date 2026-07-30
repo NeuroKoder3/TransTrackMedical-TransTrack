@@ -96,6 +96,24 @@ test('Electronic signatures via password authentication', () => {
   assert(content.includes('bcrypt'), 'Must use bcrypt for password hashing');
 });
 
+test('electronicSignature module exports signRecord', () => {
+  const esigPath = path.join(__dirname, '..', 'electron', 'services', 'electronicSignature.cjs');
+  assert(fs.existsSync(esigPath), 'electronicSignature.cjs must exist');
+  const esig = require(esigPath);
+  assert(typeof esig.signRecord === 'function', 'Must export signRecord function');
+  assert(typeof esig.getSignatures === 'function', 'Must export getSignatures function');
+  assert(typeof esig.verifySignature === 'function', 'Must export verifySignature function');
+});
+
+test('electronic_signatures table migration exists', () => {
+  const migrationsPath = path.join(__dirname, '..', 'electron', 'database', 'migrations.cjs');
+  const content = fs.readFileSync(migrationsPath, 'utf8');
+  assert(content.includes('electronic_signatures'), 'Migration for electronic_signatures table must exist');
+  assert(content.includes('signature_hash'), 'electronic_signatures must include signature_hash column');
+  assert(content.includes('payload_hash'), 'electronic_signatures must include payload_hash column');
+  assert(content.includes('meaning'), 'electronic_signatures must include meaning column');
+});
+
 test('Audit trail captures WHO, WHAT, WHEN', () => {
   const content = fs.readFileSync(path.join(__dirname, '..', 'electron', 'ipc', 'shared.cjs'), 'utf8');
   assert(content.includes('user_email'), 'Audit must capture WHO (user_email)');

@@ -29,6 +29,8 @@ const messageTypes = require('./messageTypes');
  */
 async function ingest({ rawMessage, parsed, ctx, peer, transport = 'mllp' }) {
   return withTransaction(ctx, async (client) => {
+    // Deduplication: use ON CONFLICT on the unique index (org_id, message_control_id)
+    // to detect duplicate messages without aborting the transaction.
     const ins = await client.query(
       `INSERT INTO hl7_messages
          (org_id, direction, transport, sending_app, sending_facility,
@@ -36,6 +38,9 @@ async function ingest({ rawMessage, parsed, ctx, peer, transport = 'mllp' }) {
           message_control_id, raw_message, parsed, processed_status,
           peer_address, peer_cert_subject)
        VALUES ($1,'inbound',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'received',$12,$13)
+       ON CONFLICT (org_id, message_control_id)
+         WHERE direction = 'inbound' AND message_control_id IS NOT NULL
+       DO NOTHING
        RETURNING id`,
       [
         ctx.orgId,
@@ -53,6 +58,15 @@ async function ingest({ rawMessage, parsed, ctx, peer, transport = 'mllp' }) {
         peer?.certSubject || null,
       ]
     );
+    if (ins.rows.length === 0) {
+      // Duplicate detected via ON CONFLICT DO NOTHING
+      return {
+        hl7MessageId: null,
+        ackCode: 'AA',
+        ackText: 'Duplicate message (already processed)',
+        processed: 'duplicate',
+      };
+    }
     const messageId = ins.rows[0].id;
 
     let ackCode = 'AA';
@@ -188,4 +202,30 @@ async function handleMerge(client, ctx, mergeInfo, survivor) {
   return { merged: r.rows.length > 0, prior_mrn: priorMrn, survivor_id: survivor.id };
 }
 
-module.exports = { ingest };
+/**
+ * Insert a message into the dead-letter table for later admin replay.
+ */
+async function deadLetter(client, { rawMessage, parsed, ctx, peer, transport, reason, errorDetails }) {
+  await client.query(
+    `INSERT INTO hl7_dead_letters
+       (org_id, raw_message, sending_app, sending_facility, message_type,
+        trigger_event, message_control_id, error_reason, error_details,
+        peer_address, transport)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+    [
+      ctx?.orgId || null,
+      rawMessage,
+      parsed?.sending_app || null,
+      parsed?.sending_facility || null,
+      parsed?.message_type || null,
+      parsed?.trigger_event || null,
+      parsed?.message_control_id || null,
+      reason,
+      errorDetails || null,
+      peer?.address || null,
+      transport || 'mllp',
+    ]
+  );
+}
+
+module.exports = { ingest, deadLetter };

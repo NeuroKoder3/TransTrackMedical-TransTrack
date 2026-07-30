@@ -12,7 +12,7 @@ const Database = require('better-sqlite3-multiple-ciphers');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { getDatabase, getDatabasePath, backupDatabase } = require('../database/init.cjs');
+const { getDatabase, getDatabasePath, backupDatabase, getDatabaseEncryptionKey } = require('../database/init.cjs');
 const { createLogger } = require('./errorLogger.cjs');
 const shared = require('./shared.cjs');
 
@@ -38,6 +38,10 @@ function verifyBackupIntegrity(backupPath, encryptionKey) {
       testDb.pragma(`cipher = 'sqlcipher'`);
       testDb.pragma(`legacy = 4`);
       testDb.pragma(`key = "x'${encryptionKey}'"`);
+      testDb.pragma('cipher_page_size = 4096');
+      testDb.pragma('kdf_iter = 256000');
+      testDb.pragma('cipher_hmac_algorithm = HMAC_SHA512');
+      testDb.pragma('cipher_kdf_algorithm = PBKDF2_HMAC_SHA512');
     }
 
     // Run integrity check
@@ -118,11 +122,8 @@ function register() {
 
       // Step 3: Verify backup integrity
       log.info('Verifying backup integrity', { target: targetPath });
-      const keyPath = path.join(require('electron').app.getPath('userData'), '.transtrack-key');
       let encryptionKey = null;
-      if (fs.existsSync(keyPath)) {
-        encryptionKey = fs.readFileSync(keyPath, 'utf8').trim();
-      }
+      try { encryptionKey = getDatabaseEncryptionKey(); } catch { /* key unavailable */ }
 
       const verification = verifyBackupIntegrity(targetPath, encryptionKey);
 

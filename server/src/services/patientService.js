@@ -33,6 +33,11 @@ async function list(client, ctx, { limit = 50, offset = 0, search, organ, status
     ORDER BY priority_score DESC NULLS LAST, last_name ASC
     LIMIT $${params.length - 1} OFFSET $${params.length}`;
   const r = await client.query(sql, params);
+  await audit.record(client, ctx, {
+    action: 'patient.list',
+    entityType: 'patient',
+    details: { count: r.rows.length, filters: { search, organ, status } },
+  });
   return r.rows;
 }
 
@@ -41,7 +46,16 @@ async function get(client, ctx, id) {
     `SELECT ${PATIENT_COLUMNS.join(',')} FROM patients WHERE org_id = $1 AND id = $2`,
     [ctx.orgId, id]
   );
-  return r.rows[0] || null;
+  const patient = r.rows[0] || null;
+  if (patient) {
+    await audit.record(client, ctx, {
+      action: 'patient.read',
+      entityType: 'patient',
+      entityId: id,
+      patientName: `${patient.last_name}, ${patient.first_name}`,
+    });
+  }
+  return patient;
 }
 
 async function getByMrn(client, ctx, mrn) {

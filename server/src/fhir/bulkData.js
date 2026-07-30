@@ -132,6 +132,14 @@ async function runJob(ctx, jobId) {
       let totalTypes = types.length;
       let typesProcessed = 0;
       for (const type of types) {
+        // Check cancellation flag before each resource type
+        const cancelCheck = await client.query(
+          `SELECT status FROM bulk_export_jobs WHERE id = $1`,
+          [jobId]
+        );
+        if (cancelCheck.rows[0]?.status === 'cancelled') {
+          return; // stop work gracefully
+        }
         await exportType(client, ctx, jobId, type, { since: job.since, patientIds });
         typesProcessed++;
         await client.query(

@@ -24,7 +24,7 @@ For local testing we use plaintext MLLP for simplicity, but the
 production code path is the same — just set
 `HL7_MLLP_TLS_CERT_FILE` / `HL7_MLLP_TLS_KEY_FILE`.
 
-## Capability matrix (production-ready)
+## Capability matrix
 
 | Capability                                 | Spec / version            | Status |
 | ------------------------------------------ | ------------------------- | ------ |
@@ -36,9 +36,9 @@ production code path is the same — just set
 | HL7 v2.5 ORM^O01, OMP^O09                  | HL7 v2.5                  | ✓      |
 | HL7 v2.5 RDE^O11, RDS^O13                  | HL7 v2.5                  | ✓      |
 | HL7 v2.5 MDM^T01, MDM^T02                  | HL7 v2.5                  | ✓      |
-| HL7 v2.5 SIU^S12 / S13 / S14 / S15 / S26   | HL7 v2.5                  | ✓      |
-| HL7 v2.5 BAR^P01-P05, DFT^P03 / P11        | HL7 v2.5                  | ✓      |
-| HL7 v2.5 MFN^M02 / M05 / M06               | HL7 v2.5                  | ✓      |
+| HL7 v2.5 SIU^S12 / S13 / S14 / S15 / S26   | HL7 v2.5                  | capture-only |
+| HL7 v2.5 BAR^P01-P05, DFT^P03 / P11        | HL7 v2.5                  | capture-only |
+| HL7 v2.5 MFN^M02 / M05 / M06               | HL7 v2.5                  | capture-only |
 | Z-segment extensibility (Epic, Cerner,     |                           |        |
 | Meditech baked in; per-org config for the  |                           |        |
 | rest)                                      | n/a                       | ✓      |

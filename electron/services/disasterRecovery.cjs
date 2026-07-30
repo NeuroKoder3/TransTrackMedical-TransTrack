@@ -9,7 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { app } = require('electron');
-const { getDatabase, getDatabasePath } = require('../database/init.cjs');
+const { getDatabase, getDatabasePath, getDatabaseEncryptionKey, restoreDatabaseFromBackup } = require('../database/init.cjs');
 const { v4: uuidv4 } = require('uuid');
 const { logger } = require('./logger.cjs');
 
@@ -22,10 +22,11 @@ const RECOVERY_CONFIG = {
 };
 
 /**
- * Get backup directory path
+ * Get backup directory path.
+ * Respects TRANSTRACK_BACKUP_DIR env var; defaults to userData/backups.
  */
 function getBackupDir() {
-  const backupDir = path.join(app.getPath('userData'), 'backups');
+  const backupDir = process.env.TRANSTRACK_BACKUP_DIR || path.join(app.getPath('userData'), 'backups');
   if (!fs.existsSync(backupDir)) {
     fs.mkdirSync(backupDir, { recursive: true });
   }
@@ -64,8 +65,19 @@ async function createBackup(options = {}) {
     ? db.prepare('SELECT COUNT(*) as count FROM audit_logs WHERE org_id = ?').get(orgId).count
     : db.prepare('SELECT COUNT(*) as count FROM audit_logs').get().count;
   
-  // Create backup using SQLite backup API
-  await db.backup(backupPath);
+  // SQLCipher: checkpoint + copy preserves encryption (db.backup(path) cannot
+  // open an encrypted destination and fails with incompatible source/target).
+  try {
+    db.pragma('wal_checkpoint(TRUNCATE)');
+  } catch { /* best-effort */ }
+  if (fs.existsSync(backupPath)) fs.unlinkSync(backupPath);
+  fs.copyFileSync(dbPath, backupPath);
+  for (const suffix of ['-wal', '-shm']) {
+    const side = dbPath + suffix;
+    if (fs.existsSync(side)) {
+      try { fs.copyFileSync(side, backupPath + suffix); } catch { /* ignore */ }
+    }
+  }
   
   // Generate checksum
   const checksum = generateChecksum(backupPath);
@@ -91,20 +103,21 @@ async function createBackup(options = {}) {
   // Save metadata
   fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
   
-  // Log backup in audit trail
-  db.prepare(`
-    INSERT INTO audit_logs (id, org_id, action, entity_type, details, user_email, user_role, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    uuidv4(),
-    orgId,
-    'backup_created',
-    'System',
-    `Backup created: ${backupFileName} (${patientCount} patients, checksum: ${checksum.substring(0, 16)}...)`,
-    options.createdBy || 'system',
-    'system',
-    new Date().toISOString()
-  );
+  // Log backup in audit trail (hash-chained via shared.logAudit)
+  try {
+    const shared = require('../ipc/shared.cjs');
+    shared.logAudit(
+      'backup_created',
+      'System',
+      backupId,
+      null,
+      `Backup created: ${backupFileName} (${patientCount} patients, checksum: ${checksum.substring(0, 16)}...)`,
+      options.createdBy || 'system',
+      'admin',
+    );
+  } catch (auditErr) {
+    logger.error('Failed to audit backup creation', { error: auditErr.message });
+  }
   
   // Cleanup old backups if auto-backup
   if (options.type === 'auto') {
@@ -189,15 +202,19 @@ function verifyBackup(backupId, options = {}) {
   try {
     testDb = new Database(backupPath, { readonly: true, verbose: null });
 
-    // Apply encryption if key is available
-    const keyPath = path.join(app.getPath('userData'), '.transtrack-key');
-    if (fs.existsSync(keyPath)) {
-      const encryptionKey = fs.readFileSync(keyPath, 'utf8').trim();
-      if (/^[a-fA-F0-9]{64}$/.test(encryptionKey)) {
-        testDb.pragma(`cipher = 'sqlcipher'`);
-        testDb.pragma(`legacy = 4`);
-        testDb.pragma(`key = "x'${encryptionKey}'"`);
-      }
+    // Apply encryption using the properly unwrapped key
+    try {
+      const encryptionKey = getDatabaseEncryptionKey();
+      testDb.pragma(`cipher = 'sqlcipher'`);
+      testDb.pragma(`legacy = 4`);
+      testDb.pragma(`key = "x'${encryptionKey}'"`);
+      testDb.pragma('cipher_page_size = 4096');
+      testDb.pragma('kdf_iter = 256000');
+      testDb.pragma('cipher_hmac_algorithm = HMAC_SHA512');
+      testDb.pragma('cipher_kdf_algorithm = PBKDF2_HMAC_SHA512');
+    } catch (keyErr) {
+      testDb.close();
+      return { valid: false, error: `Cannot read encryption key: ${keyErr.message}` };
     }
 
     // Step 3: SQLite integrity check
@@ -259,57 +276,42 @@ function verifyBackup(backupId, options = {}) {
 }
 
 /**
- * Restore from backup
+ * Restore from backup — delegates to the atomic restoreDatabaseFromBackup
+ * in init.cjs which handles key verification, pre-restore backup, and app relaunch.
  */
 async function restoreFromBackup(backupId, options = {}) {
   const db = getDatabase();
-  
-  // Verify backup first
+
   const verification = verifyBackup(backupId);
   if (!verification.valid) {
     throw new Error(`Backup verification failed: ${verification.error}`);
   }
-  
+
   const backup = verification.backup;
   const backupDir = getBackupDir();
   const backupPath = path.join(backupDir, backup.fileName);
-  const dbPath = getDatabasePath();
-  
-  // Create pre-restore backup
-  const preRestoreBackup = await createBackup({
-    type: 'pre-restore',
-    description: `Auto-backup before restoring from ${backup.fileName}`,
-    createdBy: options.restoredBy || 'system',
-  });
-  
-  // Log restore attempt
-  db.prepare(`
-    INSERT INTO audit_logs (id, org_id, action, entity_type, details, user_email, user_role, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    uuidv4(),
-    options.orgId || 'SYSTEM',
-    'restore_initiated',
-    'System',
-    `Restore initiated from: ${backup.fileName}`,
-    options.restoredBy || 'system',
-    'system',
-    new Date().toISOString()
-  );
-  
-  // Close current database
-  db.close();
-  
-  // Replace database with backup
-  fs.copyFileSync(backupPath, dbPath);
-  
-  return {
-    success: true,
-    restoredFrom: backup,
-    preRestoreBackup,
-    restoredAt: new Date().toISOString(),
-    requiresRestart: true,
-  };
+
+  // Log restore attempt with proper org scope (never use orphan SYSTEM org)
+  const orgId = options.orgId;
+  if (!orgId || orgId === 'SYSTEM') {
+    throw new Error('Restore requires an authenticated organization context');
+  }
+  try {
+    const shared = require('../ipc/shared.cjs');
+    shared.logAudit(
+      'restore_initiated',
+      'System',
+      backupId,
+      null,
+      `Restore initiated from: ${backup.fileName}`,
+      options.restoredBy || 'system',
+      'admin',
+    );
+  } catch (auditErr) {
+    logger.error('Failed to audit restore initiation', { error: auditErr.message });
+  }
+
+  return await restoreDatabaseFromBackup(backupPath);
 }
 
 /**
@@ -392,6 +394,49 @@ async function exportForExternalBackup(orgId) {
   return exportData;
 }
 
+// --- automated backup schedule ---
+
+let _autoBackupTimer = null;
+
+/**
+ * Start the automated backup schedule.
+ * Interval controlled by TRANSTRACK_BACKUP_INTERVAL_HOURS env var (default 1).
+ * Backup directory controlled by TRANSTRACK_BACKUP_DIR env var (default userData/backups).
+ */
+function startAutoBackupSchedule() {
+  if (_autoBackupTimer) return;
+
+  const intervalHours = parseInt(process.env.TRANSTRACK_BACKUP_INTERVAL_HOURS, 10) || 1;
+  const intervalMs = intervalHours * 60 * 60 * 1000;
+
+  const runAutoBackup = async () => {
+    try {
+      await createBackup({
+        type: 'auto',
+        description: 'Scheduled automatic backup',
+        createdBy: 'system',
+      });
+      logger.info('Automated backup completed successfully');
+    } catch (err) {
+      logger.error('Automated backup failed', { error: err.message });
+    }
+  };
+
+  _autoBackupTimer = setInterval(runAutoBackup, intervalMs);
+
+  // Run first backup 60 seconds after startup
+  setTimeout(runAutoBackup, 60 * 1000);
+
+  logger.info('Automated backup schedule started', { intervalHours });
+}
+
+function stopAutoBackupSchedule() {
+  if (_autoBackupTimer) {
+    clearInterval(_autoBackupTimer);
+    _autoBackupTimer = null;
+  }
+}
+
 module.exports = {
   RECOVERY_CONFIG,
   getBackupDir,
@@ -402,4 +447,6 @@ module.exports = {
   cleanupOldBackups,
   getRecoveryStatus,
   exportForExternalBackup,
+  startAutoBackupSchedule,
+  stopAutoBackupSchedule,
 };

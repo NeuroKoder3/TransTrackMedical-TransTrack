@@ -46,11 +46,8 @@ export default function PatientDetails() {
 
   const { data: patient, isLoading, isError } = useQuery({
     queryKey: ['patient', patientId],
-    queryFn: async () => {
-      const patients = await api.entities.Patient.list();
-      return patients.find(p => p.id === patientId) ?? null;
-    },
-    enabled: !!patientId,
+    queryFn: () => api.entities.Patient.get(patientId),
+    enabled: !!patientId && accessGranted,
   });
 
   const { data: auditLogs = [] } = useQuery({

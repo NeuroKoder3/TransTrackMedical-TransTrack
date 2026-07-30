@@ -36,6 +36,7 @@
 
 const crypto = require('crypto');
 const { URL, URLSearchParams } = require('url');
+const jose = require('jose');
 
 const STATE_TTL_MS = 5 * 60 * 1000;
 const HTTP_TIMEOUT_MS = 15_000;
@@ -200,20 +201,43 @@ async function completeFlow(callbackUrl) {
     tokenResp = await r.json();
   } finally { clearTimeout(t); }
 
-  _clearPending();
-
   if (!tokenResp.id_token) throw new Error('Token response missing id_token');
 
-  const idTokenClaims = _decodeJwtPayload(tokenResp.id_token);
-  if (idTokenClaims.iss && idTokenClaims.iss.replace(/\/$/, '') !== pending.issuer.replace(/\/$/, '')) {
-    throw new Error('id_token issuer does not match configured issuer');
+  // Full cryptographic verification via the IdP's published JWKS.
+  const jwksUri = pending.meta.jwks_uri;
+  if (!jwksUri || !_isHttpsUrl(jwksUri)) {
+    _clearPending();
+    throw new Error('Discovery document missing or invalid jwks_uri');
   }
-  if (idTokenClaims.nonce && idTokenClaims.nonce !== pending.nonce) {
+
+  const JWKS = jose.createRemoteJWKSet(new URL(jwksUri));
+
+  let verifyResult;
+  try {
+    verifyResult = await jose.jwtVerify(tokenResp.id_token, JWKS, {
+      issuer: pending.issuer.replace(/\/$/, ''),
+      audience: pending.clientId,
+    });
+  } catch (verifyErr) {
+    _clearPending();
+    throw new Error(`id_token verification failed: ${verifyErr.message}`);
+  }
+
+  const idTokenClaims = verifyResult.payload;
+
+  // Nonce must match the value we sent in the authorization request.
+  if (idTokenClaims.nonce !== pending.nonce) {
+    _clearPending();
     throw new Error('id_token nonce mismatch');
   }
-  if (idTokenClaims.exp && idTokenClaims.exp * 1000 < Date.now()) {
-    throw new Error('id_token expired');
+
+  // sub is mandatory per OIDC Core §2.
+  if (!idTokenClaims.sub) {
+    _clearPending();
+    throw new Error('id_token missing required sub claim');
   }
+
+  _clearPending();
 
   return {
     email: idTokenClaims.email || idTokenClaims.preferred_username,
@@ -222,24 +246,6 @@ async function completeFlow(callbackUrl) {
     idTokenClaims,
     rawTokens: tokenResp,
   };
-}
-
-/**
- * NOTE on id_token validation: we decode but do not yet verify the JWT
- * signature here. PKCE binds the token to the start-of-flow request, and
- * the TLS-protected token endpoint exchange is mutually-authenticated
- * with the IdP, so id_token replay from an external party is already
- * gated. For defense-in-depth, the next iteration of this module should
- * fetch the IdP's JWKS from the discovery document and verify the JWT
- * signature; that requires either pulling in `jose` as a dep or writing
- * an Ed25519 / RS256 verifier here. Tracked as a follow-up in
- * docs/SSO_DESKTOP.md.
- */
-function _decodeJwtPayload(jwt) {
-  const parts = jwt.split('.');
-  if (parts.length !== 3) throw new Error('Malformed JWT');
-  const json = Buffer.from(parts[1], 'base64url').toString('utf8');
-  return JSON.parse(json);
 }
 
 /**
@@ -258,5 +264,4 @@ module.exports = {
   _peekPending,
   _clearPending,
   _generatePkce,
-  _decodeJwtPayload,
 };

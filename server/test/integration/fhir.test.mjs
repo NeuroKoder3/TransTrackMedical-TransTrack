@@ -10,6 +10,7 @@ const require = createRequire(import.meta.url);
 const { build } = require('../../src/index');
 const { withTransaction, query } = require('../../src/db/pool');
 const password = require('../../src/auth/password');
+const { destroyTestOrg } = require('./cleanup.cjs');
 
 let app, orgId, access;
 const PW = 'fhir-pw-AAAAAAAAAAAAAA';
@@ -38,8 +39,8 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  if (orgId) await query(`DELETE FROM organizations WHERE id = $1`, [orgId]);
-  await app.close();
+  await destroyTestOrg(query, orgId);
+  if (app) await app.close();
 });
 
 const auth = () => ({ authorization: `Bearer ${access}` });
@@ -98,10 +99,10 @@ describe('FHIR R4', () => {
       valueQuantity: { value: 1.2, unit: 'mg/dL' },
     };
     const findPatient = await query(
-      `SELECT id FROM fhir_resources WHERE org_id = $1 AND resource_type = 'Patient' LIMIT 1`,
+      `SELECT resource_id FROM fhir_resources WHERE org_id = $1 AND resource_type = 'Patient' LIMIT 1`,
       [orgId]
     );
-    obs.subject.reference = `Patient/${findPatient.rows[0].id}`;
+    obs.subject.reference = `Patient/${findPatient.rows[0].resource_id}`;
     const r = await app.inject({
       method: 'POST',
       url: '/fhir/Observation',

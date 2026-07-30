@@ -21,19 +21,29 @@ if (process.defaultApp) {
   app.setAsDefaultProtocolClient(TRANSTRACK_PROTOCOL);
 }
 
+// E2E / hermetic runs get an isolated userData so parallel or sequential
+// Electron launches do not share a locked SQLCipher DB or single-instance lock.
+if (process.env.TRANSTRACK_USERDATA_DIR) {
+  const fs = require('fs');
+  fs.mkdirSync(process.env.TRANSTRACK_USERDATA_DIR, { recursive: true });
+  app.setPath('userData', process.env.TRANSTRACK_USERDATA_DIR);
+}
+
 // Single-instance lock — on Windows/Linux the second app launch triggered
 // by `transtrack://...` is delivered to the first instance via the
 // second-instance event below; without this lock, both would race.
-const gotLock = app.requestSingleInstanceLock();
-if (!gotLock) {
-  app.quit();
+// Skip in NODE_ENV=test so Playwright can relaunch cleanly between files.
+if (process.env.NODE_ENV !== 'test') {
+  const gotLock = app.requestSingleInstanceLock();
+  if (!gotLock) {
+    app.quit();
+  }
 }
 
 // Disable hardware acceleration for better compatibility
 app.disableHardwareAcceleration();
 
-// Security: Disable remote module
-app.commandLine.appendSwitch('disable-features', 'OutOfBlinkCors');
+// Security hardening — OutOfBlinkCors intentionally NOT disabled
 
 let mainWindow = null;
 let splashWindow = null;
@@ -76,12 +86,14 @@ function createMainWindow() {
     height: 900,
     minWidth: 1024,
     minHeight: 768,
-    show: false,
+    // Show immediately in E2E so Playwright can attach; production keeps splash→show.
+    show: process.env.NODE_ENV === 'test' || process.env.TRANSTRACK_E2E === '1',
     title: 'TransTrack - Transplant Waitlist Management',
     icon: path.join(__dirname, 'assets', 'icon.png'),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      sandbox: false, // preload uses CommonJS require (securityPolicy); keep contextIsolation
       enableRemoteModule: false,
       preload: path.join(__dirname, 'preload.cjs'),
       // Security settings
@@ -162,9 +174,12 @@ function createMainWindow() {
       : ["'self'"];
     if (apiOrigin && !connectSrc.includes(apiOrigin)) connectSrc.push(apiOrigin);
 
+    const scriptSrc = (isDev || process.env.NODE_ENV === 'test')
+      ? "script-src 'self' 'unsafe-inline'"
+      : "script-src 'self'";
     const cspDirectives = [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline'",
+      scriptSrc,
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob:",
       "font-src 'self' data:",
@@ -259,7 +274,7 @@ function createMenu() {
             dialog.showMessageBox(mainWindow, {
               type: 'info',
               title: 'About TransTrack',
-              message: 'TransTrack v1.0.0',
+              message: `TransTrack v${APP_INFO.version}`,
               detail: `${APP_INFO.description}\n\nDesign alignment: ${APP_INFO.designAlignment.join(', ')}\n\nNote: Alignment statements describe product design controls only and are not certifications.\n\n© 2026 TransTrack Medical Software`
             });
           }
@@ -363,7 +378,12 @@ app.whenReady().then(async () => {
     apiUrl: process.env.TRANSTRACK_API_URL || process.env.VITE_TRANSTRACK_API_URL || '(none — local IPC)',
   });
 
-  createSplashWindow();
+  // Splash has no preload bridge — skip it in E2E so Playwright always
+  // attaches to the main window that exposes electronAPI.
+  const skipSplash = process.env.NODE_ENV === 'test' || process.env.TRANSTRACK_E2E === '1';
+  if (!skipSplash) {
+    createSplashWindow();
+  }
 
   try {
     await initDatabase();
@@ -371,6 +391,14 @@ app.whenReady().then(async () => {
 
     setupIPCHandlers();
     logger.info('IPC handlers registered');
+
+    // Start automated backup schedule
+    try {
+      const { startAutoBackupSchedule } = require('./services/disasterRecovery.cjs');
+      startAutoBackupSchedule();
+    } catch (backupErr) {
+      logger.error('Failed to start automated backup schedule', { error: backupErr.message });
+    }
 
     if (app.isPackaged) {
       initAutoUpdater();
@@ -380,7 +408,10 @@ app.whenReady().then(async () => {
     createMainWindow();
   } catch (error) {
     logger.fatal('Failed to initialize application', { error: error.message, stack: error.stack });
-    dialog.showErrorBox('Startup Error', `Failed to initialize TransTrack: ${error.message}`);
+    // Modal error boxes hang forever under xvfb/Playwright — never block E2E.
+    if (process.env.NODE_ENV !== 'test' && process.env.TRANSTRACK_E2E !== '1') {
+      dialog.showErrorBox('Startup Error', `Failed to initialize TransTrack: ${error.message}`);
+    }
     app.quit();
   }
 
@@ -444,8 +475,22 @@ async function handleProtocolUrl(url) {
   }
 }
 
+// Fail-closed: log uncaught exceptions and exit immediately.
+process.on('uncaughtException', (err) => {
+  try { logger.fatal('Uncaught exception — exiting', { error: err.message, stack: err.stack }); } catch { /* ignore */ }
+  app.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  try { logger.error('Unhandled promise rejection', { reason: String(reason) }); } catch { /* ignore */ }
+});
+
 app.on('before-quit', async () => {
   logger.info('Application shutting down...');
+  try {
+    const { stopAutoBackupSchedule } = require('./services/disasterRecovery.cjs');
+    stopAutoBackupSchedule();
+  } catch { /* ignore */ }
   await closeDatabase();
   closeLogger();
 });

@@ -11,8 +11,9 @@ import {
   AlertDialogAction,
 } from '@/components/ui/alert-dialog';
 
-const IDLE_TIMEOUT_MS = 15 * 60 * 1000;
-const WARNING_BEFORE_MS = 2 * 60 * 1000;
+const _policy = typeof window !== 'undefined' && window.transtrackConfig?.securityPolicy;
+const IDLE_TIMEOUT_MS = _policy?.IDLE_TIMEOUT_MS || 15 * 60 * 1000;
+const WARNING_BEFORE_MS = _policy?.WARNING_BEFORE_MS || 2 * 60 * 1000;
 const ACTIVITY_EVENTS = ['mousedown', 'keydown', 'scroll', 'touchstart', 'mousemove'];
 const THROTTLE_MS = 30000;
 

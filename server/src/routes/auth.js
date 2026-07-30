@@ -10,6 +10,20 @@ const oidcMod = require('../auth/oidc');
 const { errors } = require('../util/errors');
 const { setSessionCookies, clearSessionCookies, readRefreshToken } = require('../auth/sessionCookies');
 
+const VALID_ROLES = new Set(['admin', 'coordinator', 'physician', 'user', 'viewer', 'regulator']);
+
+function mapSsoRole(rawRole, config) {
+  if (!rawRole) {
+    if (config.SSO_UNKNOWN_ROLE_POLICY === 'deny') return null;
+    return 'user';
+  }
+  const mapped = config.SSO_ROLE_MAP_PARSED?.[rawRole];
+  if (mapped && VALID_ROLES.has(mapped)) return mapped;
+  if (VALID_ROLES.has(rawRole)) return rawRole;
+  if (config.SSO_UNKNOWN_ROLE_POLICY === 'deny') return null;
+  return 'user';
+}
+
 module.exports = async function authRoutes(app, opts) {
   const { config } = opts;
 
@@ -33,6 +47,10 @@ module.exports = async function authRoutes(app, opts) {
         refresh: result.refresh,
         config,
       });
+      // Sanitize: keep access in body (remoteClient needs it for Authorization header)
+      // but remove refresh from JSON — it's carried by httpOnly cookie only
+      const { refresh: _omit, ...sanitized } = result;
+      return sanitized;
     }
     return result;
   });
@@ -57,6 +75,8 @@ module.exports = async function authRoutes(app, opts) {
         refresh: result.refresh,
         config,
       });
+      const { refresh: _omit, ...sanitized } = result;
+      return sanitized;
     }
     return result;
   });
@@ -78,7 +98,9 @@ module.exports = async function authRoutes(app, opts) {
       refresh: result.refresh,
       config,
     });
-    return result;
+    // Remove refresh from JSON body — cookie carries it
+    const { refresh: _omit, ...sanitized } = result;
+    return sanitized;
   });
 
   // ----- POST /auth/logout -----
@@ -92,9 +114,33 @@ module.exports = async function authRoutes(app, opts) {
     return { ok: true };
   });
 
+  /**
+   * Extract auth context from either normal session auth (req.auth) or
+   * a Bearer token with purpose=mfa_enroll (enrollment JWT).
+   */
+  function resolveEnrollAuth(req) {
+    if (req.auth) return req.auth;
+    const header = req.headers.authorization || '';
+    if (!header.toLowerCase().startsWith('bearer ')) return null;
+    const token = header.slice(7).trim();
+    if (!token) return null;
+    const jwtMod = require('../auth/jwt');
+    try {
+      const payload = jwtMod.verify(token, config.JWT_SECRET, { issuer: config.JWT_ISSUER });
+      if (payload.purpose !== 'mfa_enroll') return null;
+      return { userId: payload.sub, orgId: payload.org };
+    } catch {
+      return null;
+    }
+  }
+
   // ----- POST /auth/mfa/enroll/begin -----
   app.post('/auth/mfa/enroll/begin', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req) => {
-    if (!req.auth) throw errors.unauthorized();
+    const enrollAuth = resolveEnrollAuth(req);
+    if (!enrollAuth) throw errors.unauthorized();
+    const reqAuth = enrollAuth;
+    // Override req.auth for downstream compatibility
+    if (!req.auth) req.auth = reqAuth;
     const secret = mfa.generateSecret();
     const otpauth = mfa.buildOtpauthUrl({
       secret,
@@ -120,7 +166,9 @@ module.exports = async function authRoutes(app, opts) {
 
   // ----- POST /auth/mfa/enroll/confirm -----
   app.post('/auth/mfa/enroll/confirm', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req) => {
-    if (!req.auth) throw errors.unauthorized();
+    const enrollAuth = resolveEnrollAuth(req);
+    if (!enrollAuth) throw errors.unauthorized();
+    if (!req.auth) req.auth = enrollAuth;
     const body = z.object({ code: z.string().min(6).max(10) }).parse(req.body);
     return withTransaction({ orgId: req.auth.orgId, userId: req.auth.userId }, async (client) => {
       const r = await client.query(
@@ -145,10 +193,14 @@ module.exports = async function authRoutes(app, opts) {
   // ----- POST /auth/password/change -----
   app.post('/auth/password/change', { config: { rateLimit: { max: 5, timeWindow: '1 minute' } } }, async (req) => {
     if (!req.auth) throw errors.unauthorized();
+    const raw = req.body || {};
     const body = z.object({
       current: z.string().min(1),
       next: z.string().min(config.PASSWORD_MIN_LENGTH),
-    }).parse(req.body);
+    }).parse({
+      current: raw.current || raw.currentPassword,
+      next: raw.next || raw.newPassword,
+    });
     if (!password.meetsPolicy(body.next, config.PASSWORD_MIN_LENGTH)) {
       throw errors.badRequest('Password does not meet policy');
     }
@@ -211,6 +263,8 @@ module.exports = async function authRoutes(app, opts) {
       const attrs = samlMod.extractAttributes(profile, config);
       const orgId = config.HL7_DEFAULT_ORG_ID;
       if (!orgId) throw errors.badRequest('Server has no default org configured for SSO');
+      const resolvedRole = mapSsoRole(attrs.role, config);
+      if (!resolvedRole) throw errors.forbidden('IdP role not permitted by SSO_UNKNOWN_ROLE_POLICY');
       const session = await withTransaction({}, async (client) => {
         const user = await authService.findOrProvisionFederated(client, {
           orgId,
@@ -218,7 +272,7 @@ module.exports = async function authRoutes(app, opts) {
           subject: attrs.nameId,
           email: attrs.email,
           name: attrs.name,
-          role: attrs.role || 'user',
+          role: resolvedRole,
         });
         return authService.issueSessionForFederatedUser(client, config, user, {
           ip: req.ip, userAgent: req.headers['user-agent'],
@@ -238,22 +292,36 @@ module.exports = async function authRoutes(app, opts) {
   // ===========================================================
   if (config.OIDC_ENABLED) {
     await oidcMod.init(config);
-    const stateStore = new Map(); // dev-only; production should use redis/db
+    const pool = require('../db/pool');
+
+    async function cleanupExpiredStates() {
+      try { await pool.query(`DELETE FROM oidc_auth_states WHERE expires_at < now()`); } catch { /* ignore */ }
+    }
+    const cleanupInterval = setInterval(cleanupExpiredStates, 5 * 60 * 1000);
+    app.addHook('onClose', () => clearInterval(cleanupInterval));
 
     app.get('/auth/oidc/login', { config: { public: true, rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (req, reply) => {
       const a = oidcMod.buildAuthRequest();
-      stateStore.set(a.state, a);
+      await pool.query(
+        `INSERT INTO oidc_auth_states (state, payload) VALUES ($1, $2)`,
+        [a.state, JSON.stringify({ codeVerifier: a.codeVerifier, nonce: a.nonce, state: a.state })],
+      );
       return reply.redirect(a.url);
     });
 
     app.get('/auth/oidc/callback', { config: { public: true, rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (req, reply) => {
-      const expected = stateStore.get(req.query.state);
-      if (!expected) throw errors.badRequest('Invalid OIDC state');
-      stateStore.delete(req.query.state);
+      const stateRow = await pool.query(
+        `DELETE FROM oidc_auth_states WHERE state = $1 AND expires_at > now() RETURNING payload`,
+        [req.query.state],
+      );
+      const expected = stateRow.rows[0]?.payload;
+      if (!expected) throw errors.badRequest('Invalid or expired OIDC state');
       const { tokenSet, userInfo } = await oidcMod.handleCallback(req.query, expected);
       const profile = oidcMod.extractProfile(userInfo, tokenSet.claims());
       const orgId = config.HL7_DEFAULT_ORG_ID;
       if (!orgId) throw errors.badRequest('Server has no default org configured for SSO');
+      const resolvedRole = mapSsoRole(profile.role, config);
+      if (!resolvedRole) throw errors.forbidden('IdP role not permitted by SSO_UNKNOWN_ROLE_POLICY');
       const session = await withTransaction({}, async (client) => {
         const user = await authService.findOrProvisionFederated(client, {
           orgId,
@@ -261,7 +329,7 @@ module.exports = async function authRoutes(app, opts) {
           subject: profile.sub,
           email: profile.email,
           name: profile.name,
-          role: profile.role || 'user',
+          role: resolvedRole,
         });
         return authService.issueSessionForFederatedUser(client, config, user, {
           ip: req.ip, userAgent: req.headers['user-agent'],

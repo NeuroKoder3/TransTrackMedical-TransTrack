@@ -9,7 +9,7 @@
 export const appParams = {
   appId: 'transtrack-local',
   appName: 'TransTrack',
-  version: '1.0.0',
+  version: __APP_VERSION__,
   isOffline: true,
   compliance: ['HIPAA', 'FDA 21 CFR Part 11', 'AATB'],
 };

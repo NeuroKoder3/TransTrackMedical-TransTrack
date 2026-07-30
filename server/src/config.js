@@ -33,6 +33,12 @@ const schema = z.object({
   PG_POOL_MAX: z.coerce.number().int().positive().default(20),
   PG_IDLE_TIMEOUT_MS: z.coerce.number().int().nonnegative().default(30000),
 
+  // TLS termination enforcement
+  REQUIRE_TLS_TERMINATION: envBool.default(true),
+  HTTPS_CERT: z.string().optional().default(''),
+  HTTPS_KEY: z.string().optional().default(''),
+  ALLOW_INSECURE_HTTP: envBool.default(false),
+
   JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 bytes'),
   JWT_ISSUER: z.string().default('transtrack'),
   JWT_AUDIENCE: z.string().default('transtrack-api'),
@@ -66,14 +72,19 @@ const schema = z.object({
   OIDC_SCOPES: z.string().optional().default('openid profile email'),
   OIDC_ROLE_CLAIM: z.string().optional().default('transtrack_role'),
 
+  SSO_ROLE_MAP: z.string().optional().default(''),
+  SSO_UNKNOWN_ROLE_POLICY: z.enum(['deny', 'default_user']).default('default_user'),
+
   HL7_MLLP_ENABLED: envBool.default(true),
   HL7_MLLP_HOST: z.string().default('0.0.0.0'),
-  HL7_MLLP_PORT: z.coerce.number().int().positive().default(2575),
+  HL7_MLLP_PORT: z.coerce.number().int().min(0).default(2575),
   HL7_MLLP_TLS_CERT_FILE: z.string().optional().default(''),
   HL7_MLLP_TLS_KEY_FILE: z.string().optional().default(''),
   HL7_MLLP_TLS_CA_FILE: z.string().optional().default(''),
   HL7_MLLP_TLS_REQUIRE_CLIENT_CERT: envBool.default(true),
+  HL7_ALLOW_PLAINTEXT: envBool.default(false),
   HL7_DEFAULT_ORG_ID: z.string().optional().default(''),
+  HL7_RAW_RETENTION_DAYS: z.coerce.number().int().nonnegative().default(90),
 
   FHIR_BASE_URL: z.string().default('http://localhost:8080/fhir'),
   FHIR_REQUIRE_AUTH: envBool.default(true),
@@ -135,6 +146,19 @@ function load() {
     cfg.MFA_REQUIRED_FOR_ROLES.split(',').map(s => s.trim()).filter(Boolean)
   );
   cfg.OIDC_SCOPES_LIST = cfg.OIDC_SCOPES.split(/\s+/).filter(Boolean);
+
+  cfg.SSO_ROLE_MAP_PARSED = {};
+  if (cfg.SSO_ROLE_MAP) {
+    try { cfg.SSO_ROLE_MAP_PARSED = JSON.parse(cfg.SSO_ROLE_MAP); }
+    catch { throw new Error('SSO_ROLE_MAP must be valid JSON (e.g. {"IdPAdmin":"admin","IdPViewer":"viewer"})'); }
+  }
+
+  // Production TLS fail-closed: reject PGSSL=disable in production
+  if (cfg.NODE_ENV === 'production' && cfg.PGSSL === 'disable') {
+    throw new Error(
+      'PGSSL=disable is not allowed in production. Set PGSSL=verify-full (recommended) or PGSSL=require.'
+    );
+  }
 
   if (cfg.SAML_ENABLED && (!cfg.SAML_ENTRY_POINT || !cfg.SAML_IDP_CERT)) {
     throw new Error('SAML_ENABLED=true requires SAML_ENTRY_POINT and SAML_IDP_CERT');

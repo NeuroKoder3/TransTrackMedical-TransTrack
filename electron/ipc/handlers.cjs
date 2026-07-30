@@ -49,6 +49,14 @@ function installRateLimitMiddleware() {
         const { currentUser } = shared.getSessionState();
         const userId = currentUser?.id || 'anon';
 
+        // Restricted sessions (must change password / enroll MFA) may only
+        // call the allow-listed security-setup channels.
+        if (currentUser?.session_restrictions?.length) {
+          if (!shared.sessionAllows(channel)) {
+            throw new Error('Complete account security requirements before continuing');
+          }
+        }
+
         const rateResult = checkRateLimit(userId, channel);
         if (!rateResult.allowed) {
           throw new Error(rateResult.error);
@@ -65,6 +73,8 @@ function installRateLimitMiddleware() {
 function registerExtendedHandlers() {
   const { ipcMain } = require('electron');
   const shared = require('./shared.cjs');
+  const electronicSignature = require('../services/electronicSignature.cjs');
+  const { verifyAuditChain } = require('../services/auditChain.cjs');
 
   // Encryption key rotation
   ipcMain.handle('encryption:rotateKey', async (_event, options = {}) => {
@@ -111,6 +121,47 @@ function registerExtendedHandlers() {
     if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
     const healthCheck = require('../services/healthCheck.cjs');
     return healthCheck.getHealth();
+  });
+
+  // Electronic signatures (21 CFR Part 11)
+  ipcMain.handle('esig:sign', async (_event, params) => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
+    const { currentUser } = shared.getSessionState();
+    const orgId = shared.getSessionOrgId();
+    const result = electronicSignature.signRecord({
+      orgId,
+      userId: currentUser.id,
+      userEmail: currentUser.email,
+      userFullName: currentUser.full_name,
+      meaning: params.meaning,
+      entityType: params.entityType,
+      entityId: params.entityId,
+      payloadHash: params.payloadHash,
+    });
+    shared.logAudit('electronic_signature', params.entityType, params.entityId, null,
+      JSON.stringify({ meaning: params.meaning, signatureId: result.id }),
+      currentUser.email, currentUser.role);
+    return result;
+  });
+
+  ipcMain.handle('esig:list', async (_event, params) => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
+    return electronicSignature.getSignatures(
+      shared.getSessionOrgId(), params.entityType, params.entityId
+    );
+  });
+
+  ipcMain.handle('esig:verify', async (_event, signatureId) => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
+    return electronicSignature.verifySignature(signatureId);
+  });
+
+  // Audit chain verification
+  ipcMain.handle('audit:verifyChain', async () => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
+    const { currentUser } = shared.getSessionState();
+    if (!currentUser || currentUser.role !== 'admin') throw new Error('Admin access required');
+    return verifyAuditChain(shared.getSessionOrgId());
   });
 }
 

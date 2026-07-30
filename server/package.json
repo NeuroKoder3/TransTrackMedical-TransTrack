@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "TransTrack API server: REST + FHIR R4 + MLLP/TLS HL7 v2 listener backed by PostgreSQL",
   "private": true,
-  "license": "MIT",
+  "license": "UNLICENSED",
   "main": "src/index.js",
   "type": "commonjs",
   "engines": {
@@ -19,7 +19,8 @@
     "test:watch": "vitest --config vitest.config.mjs",
     "test:integration": "vitest run --config vitest.integration.config.mjs",
     "test:mirth": "cross-env INTEGRATION_MIRTH=1 vitest run --config vitest.integration.config.mjs test/integration/mirth.test.mjs",
-    "lint": "eslint src test --max-warnings=0"
+    "lint": "eslint src test --max-warnings=0",
+    "sbom": "npx @cyclonedx/cyclonedx-npm --ignore-npm-errors --output-file sbom-server.json --output-format JSON"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",

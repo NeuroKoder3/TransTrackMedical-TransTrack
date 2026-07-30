@@ -2,7 +2,7 @@
 
 ## System Overview
 
-TransTrack is an **offline-first, HIPAA-compliant Electron desktop application** for transplant waitlist and operations management. All data is stored locally in an AES-256 encrypted SQLite database. No cloud services are required.
+TransTrack is a **single-workstation, offline-first, HIPAA-compliant Electron desktop application** for transplant waitlist and operations management. All data is stored locally in an AES-256 encrypted SQLite database. No cloud services are required. Multi-device synchronisation is not supported; each installation is a self-contained, authoritative data store. The offline reconciliation module exists for future use but is currently disabled.
 
 ## High-Level Architecture
 

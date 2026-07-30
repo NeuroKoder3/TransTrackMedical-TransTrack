@@ -21,8 +21,8 @@
   ],
   "publish": {
     "provider": "github",
-    "owner": "TransTrackMedical",
-    "repo": "TransTrack",
+    "owner": "NeuroKoder3",
+    "repo": "TransTrackMedical-TransTrack",
     "releaseType": "release"
   },
   "win": {

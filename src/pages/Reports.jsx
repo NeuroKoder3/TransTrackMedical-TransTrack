@@ -3,8 +3,7 @@ import { api } from '@/api/apiClient';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { FileDown, FileText, Table } from 'lucide-react';
+import { FileDown, Table } from 'lucide-react';
 import ErrorState from '@/components/ui/ErrorState';
 import FilterBar from '../components/waitlist/FilterBar';
 
@@ -16,7 +15,7 @@ export default function Reports() {
     status: 'active',
     priority: 'all',
   });
-  const [exportFormat, setExportFormat] = useState('pdf');
+  const [exportFormat] = useState('csv');
   const [exporting, setExporting] = useState(false);
 
   const { data: patients = [], isError } = useQuery({
@@ -34,22 +33,26 @@ export default function Reports() {
     });
   };
 
-  // TODO: PDF export is on the roadmap but not implemented yet
   const handleExport = async () => {
     setExporting(true);
     try {
-      const response = await api.functions.invoke('exportWaitlist', {
-        filters,
-        format: exportFormat,
-      });
-
-      const blob = new Blob([response.data], {
-        type: exportFormat === 'pdf' ? 'application/pdf' : 'text/csv',
-      });
+      const headers = ['Patient ID', 'First Name', 'Last Name', 'Blood Type', 'Organ Needed', 'Priority Score', 'Status', 'Date Added'];
+      const rows = filteredPatients.map(p => [
+        p.patient_id || '',
+        p.first_name || '',
+        p.last_name || '',
+        p.blood_type || '',
+        p.organ_needed || '',
+        p.priority_score ?? '',
+        p.waitlist_status || '',
+        p.date_added_to_waitlist || '',
+      ]);
+      const csvContent = [headers.join(','), ...rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))].join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `waitlist-export-${new Date().toISOString().split('T')[0]}.${exportFormat}`;
+      a.download = `waitlist-export-${new Date().toISOString().split('T')[0]}.csv`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
@@ -110,25 +113,13 @@ export default function Reports() {
               <CardTitle className="text-base">Export Format</CardTitle>
             </CardHeader>
             <CardContent>
-              <Select value={exportFormat} onValueChange={setExportFormat}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="pdf">
-                    <div className="flex items-center">
-                      <FileText className="w-4 h-4 mr-2" />
-                      PDF Report
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="csv">
-                    <div className="flex items-center">
-                      <Table className="w-4 h-4 mr-2" />
-                      CSV Spreadsheet
-                    </div>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
+              <div className="flex items-center text-sm text-slate-700">
+                <Table className="w-4 h-4 mr-2" />
+                CSV Spreadsheet
+              </div>
+              <p className="text-xs text-slate-500 mt-2">
+                PDF export is not yet available. Use CSV for data export.
+              </p>
             </CardContent>
           </Card>
 
@@ -173,7 +164,6 @@ export default function Reports() {
                   <li>Priority scores and medical urgency</li>
                   <li>Waitlist status and duration</li>
                   <li>Last evaluation dates</li>
-                  {exportFormat === 'pdf' && <li>Visual priority indicators</li>}
                 </ul>
               </div>
 

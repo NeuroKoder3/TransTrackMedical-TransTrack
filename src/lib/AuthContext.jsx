@@ -49,6 +49,8 @@ export const AuthProvider = ({ children }) => {
   // when the user is enrolled in MFA. While set, the Login page renders the
   // 6-digit verification step instead of email/password.
   const [mfaChallenge, setMfaChallenge] = useState(null);
+  const [mustChangePassword, setMustChangePassword] = useState(false);
+  const [mfaEnrollmentRequired, setMfaEnrollmentRequired] = useState(false);
 
   const login = async (email, password) => {
     try {
@@ -73,6 +75,8 @@ export const AuthProvider = ({ children }) => {
       setUser(user);
       setIsAuthenticated(true);
       setMfaChallenge(null);
+      setMustChangePassword(!!result.mustChangePassword || !!user.must_change_password);
+      setMfaEnrollmentRequired(!!result.mfaEnrollmentRequired || !!user.mfa_required && !user.mfa_enrolled);
       return { user, ...result };
     } catch (error) {
       // Keep authError null for credential failures so App.jsx does not
@@ -93,6 +97,7 @@ export const AuthProvider = ({ children }) => {
       setUser(result.user);
       setIsAuthenticated(true);
       setMfaChallenge(null);
+      setMustChangePassword(!!result.mustChangePassword || !!result.user?.must_change_password);
       return result;
     } catch (error) {
       throw error;
@@ -110,6 +115,8 @@ export const AuthProvider = ({ children }) => {
     
     setUser(null);
     setIsAuthenticated(false);
+    setMustChangePassword(false);
+    setMfaEnrollmentRequired(false);
     
     if (shouldRedirect) {
       window.location.hash = '#/login';
@@ -129,6 +136,10 @@ export const AuthProvider = ({ children }) => {
       authError,
       appPublicSettings,
       mfaChallenge,
+      mustChangePassword,
+      mfaEnrollmentRequired,
+      clearMustChangePassword: () => setMustChangePassword(false),
+      clearMfaEnrollmentRequired: () => setMfaEnrollmentRequired(false),
       login,
       submitMfa,
       cancelMfa,

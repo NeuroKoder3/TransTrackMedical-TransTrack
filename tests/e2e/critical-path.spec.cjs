@@ -38,22 +38,11 @@ const os = require('os');
 let app;
 let window;
 
-function getElectronUserDataPath() {
-  const appName = 'TransTrack';
-  if (process.platform === 'win32') {
-    return path.join(process.env.APPDATA || '', appName);
-  }
-  if (process.platform === 'darwin') {
-    return path.join(os.homedir(), 'Library', 'Application Support', appName);
-  }
-  return path.join(
-    process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'),
-    appName,
-  );
-}
-
 test.beforeAll(async () => {
-  const userDataPath = getElectronUserDataPath();
+  const userDataPath = path.join(
+    os.tmpdir(),
+    `transtrack-e2e-critical-${process.pid}-${Date.now()}`,
+  );
   fs.mkdirSync(userDataPath, { recursive: true });
 
   app = await electron.launch({
@@ -62,31 +51,40 @@ test.beforeAll(async () => {
       ...process.env,
       NODE_ENV: 'test',
       ELECTRON_DEV: '0',
+      TRANSTRACK_E2E: '1',
+      TRANSTRACK_USERDATA_DIR: userDataPath,
     },
     timeout: 45000,
   });
 
+  // Wait until a window exposes electronAPI (main window; splash skipped in test).
+  const deadline = Date.now() + 60000;
   window = await app.firstWindow({ timeout: 30000 });
-
-  const isMainWindow = (w) => {
-    try {
-      const url = w.url();
-      return url.includes('index.html') || url.includes('localhost');
-    } catch {
-      return false;
+  let lastErr = null;
+  while (Date.now() < deadline) {
+    const windows = app.windows();
+    for (const w of windows) {
+      try {
+        const info = await w.evaluate(() => ({
+          hasApi: !!(window.electronAPI && window.electronAPI.auth && window.electronAPI.auth.login),
+          href: String(location.href || ''),
+          keys: window.electronAPI ? Object.keys(window.electronAPI).slice(0, 20) : [],
+        }));
+        if (info.hasApi) {
+          window = w;
+          await window.waitForLoadState('domcontentloaded', { timeout: 15000 }).catch(() => {});
+          return;
+        }
+        lastErr = `window ${info.href} keys=${info.keys.join(',')}`;
+      } catch (e) {
+        lastErr = String(e && e.message ? e.message : e);
+      }
     }
-  };
-
-  if (!isMainWindow(window)) {
-    const mainWindow = await app
-      .waitForEvent('window', { timeout: 30000 })
-      .catch(() => null);
-    if (mainWindow) {
-      window = mainWindow;
-    }
+    await new Promise((r) => setTimeout(r, 400));
   }
-
-  await window.waitForLoadState('domcontentloaded', { timeout: 30000 });
+  throw new Error(
+    `Timed out waiting for Electron window with electronAPI preload bridge (${lastErr || 'no windows'})`,
+  );
 });
 
 test.afterAll(async () => {
@@ -114,35 +112,100 @@ test.describe('TransTrack — Critical Path (login → patient → audit → bac
   // STEP 1 — Login
   // -----------------------------------------------------------------------
   test('Step 1 — login as the seeded administrator via the IPC bridge', async () => {
-    await window.waitForTimeout(2000);
+    await window.waitForFunction(
+      () => !!(window.electronAPI && window.electronAPI.auth && window.electronAPI.auth.login),
+      { timeout: 30000 },
+    );
 
+    const { totpCode } = require('../../electron/services/mfa.cjs');
     const e2ePassword =
       process.env.TRANSTRACK_INITIAL_ADMIN_PASSWORD || 'E2E_ONLY_DoNotUseInProd!';
+    const nextPassword = `${e2ePassword}_Rotated1!`;
 
-    const result = await window.evaluate(async (password) => {
+    const result = await window.evaluate(async ({ password, next }) => {
       try {
-        const r = await window.electronAPI.auth.login({
+        let activePassword = password;
+        let login = await window.electronAPI.auth.login({
           email: 'admin@transtrack.local',
-          password,
+          password: activePassword,
         });
-        return { ok: true, hasUser: !!(r && (r.user || r.id || r.email)) };
+        if (!login || (!login.success && !login.user && !login.mfa_required)) {
+          return { ok: false, error: `login failed: ${JSON.stringify(login)}` };
+        }
+
+        // Forced password change gate
+        if (login.mustChangePassword || login.user?.must_change_password) {
+          await window.electronAPI.auth.changePassword({
+            currentPassword: activePassword,
+            newPassword: next,
+          });
+          activePassword = next;
+        }
+
+        // auth:me returns the user object directly (not { user }).
+        let me = await window.electronAPI.auth.me();
+        const needsMfaEnroll =
+          !!(me?.session_restrictions?.includes('mfa_enroll') ||
+            login.mfaEnrollmentRequired ||
+            (me?.mfa_required && !me?.mfa_enrolled) ||
+            (me?.role === 'admin' && !me?.mfa_enrolled));
+
+        if (needsMfaEnroll) {
+          const begin = await window.electronAPI.mfa.beginEnrollment();
+          return {
+            ok: true,
+            needsMfaConfirm: true,
+            secret: begin.secret,
+            hasUser: !!(me && me.id),
+            password: activePassword,
+          };
+        }
+
+        const restricted = Array.isArray(me?.session_restrictions) && me.session_restrictions.length > 0;
+        if (restricted) {
+          return {
+            ok: false,
+            error: `session still restricted after setup: ${JSON.stringify(me.session_restrictions)}`,
+          };
+        }
+
+        return {
+          ok: true,
+          hasUser: !!(me && me.id),
+          password: activePassword,
+          me,
+        };
       } catch (e) {
         return { ok: false, error: String(e && e.message ? e.message : e) };
       }
-    }, e2ePassword);
+    }, { password: e2ePassword, next: nextPassword });
+
+    if (!result.ok) {
+      throw new Error(`[critical-path] login MUST succeed via electronAPI: ${result.error}`);
+    }
+
+    if (result.needsMfaConfirm && result.secret) {
+      const code = totpCode(result.secret);
+      const confirm = await window.evaluate(async ({ secret, code }) => {
+        try {
+          await window.electronAPI.mfa.confirmEnrollment({ secret, code });
+          const me = await window.electronAPI.auth.me();
+          const restricted = Array.isArray(me?.session_restrictions) && me.session_restrictions.length > 0;
+          if (restricted) {
+            return { ok: false, error: `still restricted after MFA: ${JSON.stringify(me.session_restrictions)}` };
+          }
+          return { ok: true, me };
+        } catch (e) {
+          return { ok: false, error: String(e && e.message ? e.message : e) };
+        }
+      }, { secret: result.secret, code });
+      if (!confirm.ok) {
+        throw new Error(`[critical-path] MFA enrollment MUST succeed: ${confirm.error}`);
+      }
+    }
 
     ctx.loginAttempted = true;
-
-    // The seeded admin account requires a forced password change on first
-    // login. Either outcome is acceptable evidence that the auth IPC is
-    // wired through correctly: a successful session, OR a structured
-    // "must change password" / "invalid credentials" error from the handler.
-    expect(result).toBeDefined();
-    if (!result.ok) {
-      console.warn('[critical-path] login returned error (acceptable):', result.error);
-    } else {
-      expect(result.hasUser).toBeTruthy();
-    }
+    expect(result.hasUser).toBeTruthy();
   });
 
   // -----------------------------------------------------------------------
@@ -189,9 +252,7 @@ test.describe('TransTrack — Critical Path (login → patient → audit → bac
     }, payload);
 
     if (!result.ok) {
-      console.warn('[critical-path] patient.create skipped:', result.error);
-      test.skip(true, `patient.create unavailable: ${result.error}`);
-      return;
+      throw new Error(`[critical-path] patient.create MUST be available: ${result.error}`);
     }
 
     expect(result).toBeDefined();
@@ -199,9 +260,23 @@ test.describe('TransTrack — Critical Path (login → patient → audit → bac
     expect(result.id).toBeTruthy();
     ctx.patientId = result.id;
 
-    // Round-trip check: confirm the record is retrievable.
+    // Round-trip check: authorize PHI justification, then fetch.
     const fetched = await window.evaluate(async (id) => {
       try {
+        const authorize =
+          window.electronAPI?.accessControl?.authorizePhiAccess ||
+          window.electronAPI?.access?.authorizePhiAccess;
+        if (authorize) {
+          const grant = await authorize({
+            permission: 'patient:view_phi',
+            entityType: 'Patient',
+            entityId: id,
+            justification: 'E2E critical-path verification',
+          });
+          if (grant && grant.granted === false) {
+            return { error: `PHI grant denied: ${grant.reason || 'unknown'}` };
+          }
+        }
         if (window.electronAPI?.entities?.Patient?.get) {
           return await window.electronAPI.entities.Patient.get(id);
         }
@@ -211,10 +286,11 @@ test.describe('TransTrack — Critical Path (login → patient → audit → bac
       }
     }, ctx.patientId);
 
-    if (fetched && !fetched.error) {
-      expect(fetched.first_name).toBe('Critical');
-      expect(fetched.last_name).toBe('PathTest');
+    if (fetched && fetched.error) {
+      throw new Error(`[critical-path] Patient.get after create failed: ${fetched.error}`);
     }
+    expect(fetched.first_name).toBe('Critical');
+    expect(fetched.last_name).toBe('PathTest');
   });
 
   // -----------------------------------------------------------------------
@@ -227,14 +303,14 @@ test.describe('TransTrack — Critical Path (login → patient → audit → bac
         if (window.electronAPI?.entities?.AuditLog?.filter) {
           const rows = await window.electronAPI.entities.AuditLog.filter(
             { entity_type: 'Patient' },
-            'created_at DESC',
+            '-created_at',
             50,
           );
           return { ok: true, rows: rows || [] };
         }
         if (window.electronAPI?.entities?.AuditLog?.list) {
           const rows = await window.electronAPI.entities.AuditLog.list(
-            'created_at DESC',
+            '-created_at',
             50,
           );
           return { ok: true, rows: rows || [] };
@@ -251,9 +327,7 @@ test.describe('TransTrack — Critical Path (login → patient → audit → bac
     }, ctx.patientId);
 
     if (!audit.ok) {
-      console.warn('[critical-path] audit-log read skipped:', audit.error);
-      test.skip(true, `audit-log surface unavailable: ${audit.error}`);
-      return;
+      throw new Error(`[critical-path] audit-log surface MUST be available: ${audit.error}`);
     }
 
     expect(audit).toBeDefined();
@@ -275,12 +349,18 @@ test.describe('TransTrack — Critical Path (login → patient → audit → bac
   test('Step 4 — create an encrypted backup via recovery.createBackup', async () => {
     const result = await window.evaluate(async () => {
       try {
-        if (!window.electronAPI?.recovery?.createBackup) {
-          return { ok: false, error: 'no recovery.createBackup on bridge' };
+        const api = window.electronAPI;
+        const create =
+          api?.recovery?.createBackup ||
+          api?.createBackup ||
+          null;
+        if (!create) {
+          return {
+            ok: false,
+            error: `no recovery.createBackup on bridge; keys=${Object.keys(api || {}).join(',')}`,
+          };
         }
-        const r = await window.electronAPI.recovery.createBackup({
-          note: 'critical-path E2E backup',
-        });
+        const r = await create({ note: 'critical-path E2E backup' });
         return { ok: true, raw: r };
       } catch (e) {
         return { ok: false, error: String(e && e.message ? e.message : e) };
@@ -288,16 +368,12 @@ test.describe('TransTrack — Critical Path (login → patient → audit → bac
     });
 
     if (!result.ok) {
-      console.warn('[critical-path] recovery.createBackup skipped:', result.error);
-      test.skip(true, `recovery.createBackup unavailable: ${result.error}`);
-      return;
+      throw new Error(`[critical-path] recovery.createBackup MUST be available: ${result.error}`);
     }
 
     expect(result).toBeDefined();
     expect(result.ok).toBe(true);
 
-    // The handler may return the backup record as { id, ... } or wrap it
-    // as { success: true, backup: { id, ... } } — accept either shape.
     const id =
       (result.raw && (result.raw.id || result.raw.backupId)) ||
       (result.raw && result.raw.backup && (result.raw.backup.id || result.raw.backup.backupId)) ||
@@ -312,13 +388,11 @@ test.describe('TransTrack — Critical Path (login → patient → audit → bac
   // -----------------------------------------------------------------------
   test('Step 5 — verify the backup integrity (recovery.verifyBackup)', async () => {
     if (!ctx.backupId) {
-      // Try to discover any existing backup to verify against.
       const list = await window.evaluate(async () => {
         try {
-          if (!window.electronAPI?.recovery?.listBackups) {
-            return { ok: false };
-          }
-          const r = await window.electronAPI.recovery.listBackups();
+          const listFn = window.electronAPI?.recovery?.listBackups || window.electronAPI?.listBackups;
+          if (!listFn) return { ok: false };
+          const r = await listFn();
           return { ok: true, list: r };
         } catch (e) {
           return { ok: false, error: String(e && e.message ? e.message : e) };
@@ -330,17 +404,16 @@ test.describe('TransTrack — Critical Path (login → patient → audit → bac
     }
 
     if (!ctx.backupId) {
-      console.warn('[critical-path] no backup id available — verify step skipped');
-      test.skip(true, 'no backup id available');
-      return;
+      throw new Error('[critical-path] no backup id available — previous step must have created one');
     }
 
     const result = await window.evaluate(async (backupId) => {
       try {
-        if (!window.electronAPI?.recovery?.verifyBackup) {
-          return { ok: false, error: 'no recovery.verifyBackup on bridge' };
+        const verify = window.electronAPI?.recovery?.verifyBackup || window.electronAPI?.verifyBackup;
+        if (!verify) {
+          return { ok: false, error: `no recovery.verifyBackup on bridge; keys=${Object.keys(window.electronAPI || {}).join(',')}` };
         }
-        const r = await window.electronAPI.recovery.verifyBackup(backupId);
+        const r = await verify(backupId);
         return { ok: true, raw: r };
       } catch (e) {
         return { ok: false, error: String(e && e.message ? e.message : e) };
@@ -348,17 +421,12 @@ test.describe('TransTrack — Critical Path (login → patient → audit → bac
     }, ctx.backupId);
 
     if (!result.ok) {
-      console.warn('[critical-path] verifyBackup skipped:', result.error);
-      test.skip(true, `verifyBackup unavailable: ${result.error}`);
-      return;
+      throw new Error(`[critical-path] verifyBackup MUST be available: ${result.error}`);
     }
 
     expect(result).toBeDefined();
     expect(result.ok).toBe(true);
 
-    // A passing verification reports at minimum a checksum-verified flag.
-    // Accept any of the documented verification fields:
-    //   { checksumVerified, integrityCheckPassed, restoreTestPassed, valid, ok }
     const raw = result.raw || {};
     const verifiedFields = [
       raw.checksumVerified,
@@ -378,22 +446,18 @@ test.describe('TransTrack — Critical Path (login → patient → audit → bac
     }
   });
 
-  // -----------------------------------------------------------------------
-  // STEP 6 — Restore from the backup
-  // -----------------------------------------------------------------------
   test('Step 6 — restore from the backup (recovery.restoreBackup)', async () => {
     if (!ctx.backupId) {
-      console.warn('[critical-path] no backup id available — restore step skipped');
-      test.skip(true, 'no backup id available');
-      return;
+      throw new Error('[critical-path] no backup id available — previous step must have created one');
     }
 
     const result = await window.evaluate(async (backupId) => {
       try {
-        if (!window.electronAPI?.recovery?.restoreBackup) {
-          return { ok: false, error: 'no recovery.restoreBackup on bridge' };
+        const restore = window.electronAPI?.recovery?.restoreBackup || window.electronAPI?.restoreBackup;
+        if (!restore) {
+          return { ok: false, error: `no recovery.restoreBackup on bridge; keys=${Object.keys(window.electronAPI || {}).join(',')}` };
         }
-        const r = await window.electronAPI.recovery.restoreBackup(backupId);
+        const r = await restore(backupId);
         return { ok: true, raw: r };
       } catch (e) {
         return { ok: false, error: String(e && e.message ? e.message : e) };
@@ -401,30 +465,22 @@ test.describe('TransTrack — Critical Path (login → patient → audit → bac
     }, ctx.backupId);
 
     if (!result.ok) {
-      console.warn('[critical-path] restoreBackup skipped:', result.error);
-      test.skip(true, `restoreBackup unavailable: ${result.error}`);
-      return;
+      throw new Error(`[critical-path] restoreBackup MUST be available: ${result.error}`);
     }
 
     expect(result).toBeDefined();
     expect(result.ok).toBe(true);
-
-    // The restore handler should return either { success: true } or
-    // { restored: true } or the restored backup record. Any non-null,
-    // non-error response satisfies the contract for this E2E.
     expect(result.raw).toBeTruthy();
   });
 
-  // -----------------------------------------------------------------------
-  // FINAL — health-check + bridge-surface invariants
-  // -----------------------------------------------------------------------
   test('Final — system:getHealth reports a structured envelope', async () => {
     const result = await window.evaluate(async () => {
       try {
-        if (!window.electronAPI?.system?.getHealth) {
-          return { ok: false, error: 'no system.getHealth on bridge' };
+        const getHealth = window.electronAPI?.system?.getHealth || window.electronAPI?.getHealth;
+        if (!getHealth) {
+          return { ok: false, error: `no system.getHealth on bridge; keys=${Object.keys(window.electronAPI || {}).join(',')}` };
         }
-        const r = await window.electronAPI.system.getHealth();
+        const r = await getHealth();
         return { ok: true, raw: r };
       } catch (e) {
         return { ok: false, error: String(e && e.message ? e.message : e) };
@@ -432,9 +488,7 @@ test.describe('TransTrack — Critical Path (login → patient → audit → bac
     });
 
     if (!result.ok) {
-      console.warn('[critical-path] system.getHealth not exposed:', result.error);
-      test.skip(true, `system.getHealth unavailable: ${result.error}`);
-      return;
+      throw new Error(`[critical-path] system.getHealth MUST be available: ${result.error}`);
     }
 
     expect(result).toBeDefined();

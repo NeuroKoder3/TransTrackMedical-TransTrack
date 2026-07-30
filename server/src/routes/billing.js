@@ -248,10 +248,89 @@ async function handleCheckoutCompleted(app, config, session) {
 }
 
 async function handleInvoicePaid(app, config, invoice) {
-  // Renewal: extend an existing license's expiry by another billing
-  // period. Look up by subscription_id and re-issue.
-  app.log.info({ subscription: invoice.subscription }, 'invoice.paid (renewal) — re-issue path TODO');
-  // TODO: lookup by subscription_id, re-issue with new expiresAt, email.
+  const subscriptionId = invoice.subscription;
+  if (!subscriptionId) {
+    app.log.debug({ invoiceId: invoice.id }, 'invoice.paid without subscription — one-off, skipping');
+    return;
+  }
+
+  app.log.info({ subscription: subscriptionId }, 'invoice.paid — renewal re-issue');
+
+  const pool = require('../db/pool');
+  const existing = await pool.query(
+    `SELECT * FROM issued_licenses
+     WHERE stripe_subscription_id = $1 AND canceled_at IS NULL
+     ORDER BY issued_at DESC LIMIT 1`,
+    [subscriptionId],
+  );
+  if (!existing.rows[0]) {
+    app.log.warn({ subscription: subscriptionId }, 'no existing license for subscription — cannot renew');
+    return;
+  }
+  const prev = existing.rows[0];
+
+  const privateKeyPath = config.LICENSE_PRIVATE_KEY_PATH;
+  if (!privateKeyPath || !fs.existsSync(privateKeyPath)) {
+    app.log.error({ privateKeyPath }, 'LICENSE_PRIVATE_KEY_PATH missing — cannot re-issue on renewal');
+    return;
+  }
+  const privateKeyPem = fs.readFileSync(privateKeyPath, 'utf8');
+
+  const issuedAt = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + 365 * 86400e3).toISOString();
+  const tierDefaults = _tierConfig(prev.tier);
+  if (!tierDefaults) {
+    app.log.error({ tier: prev.tier }, 'unknown tier on renewal');
+    return;
+  }
+
+  const payload = {
+    licenseId: 'lic_' + crypto.randomBytes(8).toString('hex'),
+    protocolVersion: 1,
+    customer: { name: prev.customer_name, email: prev.customer_email, orgId: prev.org_id },
+    tier: prev.tier,
+    issuedAt,
+    expiresAt,
+    maintenanceExpiresAt: expiresAt,
+    limits: tierDefaults,
+    features: [],
+    machineBindings: [],
+    metadata: {
+      stripeSubscriptionId: subscriptionId,
+      stripeCustomerId: invoice.customer,
+      renewedFromLicenseId: prev.license_id,
+    },
+  };
+
+  const wire = signLicense(payload, privateKeyPem);
+
+  try {
+    await pool.query(
+      `INSERT INTO issued_licenses
+         (license_id, org_id, customer_name, customer_email, tier,
+          issued_at, expires_at, stripe_session_id, stripe_customer_id,
+          stripe_subscription_id, wire_format, machine_bindings_count)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+       ON CONFLICT (license_id) DO UPDATE SET wire_format = EXCLUDED.wire_format`,
+      [
+        payload.licenseId, prev.org_id, prev.customer_name, prev.customer_email, prev.tier,
+        issuedAt, expiresAt, null, invoice.customer,
+        subscriptionId, wire, 0,
+      ],
+    );
+  } catch (err) {
+    app.log.error({ err: err.message }, 'failed to persist renewed license');
+  }
+
+  await emailLicenseFile(app, config, {
+    customerEmail: prev.customer_email,
+    customerName: prev.customer_name,
+    tier: prev.tier,
+    wire,
+    payload,
+  });
+
+  app.log.info({ licenseId: payload.licenseId, renewedFrom: prev.license_id }, 'renewal license issued');
 }
 
 async function handleSubscriptionCanceled(app, config, subscription) {

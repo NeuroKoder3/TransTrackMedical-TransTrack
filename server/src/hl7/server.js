@@ -22,6 +22,7 @@ const { MllpFramer, frame } = require('./mllp');
 const { parseMessage, buildAck } = require('./messageParser');
 const vendorProfileService = require('../services/vendorProfileService');
 const ingestMod = require('./ingest');
+const { getPool } = require('../db/pool');
 
 function start({ config, logger }) {
   if (!config.HL7_MLLP_ENABLED) {
@@ -40,8 +41,17 @@ function start({ config, logger }) {
   } : null;
 
   if (!useTls && config.NODE_ENV === 'production') {
-    logger.warn('HL7 MLLP listener is running PLAINTEXT in production. ' +
-      'Set HL7_MLLP_TLS_CERT_FILE/HL7_MLLP_TLS_KEY_FILE to enable TLS.');
+    if (!config.HL7_ALLOW_PLAINTEXT) {
+      throw new Error(
+        'HL7 MLLP plaintext is not allowed in production. Provide HL7_MLLP_TLS_CERT_FILE ' +
+        'and HL7_MLLP_TLS_KEY_FILE, or set HL7_ALLOW_PLAINTEXT=1 (NOT recommended).'
+      );
+    }
+    logger.warn('HL7 MLLP listener running PLAINTEXT in production (HL7_ALLOW_PLAINTEXT=1). ' +
+      'This is NOT recommended — configure TLS immediately.');
+  }
+  if (!useTls && config.NODE_ENV === 'test') {
+    logger.info('HL7 MLLP running plaintext (test environment)');
   }
 
   function handleSocket(socket) {
@@ -68,9 +78,23 @@ function start({ config, logger }) {
           socket.write(frame(nack));
           continue;
         }
-        const orgId = config.HL7_DEFAULT_ORG_ID
-          || (await resolveOrgFromSendingApp(parsed.sending_app));
+        const resolvedOrg = await resolveOrgFromSendingApp(parsed.sending_app);
+        const orgId = resolvedOrg || config.HL7_DEFAULT_ORG_ID || null;
         if (!orgId) {
+          logger.warn({ sendingApp: parsed.sending_app, msgId: parsed.message_control_id },
+            'rejecting message: no org mapping and no HL7_DEFAULT_ORG_ID');
+          try {
+            const pool = getPool();
+            await pool.query(
+              `INSERT INTO hl7_dead_letters
+                 (raw_message, sending_app, sending_facility, message_type,
+                  trigger_event, message_control_id, error_reason, peer_address, transport)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'mllp')`,
+              [raw, parsed.sending_app, parsed.sending_facility, parsed.message_type,
+               parsed.trigger_event, parsed.message_control_id,
+               'No org mapping for sending application', peer?.address || null]
+            );
+          } catch { /* best-effort dead-letter */ }
           const nack = buildAck(parsed, 'AR', 'No org mapping for sending application');
           socket.write(frame(nack));
           continue;
@@ -126,11 +150,22 @@ function start({ config, logger }) {
 }
 
 /**
- * Pluggable hook: deployments can override this to map MSH-3 (sending app)
- * to an organisation id. The default falls back to the env-configured default.
+ * Resolve org_id from the hl7_sending_apps table by exact match on
+ * sending_app. Falls back to HL7_DEFAULT_ORG_ID if configured.
  */
-async function resolveOrgFromSendingApp(/* sendingApp */) {
-  return null;
+async function resolveOrgFromSendingApp(sendingApp) {
+  if (!sendingApp) return null;
+  try {
+    const r = await getPool().query(
+      `SELECT org_id FROM hl7_sending_apps
+       WHERE sending_app = $1 AND is_active = TRUE
+       LIMIT 1`,
+      [sendingApp]
+    );
+    return r.rows[0]?.org_id || null;
+  } catch {
+    return null;
+  }
 }
 
-module.exports = { start };
+module.exports = { start, resolveOrgFromSendingApp };

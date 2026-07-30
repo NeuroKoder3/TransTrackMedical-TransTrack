@@ -142,6 +142,7 @@ async function build() {
   });
 
   app.register(require('./routes/health'));
+  app.register(require('./metrics').metricsPlugin);
   app.register(require('./routes/auth'), { config });
   app.register(require('./routes/patients'));
   app.register(require('./routes/organOffers'));
@@ -164,11 +165,44 @@ async function build() {
 
 async function start() {
   const { app, config } = await build();
+
+  // --- TLS termination enforcement (REQUIRE_TLS_TERMINATION) ---
+  // In production (default REQUIRE_TLS_TERMINATION=true): refuse to start unless
+  // TRUST_PROXY=true (termination at LB) OR HTTPS_CERT/KEY provided (direct TLS)
+  // OR ALLOW_INSECURE_HTTP=1 (emergency escape hatch).
+  if (config.NODE_ENV === 'production' && config.REQUIRE_TLS_TERMINATION) {
+    const hasProxy = config.TRUST_PROXY === true;
+    const hasDirectTls = !!(config.HTTPS_CERT && config.HTTPS_KEY);
+    const allowInsecure = config.ALLOW_INSECURE_HTTP === true;
+    if (!hasProxy && !hasDirectTls && !allowInsecure) {
+      throw new Error(
+        'REQUIRE_TLS_TERMINATION is enabled in production but no TLS strategy is configured. ' +
+        'Set TRUST_PROXY=true (TLS terminated at load balancer), provide HTTPS_CERT + HTTPS_KEY ' +
+        '(direct TLS), or set ALLOW_INSECURE_HTTP=1 for emergency bypass.'
+      );
+    }
+  }
+
   await app.listen({ port: config.HTTP_PORT, host: config.HTTP_HOST });
-  hl7Server.start({ config, logger: app.log.child({ component: 'mllp' }) });
-  // Subscription delivery dispatcher
+
+  const mllpServer = hl7Server.start({ config, logger: app.log.child({ component: 'mllp' }) });
+
   const subs = require('./fhir/subscriptions');
-  subs.startDispatcher(config.SUBSCRIPTION_DISPATCH_MS || 5000);
+  subs.setLogger(app.log.child({ component: 'subscriptions' }));
+  const subscriptionTimer = subs.startDispatcher(config.SUBSCRIPTION_DISPATCH_MS || 5000);
+
+  // --- Graceful shutdown ---
+  const shutdown = async (signal) => {
+    app.log.info({ signal }, 'shutdown signal received');
+    if (subscriptionTimer) clearInterval(subscriptionTimer);
+    if (mllpServer) {
+      await new Promise((resolve) => mllpServer.close(resolve));
+    }
+    await app.close();
+    process.exit(0);
+  };
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
 }
 
 if (require.main === module) {

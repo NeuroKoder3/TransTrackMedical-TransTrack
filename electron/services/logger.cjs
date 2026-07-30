@@ -189,9 +189,29 @@ function closeLogger() {
   }
 }
 
+/**
+ * Redact PHI fields from an object before logging. Use this when logging
+ * records that may contain patient data to ensure nothing leaks to remote
+ * sinks or persisted log files.
+ */
+function redactPhi(obj) {
+  if (!obj || typeof obj !== 'object') return obj;
+  const PHI_KEYS = new Set([
+    'patient_name', 'first_name', 'last_name', 'date_of_birth', 'dob',
+    'ssn', 'social_security_number', 'address', 'phone', 'email',
+    'mrn', 'medical_record_number', 'hla_typing',
+  ]);
+  const redacted = {};
+  for (const [k, v] of Object.entries(obj)) {
+    redacted[k] = PHI_KEYS.has(k) ? '[REDACTED]' : v;
+  }
+  return redacted;
+}
+
 module.exports = {
   logger,
   initCrashReporter,
   closeLogger,
   getLogDir,
+  redactPhi,
 };

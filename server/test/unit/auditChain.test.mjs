@@ -9,6 +9,9 @@ function makeFakeClient() {
     rows,
     async query(sql, params) {
       const s = sql.replace(/\s+/g, ' ').trim();
+      if (s.startsWith('SELECT pg_advisory_xact_lock')) {
+        return { rows: [] };
+      }
       if (s.startsWith('SELECT record_hash FROM audit_logs')) {
         const orgId = params[0];
         const filtered = rows.filter(r => r.org_id === orgId);

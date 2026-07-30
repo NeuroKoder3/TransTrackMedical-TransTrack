@@ -43,8 +43,45 @@ permissions:
   contents: write   # needed to upload to GitHub Releases
 
 jobs:
+  ci-gate:
+    name: CI gate — tests must pass before build
+    runs-on: ubuntu-latest
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y python3 make g++
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Rebuild native modules
+        run: npm rebuild better-sqlite3-multiple-ciphers
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Run core tests
+        run: npm test
+
+      - name: Install server dependencies
+        run: npm ci
+        working-directory: server
+
+      - name: Run server unit tests
+        run: npm test
+        working-directory: server
+
   preflight:
     name: Preflight — secrets present
+    needs: ci-gate
     runs-on: ubuntu-latest
     outputs:
       windows_mode: ${{ steps.detect.outputs.windows_mode }}

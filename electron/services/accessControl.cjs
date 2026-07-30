@@ -248,6 +248,60 @@ function getAllRoles() {
   }));
 }
 
+// --- Short-lived PHI access grants ---
+
+const _phiGrants = new Map();
+const PHI_GRANT_TTL_MS = 30 * 60 * 1000; // 30 minutes
+
+function _pruneExpiredGrants() {
+  const now = Date.now();
+  for (const [key, grant] of _phiGrants.entries()) {
+    if (grant.expiresAt < now) _phiGrants.delete(key);
+  }
+}
+
+function authorizeAndLogPhiAccess({ permission, entityType, entityId, justification, user }) {
+  if (!permission || !entityType || !entityId || !user) {
+    return { granted: false, reason: 'Missing required parameters' };
+  }
+  if (!hasPermission(user.role, permission)) {
+    return { granted: false, reason: 'Permission denied' };
+  }
+  if (!justification || typeof justification !== 'string' || justification.trim().length < 10) {
+    return { granted: false, reason: 'Justification must be at least 10 characters' };
+  }
+
+  _pruneExpiredGrants();
+
+  const grantId = uuidv4();
+  const expiresAt = Date.now() + PHI_GRANT_TTL_MS;
+  const grantKey = `${user.id}:${entityType}:${entityId}`;
+
+  _phiGrants.set(grantKey, { grantId, expiresAt, permission, justification: justification.trim() });
+
+  try {
+    const db = getDatabase();
+    const orgId = db.prepare('SELECT org_id FROM users WHERE id = ?').get(user.id)?.org_id || 'SYSTEM';
+    db.prepare(`
+      INSERT INTO access_justification_logs (
+        id, org_id, user_id, user_email, user_role, permission, entity_type, entity_id,
+        justification_reason, justification_details, access_time
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    `).run(
+      grantId, orgId, user.id, user.email, user.role, permission,
+      entityType, entityId, 'phi_access', justification.trim()
+    );
+  } catch { /* audit failure should not block access */ }
+
+  return { granted: true, grantId, expiresAt: new Date(expiresAt).toISOString() };
+}
+
+function hasValidPhiGrant(userId, entityType, entityId) {
+  _pruneExpiredGrants();
+  const key = `${userId}:${entityType}:${entityId}`;
+  return _phiGrants.has(key);
+}
+
 module.exports = {
   PERMISSIONS,
   ROLES,
@@ -259,4 +313,6 @@ module.exports = {
   validateAccessRequest,
   getRolePermissions,
   getAllRoles,
+  authorizeAndLogPhiAccess,
+  hasValidPhiGrant,
 };
