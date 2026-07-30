@@ -161,7 +161,9 @@ function createMainWindow() {
       : ["'self'"];
     if (apiOrigin && !connectSrc.includes(apiOrigin)) connectSrc.push(apiOrigin);
 
-    const scriptSrc = isDev ? "script-src 'self' 'unsafe-inline'" : "script-src 'self'";
+    const scriptSrc = (isDev || process.env.NODE_ENV === 'test')
+      ? "script-src 'self' 'unsafe-inline'"
+      : "script-src 'self'";
     const cspDirectives = [
       "default-src 'self'",
       scriptSrc,

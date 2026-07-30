@@ -66,27 +66,24 @@ test.beforeAll(async () => {
     timeout: 45000,
   });
 
+  // Splash has no preload. Wait until a window exposes electronAPI.
+  const deadline = Date.now() + 45000;
   window = await app.firstWindow({ timeout: 30000 });
-
-  const isMainWindow = (w) => {
-    try {
-      const url = w.url();
-      return url.includes('index.html') || url.includes('localhost');
-    } catch {
-      return false;
+  while (Date.now() < deadline) {
+    const windows = app.windows();
+    for (const w of windows) {
+      const hasApi = await w
+        .evaluate(() => !!(window.electronAPI && window.electronAPI.auth && window.electronAPI.auth.login))
+        .catch(() => false);
+      if (hasApi) {
+        window = w;
+        await window.waitForLoadState('domcontentloaded', { timeout: 15000 }).catch(() => {});
+        return;
+      }
     }
-  };
-
-  if (!isMainWindow(window)) {
-    const mainWindow = await app
-      .waitForEvent('window', { timeout: 30000 })
-      .catch(() => null);
-    if (mainWindow) {
-      window = mainWindow;
-    }
+    await new Promise((r) => setTimeout(r, 400));
   }
-
-  await window.waitForLoadState('domcontentloaded', { timeout: 30000 });
+  throw new Error('Timed out waiting for Electron window with electronAPI preload bridge');
 });
 
 test.afterAll(async () => {
@@ -114,35 +111,46 @@ test.describe('TransTrack — Critical Path (login → patient → audit → bac
   // STEP 1 — Login
   // -----------------------------------------------------------------------
   test('Step 1 — login as the seeded administrator via the IPC bridge', async () => {
-    await window.waitForTimeout(2000);
+    await window.waitForFunction(
+      () => !!(window.electronAPI && window.electronAPI.auth && window.electronAPI.auth.login),
+      { timeout: 30000 },
+    );
 
     const e2ePassword =
       process.env.TRANSTRACK_INITIAL_ADMIN_PASSWORD || 'E2E_ONLY_DoNotUseInProd!';
+    const nextPassword = `${e2ePassword}_Rotated1!`;
 
-    const result = await window.evaluate(async (password) => {
+    const result = await window.evaluate(async ({ password, next }) => {
       try {
         const r = await window.electronAPI.auth.login({
           email: 'admin@transtrack.local',
           password,
         });
-        return { ok: true, hasUser: !!(r && (r.user || r.id || r.email)) };
+        if (r && (r.mustChangePassword || r.mfaEnrollmentRequired || r.user?.must_change_password)) {
+          if (r.mustChangePassword || r.user?.must_change_password) {
+            await window.electronAPI.auth.changePassword({
+              currentPassword: password,
+              newPassword: next,
+            });
+            const r2 = await window.electronAPI.auth.login({
+              email: 'admin@transtrack.local',
+              password: next,
+            });
+            return { ok: true, hasUser: !!(r2 && (r2.user || r2.id || r2.email)), rotated: true };
+          }
+        }
+        return { ok: true, hasUser: !!(r && (r.user || r.id || r.email || r.success)) };
       } catch (e) {
         return { ok: false, error: String(e && e.message ? e.message : e) };
       }
-    }, e2ePassword);
+    }, { password: e2ePassword, next: nextPassword });
 
     ctx.loginAttempted = true;
-
-    // The seeded admin account requires a forced password change on first
-    // login. Either outcome is acceptable evidence that the auth IPC is
-    // wired through correctly: a successful session, OR a structured
-    // "must change password" / "invalid credentials" error from the handler.
     expect(result).toBeDefined();
     if (!result.ok) {
-      console.warn('[critical-path] login returned error (acceptable):', result.error);
-    } else {
-      expect(result.hasUser).toBeTruthy();
+      throw new Error(`[critical-path] login MUST succeed via electronAPI: ${result.error}`);
     }
+    expect(result.hasUser).toBeTruthy();
   });
 
   // -----------------------------------------------------------------------
