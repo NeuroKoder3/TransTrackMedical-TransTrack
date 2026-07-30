@@ -121,6 +121,10 @@ jobs:
       JWT_SECRET: ci-test-secret-at-least-32-bytes-long!!
       NODE_ENV: test
       PGSSL: disable
+      HL7_ALLOW_PLAINTEXT: '1'
+      HL7_MLLP_TLS_REQUIRE_CLIENT_CERT: 'false'
+      REQUIRE_TLS_TERMINATION: 'false'
+      MFA_REQUIRED_FOR_ROLES: ''
     steps:
       - uses: actions/checkout@v7
 

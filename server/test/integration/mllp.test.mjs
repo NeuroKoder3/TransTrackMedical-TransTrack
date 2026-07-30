@@ -16,9 +16,12 @@ const { frame, MllpFramer } = require('../../src/hl7/mllp');
 let app, mllp, port, orgId;
 
 beforeAll(async () => {
+  process.env.NODE_ENV = 'test';
+  process.env.HL7_ALLOW_PLAINTEXT = '1';
   process.env.HL7_MLLP_PORT = '0'; // any free port
   process.env.HL7_MLLP_TLS_CERT_FILE = '';
   process.env.HL7_MLLP_TLS_KEY_FILE = '';
+  process.env.HL7_MLLP_TLS_REQUIRE_CLIENT_CERT = 'false';
   const built = await build();
   app = built.app;
 
@@ -31,7 +34,7 @@ beforeAll(async () => {
   process.env.HL7_DEFAULT_ORG_ID = orgId;
   // Re-load config + start listener on dynamic port
   const cfg = require('../../src/config').load();
-  mllp = hl7Server.start({ config: { ...cfg, HL7_MLLP_PORT: 0, HL7_DEFAULT_ORG_ID: orgId },
+  mllp = hl7Server.start({ config: { ...cfg, HL7_MLLP_PORT: 0, HL7_DEFAULT_ORG_ID: orgId, HL7_ALLOW_PLAINTEXT: true },
                            logger: app.log.child({ component: 'mllp-test' }) });
   await new Promise(resolve => mllp.once('listening', resolve));
   port = mllp.address().port;
@@ -39,8 +42,13 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (mllp) await new Promise(r => mllp.close(r));
-  if (orgId) await query(`DELETE FROM organizations WHERE id = $1`, [orgId]);
-  await app.close();
+  if (orgId) {
+    await query(`DELETE FROM audit_logs WHERE org_id = $1`, [orgId]).catch(() => {});
+    await query(`DELETE FROM hl7_messages WHERE org_id = $1`, [orgId]).catch(() => {});
+    await query(`DELETE FROM hl7_dead_letters WHERE org_id = $1`, [orgId]).catch(() => {});
+    await query(`DELETE FROM organizations WHERE id = $1`, [orgId]).catch(() => {});
+  }
+  if (app) await app.close();
 });
 
 function sendAndCollectAck(host, p, message) {

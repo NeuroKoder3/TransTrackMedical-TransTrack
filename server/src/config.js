@@ -77,7 +77,7 @@ const schema = z.object({
 
   HL7_MLLP_ENABLED: envBool.default(true),
   HL7_MLLP_HOST: z.string().default('0.0.0.0'),
-  HL7_MLLP_PORT: z.coerce.number().int().positive().default(2575),
+  HL7_MLLP_PORT: z.coerce.number().int().min(0).default(2575),
   HL7_MLLP_TLS_CERT_FILE: z.string().optional().default(''),
   HL7_MLLP_TLS_KEY_FILE: z.string().optional().default(''),
   HL7_MLLP_TLS_CA_FILE: z.string().optional().default(''),

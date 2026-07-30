@@ -38,8 +38,16 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  if (orgId) await query(`DELETE FROM organizations WHERE id = $1`, [orgId]);
-  await app.close();
+  if (orgId) {
+    await query(`DELETE FROM audit_logs WHERE org_id = $1`, [orgId]).catch(() => {});
+    await query(`DELETE FROM sessions WHERE org_id = $1`, [orgId]).catch(() => {});
+    await query(`DELETE FROM lab_results WHERE org_id = $1`, [orgId]).catch(() => {});
+    await query(`DELETE FROM fhir_resources WHERE org_id = $1`, [orgId]).catch(() => {});
+    await query(`DELETE FROM patients WHERE org_id = $1`, [orgId]).catch(() => {});
+    await query(`DELETE FROM users WHERE org_id = $1`, [orgId]).catch(() => {});
+    await query(`DELETE FROM organizations WHERE id = $1`, [orgId]).catch(() => {});
+  }
+  if (app) await app.close();
 });
 
 const auth = () => ({ authorization: `Bearer ${access}` });
@@ -98,10 +106,10 @@ describe('FHIR R4', () => {
       valueQuantity: { value: 1.2, unit: 'mg/dL' },
     };
     const findPatient = await query(
-      `SELECT id FROM fhir_resources WHERE org_id = $1 AND resource_type = 'Patient' LIMIT 1`,
+      `SELECT resource_id FROM fhir_resources WHERE org_id = $1 AND resource_type = 'Patient' LIMIT 1`,
       [orgId]
     );
-    obs.subject.reference = `Patient/${findPatient.rows[0].id}`;
+    obs.subject.reference = `Patient/${findPatient.rows[0].resource_id}`;
     const r = await app.inject({
       method: 'POST',
       url: '/fhir/Observation',
