@@ -144,12 +144,24 @@ TransTrack is designed for compliance with:
 
 See `docs/HIPAA_COMPLIANCE_MATRIX.md` for detailed function-level compliance mapping.
 
+## Implementation Notes
+
+- **Desktop password hashing**: uses `bcryptjs` (12 rounds) — pure-JS bcrypt.
+  The server tier uses `argon2` for new accounts.
+- **Audit hash chain**: the desktop application maintains a SHA-256 hash chain
+  on the `audit_logs` table (see `electron/services/auditChain.cjs`). Each
+  row stores the hash of its content concatenated with the previous row's
+  hash, creating a tamper-evident chain. The server tier's
+  `auditService.js` mirrors this pattern with `prev_hash` in PostgreSQL.
+
 ## Dependencies
 
 Security-critical dependencies:
-- `better-sqlite3-multiple-ciphers` — SQLCipher encryption
-- `bcryptjs` — Password hashing
+- `better-sqlite3-multiple-ciphers` — SQLCipher encryption (AES-256-CBC)
+- `bcryptjs` — Password hashing (desktop)
+- `argon2` — Password hashing (server)
 - `uuid` — Unique identifier generation
+- `jose` — JWT / JWS / JWK operations
 
 Run `npm run security:check` to audit dependencies for known vulnerabilities.
 

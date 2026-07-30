@@ -133,8 +133,8 @@ function register() {
         return { success: false, mfa_required: true, challenge_token: challengeToken };
       }
 
-      // No MFA enrolled but the org/user policy may *require* it
-      const mfaRequired = !!user.mfa_required;
+      // Admins always require MFA — enforce regardless of DB flag.
+      const mfaRequired = !!user.mfa_required || user.role === 'admin';
 
       const sessionId = uuidv4();
       const expiresAtDate = new Date(Date.now() + shared.SESSION_DURATION_MS);
@@ -148,6 +148,13 @@ function register() {
         !!user.must_change_password ||
         passwordHistory.isPasswordExpired(user);
 
+      // Build session restrictions for accounts that still need to
+      // complete security setup. Restricted sessions can only call
+      // the allow-listed IPC channels (password change, MFA, logout).
+      const sessionRestrictions = [];
+      if (mustChangePassword) sessionRestrictions.push('password_change');
+      if (mfaRequired) sessionRestrictions.push('mfa_enroll');
+
       const currentUser = {
         id: user.id,
         email: user.email,
@@ -158,6 +165,7 @@ function register() {
         must_change_password: mustChangePassword,
         mfa_required: mfaRequired,
         mfa_enrolled: false,
+        session_restrictions: sessionRestrictions.length > 0 ? sessionRestrictions : undefined,
       };
 
       shared.setSessionState(sessionId, currentUser, expiresAtDate.getTime(), event?.sender?.id);
@@ -211,6 +219,9 @@ function register() {
       !!user.must_change_password ||
       passwordHistory.isPasswordExpired(user);
 
+    const mfaSessionRestrictions = [];
+    if (mustChangePassword) mfaSessionRestrictions.push('password_change');
+
     const currentUser = {
       id: user.id,
       email: user.email,
@@ -222,6 +233,7 @@ function register() {
       mfa_required: !!user.mfa_required,
       mfa_enrolled: true,
       mfa_method: result.method,
+      session_restrictions: mfaSessionRestrictions.length > 0 ? mfaSessionRestrictions : undefined,
     };
     shared.setSessionState(sessionId, currentUser, expiresAtDate.getTime(), event?.sender?.id);
     shared.logAudit('login', 'User', user.id, null,

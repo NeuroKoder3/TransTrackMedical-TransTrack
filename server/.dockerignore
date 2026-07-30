@@ -1,0 +1,14 @@
+node_modules
+npm-debug.log
+.env
+.env.*
+test
+coverage
+*.test.*
+vitest.config.*
+vitest.integration.*
+.eslintrc*
+eslint.config.*
+README.md
+Dockerfile
+.dockerignore

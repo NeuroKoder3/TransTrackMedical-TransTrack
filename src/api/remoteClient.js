@@ -203,8 +203,11 @@ class RemoteClient {
     me: async () => this._fetch('/auth/me'),
     isAuthenticated: async () => !!this.tokens.getAccess(),
     redirectToLogin: () => { window.location.hash = '#/login'; },
-    changePassword: async ({ current, next }) =>
-      this._fetch('/auth/password/change', { method: 'POST', body: { current, next } }),
+    changePassword: async ({ currentPassword, newPassword, current, next }) =>
+      this._fetch('/auth/password/change', {
+        method: 'POST',
+        body: { current: current || currentPassword, next: next || newPassword },
+      }),
   };
 
   // --- MFA ---
@@ -344,9 +347,19 @@ class RemoteClient {
         }
 
         // EHRIntegration / rules / etc. are desktop config — not on the HTTP API.
-        // Remote login has no Electron SQLite session, so IPC entity:create would
-        // fail with "Session expired". Persist in sessionStorage instead.
+        // In production, clinical config must not reside in browser sessionStorage.
         if (LOCAL_CONFIG_ENTITIES.has(entityName)) {
+          if (typeof import.meta !== 'undefined' && import.meta.env?.PROD) {
+            const msg = 'Remote storage of clinical config is disabled in production';
+            return {
+              list: async () => { throw new Error(msg); },
+              filter: async () => { throw new Error(msg); },
+              get: async () => { throw new Error(msg); },
+              create: async () => { throw new Error(msg); },
+              update: async () => { throw new Error(msg); },
+              delete: async () => { throw new Error(msg); },
+            };
+          }
           return browserEntityStore(entityName);
         }
 

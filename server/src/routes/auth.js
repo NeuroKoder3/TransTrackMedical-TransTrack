@@ -10,6 +10,20 @@ const oidcMod = require('../auth/oidc');
 const { errors } = require('../util/errors');
 const { setSessionCookies, clearSessionCookies, readRefreshToken } = require('../auth/sessionCookies');
 
+const VALID_ROLES = new Set(['admin', 'coordinator', 'physician', 'user', 'viewer', 'regulator']);
+
+function mapSsoRole(rawRole, config) {
+  if (!rawRole) {
+    if (config.SSO_UNKNOWN_ROLE_POLICY === 'deny') return null;
+    return 'user';
+  }
+  const mapped = config.SSO_ROLE_MAP_PARSED?.[rawRole];
+  if (mapped && VALID_ROLES.has(mapped)) return mapped;
+  if (VALID_ROLES.has(rawRole)) return rawRole;
+  if (config.SSO_UNKNOWN_ROLE_POLICY === 'deny') return null;
+  return 'user';
+}
+
 module.exports = async function authRoutes(app, opts) {
   const { config } = opts;
 
@@ -249,6 +263,8 @@ module.exports = async function authRoutes(app, opts) {
       const attrs = samlMod.extractAttributes(profile, config);
       const orgId = config.HL7_DEFAULT_ORG_ID;
       if (!orgId) throw errors.badRequest('Server has no default org configured for SSO');
+      const resolvedRole = mapSsoRole(attrs.role, config);
+      if (!resolvedRole) throw errors.forbidden('IdP role not permitted by SSO_UNKNOWN_ROLE_POLICY');
       const session = await withTransaction({}, async (client) => {
         const user = await authService.findOrProvisionFederated(client, {
           orgId,
@@ -256,7 +272,7 @@ module.exports = async function authRoutes(app, opts) {
           subject: attrs.nameId,
           email: attrs.email,
           name: attrs.name,
-          role: attrs.role || 'user',
+          role: resolvedRole,
         });
         return authService.issueSessionForFederatedUser(client, config, user, {
           ip: req.ip, userAgent: req.headers['user-agent'],
@@ -276,22 +292,36 @@ module.exports = async function authRoutes(app, opts) {
   // ===========================================================
   if (config.OIDC_ENABLED) {
     await oidcMod.init(config);
-    const stateStore = new Map(); // dev-only; production should use redis/db
+    const pool = require('../db/pool');
+
+    async function cleanupExpiredStates() {
+      try { await pool.query(`DELETE FROM oidc_auth_states WHERE expires_at < now()`); } catch { /* ignore */ }
+    }
+    const cleanupInterval = setInterval(cleanupExpiredStates, 5 * 60 * 1000);
+    app.addHook('onClose', () => clearInterval(cleanupInterval));
 
     app.get('/auth/oidc/login', { config: { public: true, rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (req, reply) => {
       const a = oidcMod.buildAuthRequest();
-      stateStore.set(a.state, a);
+      await pool.query(
+        `INSERT INTO oidc_auth_states (state, payload) VALUES ($1, $2)`,
+        [a.state, JSON.stringify({ codeVerifier: a.codeVerifier, nonce: a.nonce, state: a.state })],
+      );
       return reply.redirect(a.url);
     });
 
     app.get('/auth/oidc/callback', { config: { public: true, rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (req, reply) => {
-      const expected = stateStore.get(req.query.state);
-      if (!expected) throw errors.badRequest('Invalid OIDC state');
-      stateStore.delete(req.query.state);
+      const stateRow = await pool.query(
+        `DELETE FROM oidc_auth_states WHERE state = $1 AND expires_at > now() RETURNING payload`,
+        [req.query.state],
+      );
+      const expected = stateRow.rows[0]?.payload;
+      if (!expected) throw errors.badRequest('Invalid or expired OIDC state');
       const { tokenSet, userInfo } = await oidcMod.handleCallback(req.query, expected);
       const profile = oidcMod.extractProfile(userInfo, tokenSet.claims());
       const orgId = config.HL7_DEFAULT_ORG_ID;
       if (!orgId) throw errors.badRequest('Server has no default org configured for SSO');
+      const resolvedRole = mapSsoRole(profile.role, config);
+      if (!resolvedRole) throw errors.forbidden('IdP role not permitted by SSO_UNKNOWN_ROLE_POLICY');
       const session = await withTransaction({}, async (client) => {
         const user = await authService.findOrProvisionFederated(client, {
           orgId,
@@ -299,7 +329,7 @@ module.exports = async function authRoutes(app, opts) {
           subject: profile.sub,
           email: profile.email,
           name: profile.name,
-          role: profile.role || 'user',
+          role: resolvedRole,
         });
         return authService.issueSessionForFederatedUser(client, config, user, {
           ip: req.ip, userAgent: req.headers['user-agent'],

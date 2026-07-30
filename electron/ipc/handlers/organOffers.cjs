@@ -9,8 +9,10 @@
 'use strict';
 
 const { ipcMain } = require('electron');
+const crypto = require('crypto');
 const offers = require('../../services/organOffers.cjs');
 const shared = require('../shared.cjs');
+const electronicSignature = require('../../services/electronicSignature.cjs');
 
 function register() {
   ipcMain.handle('organOffer:getStatuses', async () => offers.STATUSES);
@@ -62,6 +64,23 @@ function register() {
     shared.logAudit('transition', 'OrganOffer', params.id, null,
       JSON.stringify({ to_status: params.to_status, decline_reason_code: params.decline_reason_code || null }),
       currentUser.email, currentUser.role);
+
+    // Electronic signature for regulated state changes
+    const sigStatuses = ['ACCEPTED_PROVISIONAL', 'ACCEPTED_FINAL', 'DECLINED'];
+    if (sigStatuses.includes(params.to_status)) {
+      try {
+        const payloadHash = crypto.createHash('sha256').update(
+          JSON.stringify({ offerId: params.id, toStatus: params.to_status, declineReason: params.decline_reason_code || null })
+        ).digest('hex');
+        electronicSignature.signRecord({
+          orgId, userId: currentUser.id, userEmail: currentUser.email,
+          userFullName: currentUser.full_name,
+          meaning: params.to_status === 'DECLINED' ? 'declined' : 'accepted',
+          entityType: 'OrganOffer', entityId: params.id, payloadHash,
+        });
+      } catch { /* best effort — do not block transition */ }
+    }
+
     return updated;
   });
 

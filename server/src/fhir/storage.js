@@ -107,4 +107,31 @@ async function search(client, ctx, type, params) {
   return r.rows;
 }
 
-module.exports = { read, create, update, search };
+async function softDelete(client, ctx, type, id) {
+  const cur = await read(client, ctx, type, id);
+  if (!cur || cur.deleted) return null;
+  const versionId = (cur.version_id || 0) + 1;
+  await client.query(
+    `UPDATE fhir_resources
+       SET deleted = TRUE, version_id = $4, last_updated = now()
+     WHERE org_id = $1 AND resource_type = $2 AND resource_id = $3`,
+    [ctx.orgId, type, id, versionId]
+  );
+  return { version_id: versionId };
+}
+
+/**
+ * Return version history for a resource. We store only current state in
+ * fhir_resources (no separate versions table yet), so history returns the
+ * current version only with proper Bundle framing.
+ * NOTE: Profile validation in this server is structural-only (Zod/custom
+ * schemas per resource type) — not a full FHIR profile validator.
+ */
+async function history(client, ctx, type, id, vid) {
+  const row = await read(client, ctx, type, id);
+  if (!row) return null;
+  if (vid && String(row.version_id) !== String(vid)) return null;
+  return [row];
+}
+
+module.exports = { read, create, update, search, softDelete, history };

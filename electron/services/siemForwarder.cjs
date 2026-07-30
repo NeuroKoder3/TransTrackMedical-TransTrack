@@ -41,6 +41,13 @@ function getDestination(id, orgId) {
   ).get(id, orgId);
 }
 
+function _isProductionEnv() {
+  try {
+    const { app } = require('electron');
+    return app.isPackaged;
+  } catch { return process.env.NODE_ENV === 'production'; }
+}
+
 function createDestination({ orgId, name, host, port, protocol = 'udp', format = 'cef',
   enabled = true, severityFilter = 'all', createdBy }) {
   if (!orgId) throw new Error('orgId required');
@@ -49,6 +56,15 @@ function createDestination({ orgId, name, host, port, protocol = 'udp', format =
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('port must be 1..65535');
   if (!['udp', 'tcp', 'tls'].includes(protocol)) throw new Error('Invalid protocol');
   if (!['cef', 'json', 'rfc5424'].includes(format)) throw new Error('Invalid format');
+
+  // Production: require TLS unless explicitly overridden
+  if (_isProductionEnv() && protocol !== 'tls') {
+    if (process.env.TRANSTRACK_SIEM_ALLOW_PLAINTEXT !== '1') {
+      throw new Error(
+        `Protocol '${protocol}' is not permitted in production. Use 'tls' or set TRANSTRACK_SIEM_ALLOW_PLAINTEXT=1 to override.`
+      );
+    }
+  }
 
   const id = uuidv4();
   getDatabase().prepare(`
@@ -89,6 +105,22 @@ function deleteDestination(id, orgId) {
   return { deleted: r.changes > 0 };
 }
 
+// ---------------- PHI redaction ----------------
+
+/**
+ * Redact PHI from a record before forwarding. Never send patient_name.
+ * Details are reduced to action+entityType+entityId only.
+ */
+function redactRecord(record) {
+  return {
+    ...record,
+    patient_name: undefined,
+    details: record.action && record.entity_type
+      ? `${record.action}:${record.entity_type}:${record.entity_id || 'n/a'}`
+      : record.action || null,
+  };
+}
+
 // ---------------- formatting ----------------
 
 function escapeCef(value) {
@@ -96,49 +128,51 @@ function escapeCef(value) {
 }
 
 function toCef(record) {
-  // CEF:0|Vendor|Product|Version|SignatureID|Name|Severity|Extension
-  const sev = mapSeverity(record.action);
+  const r = redactRecord(record);
+  const sev = mapSeverity(r.action);
   const ext = [
-    `rt=${new Date(record.created_at).getTime()}`,
-    `suser=${escapeCef(record.user_email || '')}`,
-    `duser=${escapeCef(record.user_role || '')}`,
-    `cs1Label=org_id`, `cs1=${escapeCef(record.org_id || '')}`,
-    `cs2Label=entity_type`, `cs2=${escapeCef(record.entity_type || '')}`,
-    `cs3Label=entity_id`, `cs3=${escapeCef(record.entity_id || '')}`,
-    `cs4Label=request_id`, `cs4=${escapeCef(record.request_id || '')}`,
-    `act=${escapeCef(record.action || '')}`,
-    `msg=${escapeCef(record.details || '')}`,
+    `rt=${new Date(r.created_at).getTime()}`,
+    `suser=${escapeCef(r.user_email || '')}`,
+    `duser=${escapeCef(r.user_role || '')}`,
+    `cs1Label=org_id`, `cs1=${escapeCef(r.org_id || '')}`,
+    `cs2Label=entity_type`, `cs2=${escapeCef(r.entity_type || '')}`,
+    `cs3Label=entity_id`, `cs3=${escapeCef(r.entity_id || '')}`,
+    `cs4Label=request_id`, `cs4=${escapeCef(r.request_id || '')}`,
+    `act=${escapeCef(r.action || '')}`,
+    `msg=${escapeCef(r.details || '')}`,
   ].join(' ');
-  return `CEF:0|TransTrack|TransTrack|1.0|${escapeCef(record.action || 'audit')}|${escapeCef(record.action || 'audit')}|${sev}|${ext}`;
+  const appVersion = (() => { try { return require('electron').app.getVersion(); } catch { return require('../../package.json').version; } })();
+  return `CEF:0|TransTrack|TransTrack|${appVersion}|${escapeCef(r.action || 'audit')}|${escapeCef(r.action || 'audit')}|${sev}|${ext}`;
 }
 
 function toJson(record) {
+  const r = redactRecord(record);
   return JSON.stringify({
-    timestamp: record.created_at,
+    timestamp: r.created_at,
     host: HOSTNAME,
     product: 'TransTrack',
-    org_id: record.org_id,
-    user_email: record.user_email,
-    user_role: record.user_role,
-    action: record.action,
-    entity_type: record.entity_type,
-    entity_id: record.entity_id,
-    patient_name: record.patient_name,
-    request_id: record.request_id,
-    details: safeParseJson(record.details),
+    org_id: r.org_id,
+    user_email: r.user_email,
+    user_role: r.user_role,
+    action: r.action,
+    entity_type: r.entity_type,
+    entity_id: r.entity_id,
+    request_id: r.request_id,
+    details: r.details,
   });
 }
 
 function toRfc5424(record) {
-  const pri = 14; // facility=user (1), severity=informational (6) → 1*8+6=14
-  const ts = new Date(record.created_at).toISOString();
-  const app = 'transtrack';
+  const r = redactRecord(record);
+  const pri = 14;
+  const ts = new Date(r.created_at).toISOString();
+  const appName = 'transtrack';
   const procid = process.pid;
-  const msgid = String(record.action || 'audit').slice(0, 32);
+  const msgid = String(r.action || 'audit').slice(0, 32);
   const esc = (s) => String(s || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\]/g, '\\]');
-  const sd = `[transtrack@53914 org="${esc(record.org_id)}" user="${esc(record.user_email)}" entity="${esc(record.entity_type)}" id="${esc(record.entity_id)}"]`;
-  const msg = String(record.details || '').replace(/[\r\n]+/g, ' ');
-  return `<${pri}>1 ${ts} ${HOSTNAME} ${app} ${procid} ${msgid} ${sd} ${msg}`;
+  const sd = `[transtrack@53914 org="${esc(r.org_id)}" user="${esc(r.user_email)}" entity="${esc(r.entity_type)}" id="${esc(r.entity_id)}"]`;
+  const msg = String(r.details || '').replace(/[\r\n]+/g, ' ');
+  return `<${pri}>1 ${ts} ${HOSTNAME} ${appName} ${procid} ${msgid} ${sd} ${msg}`;
 }
 
 function safeParseJson(s) {
@@ -199,7 +233,7 @@ function ensureSocket(dest, st) {
     sock.on('close', () => { st.socket = null; });
     st.socket = sock;
   } else if (dest.protocol === 'tls') {
-    const sock = tls.connect({ host: dest.host, port: dest.port, rejectUnauthorized: true });
+    const sock = tls.connect({ host: dest.host, port: dest.port, rejectUnauthorized: true, minVersion: 'TLSv1.2' });
     sock.on('error', (err) => { recordFailure(dest.id, err.message); try { sock.destroy(); } catch {} st.socket = null; });
     sock.on('close', () => { st.socket = null; });
     st.socket = sock;

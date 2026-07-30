@@ -182,4 +182,149 @@ module.exports = async function fhirRoutes(app, opts) {
       return row.body;
     });
   });
+
+  // ----- DELETE ---------------------------------------------------------------
+
+  app.delete('/fhir/:type/:id', {
+    preHandler: [async (req) => {
+      const { type } = req.params;
+      if (SUPPORTED.has(type)) await requireSmartScope(type, 'd')(req);
+    }],
+  }, async (req, reply) => {
+    const { type, id } = req.params;
+    if (!SUPPORTED.has(type)) throw errors.badRequest(`Unsupported resourceType ${type}`);
+    return withTransaction(req.auth, async (client) => {
+      const result = await storage.softDelete(client, req.auth, type, id);
+      if (!result) {
+        reply.code(404).type('application/fhir+json');
+        return bundle.operationOutcome({ diagnostics: 'not found' });
+      }
+      reply.code(204);
+      setImmediate(() => subscriptions.notify(req.auth, { resourceType: type, id }, 'delete').catch(() => {}));
+      return '';
+    });
+  });
+
+  // ----- History -------------------------------------------------------------
+
+  app.get('/fhir/:type/:id/_history', {
+    preHandler: [async (req) => {
+      const { type } = req.params;
+      if (SUPPORTED.has(type)) await requireSmartScope(type, 'r')(req);
+    }],
+  }, async (req, reply) => {
+    const { type, id } = req.params;
+    if (!SUPPORTED.has(type)) {
+      reply.code(404).type('application/fhir+json');
+      return bundle.operationOutcome({ diagnostics: `Unsupported resourceType ${type}` });
+    }
+    return withTransaction(req.auth, async (client) => {
+      const rows = await storage.history(client, req.auth, type, id);
+      if (!rows) {
+        reply.code(404).type('application/fhir+json');
+        return bundle.operationOutcome({ diagnostics: 'not found' });
+      }
+      reply.type('application/fhir+json');
+      return {
+        resourceType: 'Bundle',
+        type: 'history',
+        total: rows.length,
+        entry: rows.map((r) => ({
+          fullUrl: `${baseUrl}/${type}/${id}`,
+          resource: r.body,
+          request: { method: r.deleted ? 'DELETE' : 'PUT', url: `${type}/${id}` },
+          response: { status: r.deleted ? '410 Gone' : '200 OK', lastModified: r.last_updated },
+        })),
+      };
+    });
+  });
+
+  app.get('/fhir/:type/:id/_history/:vid', {
+    preHandler: [async (req) => {
+      const { type } = req.params;
+      if (SUPPORTED.has(type)) await requireSmartScope(type, 'r')(req);
+    }],
+  }, async (req, reply) => {
+    const { type, id, vid } = req.params;
+    if (!SUPPORTED.has(type)) {
+      reply.code(404).type('application/fhir+json');
+      return bundle.operationOutcome({ diagnostics: `Unsupported resourceType ${type}` });
+    }
+    return withTransaction(req.auth, async (client) => {
+      const rows = await storage.history(client, req.auth, type, id, vid);
+      if (!rows || rows.length === 0) {
+        reply.code(404).type('application/fhir+json');
+        return bundle.operationOutcome({ diagnostics: 'version not found' });
+      }
+      reply.type('application/fhir+json');
+      return rows[0].body;
+    });
+  });
+
+  // ----- Transaction Bundle ---------------------------------------------------
+
+  app.post('/fhir', {}, async (req, reply) => {
+    const body = req.body;
+    if (!body || body.resourceType !== 'Bundle' || body.type !== 'transaction') {
+      throw errors.badRequest('POST /fhir expects a Bundle with type=transaction');
+    }
+    const entries = body.entry || [];
+    if (entries.length === 0) {
+      throw errors.badRequest('Transaction bundle has no entries');
+    }
+    return withTransaction(req.auth, async (client) => {
+      const results = [];
+      for (const entry of entries) {
+        const request = entry.request;
+        if (!request || !request.method || !request.url) {
+          throw errors.badRequest('Each entry must have a request with method and url');
+        }
+        const [type, id] = request.url.split('/').filter(Boolean);
+        if (!type || !SUPPORTED.has(type)) {
+          throw errors.badRequest(`Unsupported resourceType: ${type}`);
+        }
+        const handler = resources[type];
+        let result;
+        switch (request.method.toUpperCase()) {
+          case 'POST': {
+            if (handler.validate) handler.validate(entry.resource);
+            const row = await storage.create(client, req.auth, type, entry.resource);
+            result = { status: '201', location: `${type}/${row.body.id}`, resource: row.body };
+            break;
+          }
+          case 'PUT': {
+            if (!id) throw errors.badRequest('PUT requires resource id in url');
+            if (handler.validate) handler.validate(entry.resource);
+            const row = await storage.update(client, req.auth, type, id, entry.resource);
+            result = { status: '200', resource: row.body };
+            break;
+          }
+          case 'DELETE': {
+            if (!id) throw errors.badRequest('DELETE requires resource id in url');
+            await storage.softDelete(client, req.auth, type, id);
+            result = { status: '204' };
+            break;
+          }
+          case 'GET': {
+            if (!id) throw errors.badRequest('GET requires resource id in url');
+            const row = await storage.read(client, req.auth, type, id);
+            result = row ? { status: '200', resource: row.body } : { status: '404' };
+            break;
+          }
+          default:
+            throw errors.badRequest(`Unsupported method: ${request.method}`);
+        }
+        results.push(result);
+      }
+      reply.code(200).type('application/fhir+json');
+      return {
+        resourceType: 'Bundle',
+        type: 'transaction-response',
+        entry: results.map((r) => ({
+          response: { status: r.status, location: r.location },
+          resource: r.resource || undefined,
+        })),
+      };
+    });
+  });
 };

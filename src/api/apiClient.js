@@ -15,7 +15,21 @@ let _cached = null;
 let _cachedMode = null;
 
 function resolveClient() {
-  const mode = isRemoteEnabled() ? 'remote' : 'local';
+  const wantsRemote = isRemoteEnabled();
+
+  if (wantsRemote && typeof import.meta !== 'undefined' && import.meta.env?.PROD) {
+    const allowRemote = typeof import.meta !== 'undefined' && import.meta.env?.VITE_ALLOW_REMOTE === 'true';
+    if (!allowRemote) {
+      console.warn('[apiClient] Remote mode blocked in production build (set VITE_ALLOW_REMOTE=true to override). Falling back to local.');
+      if (!_cached || _cachedMode !== 'local') {
+        _cachedMode = 'local';
+        _cached = localClient;
+      }
+      return _cached;
+    }
+  }
+
+  const mode = wantsRemote ? 'remote' : 'local';
   if (_cached && _cachedMode === mode) return _cached;
   _cachedMode = mode;
   _cached = mode === 'remote' ? createRemoteClient() : localClient;

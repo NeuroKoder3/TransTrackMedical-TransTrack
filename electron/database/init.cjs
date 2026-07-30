@@ -130,9 +130,11 @@ function readProtectedKey(filePath) {
  *   1. OS-native safeStorage (DPAPI on Windows, Keychain on macOS,
  *      libsecret on Linux) — key is encrypted before hitting disk.
  *   2. Plaintext file with 0o600 permissions (fallback when no keyring
- *      daemon is available).
+ *      daemon is available — BLOCKED in production builds).
  */
 function getEncryptionKey() {
+  const isProduction = (app && app.isPackaged) || process.env.NODE_ENV === 'production';
+
   const keyPath = getKeyPath();
   const keyBackupPath = getKeyBackupPath();
 
@@ -147,11 +149,28 @@ function getEncryptionKey() {
     return backupKey;
   }
 
+  // Fail-closed: production builds MUST have safeStorage for key creation.
+  if (isProduction && !isSafeStorageAvailable()) {
+    throw new Error(
+      'Cannot create database encryption key: OS keychain (safeStorage) is unavailable. ' +
+      'TransTrack requires DPAPI/Keychain/libsecret in production. ' +
+      'Plaintext key files are not permitted.'
+    );
+  }
+
   // No existing key — generate a new 256-bit key
   const newKey = crypto.randomBytes(32).toString('hex');
   writeProtectedKey(keyPath, newKey);
   writeProtectedKey(keyBackupPath, newKey);
   return newKey;
+}
+
+/**
+ * Public getter for the database encryption key. Used by disaster-recovery
+ * and backup modules that need to open encrypted backup files.
+ */
+function getDatabaseEncryptionKey() {
+  return getEncryptionKey();
 }
 
 /**
@@ -269,13 +288,32 @@ async function migrateToEncrypted(unencryptedPath, encryptedPath, encryptionKey)
     unencryptedDb.close();
     encryptedDb.close();
     
-    // Backup original unencrypted database
-    const backupPath = getUnencryptedDatabasePath();
-    fs.renameSync(unencryptedPath, backupPath);
-    
     // Move new encrypted database to final location
     fs.renameSync(encryptedPath + '.new', encryptedPath);
-    
+
+    // Securely overwrite the plaintext database: write zeros over the file,
+    // then unlink. Never leave plaintext PHI on disk.
+    try {
+      const stat = fs.statSync(unencryptedPath);
+      const fd = fs.openSync(unencryptedPath, 'w');
+      const zeroChunk = Buffer.alloc(Math.min(stat.size, 64 * 1024), 0);
+      let remaining = stat.size;
+      while (remaining > 0) {
+        const toWrite = Math.min(remaining, zeroChunk.length);
+        fs.writeSync(fd, zeroChunk, 0, toWrite);
+        remaining -= toWrite;
+      }
+      fs.fdatasyncSync(fd);
+      fs.closeSync(fd);
+      fs.unlinkSync(unencryptedPath);
+    } catch (wipeErr) {
+      // Best-effort: at minimum, unlink it
+      try { fs.unlinkSync(unencryptedPath); } catch { /* ignore */ }
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('Warning: could not securely wipe plaintext DB:', wipeErr.message);
+      }
+    }
+
     if (process.env.NODE_ENV === 'development') {
       console.log('Database migration to encrypted format completed successfully');
     }
@@ -543,7 +581,13 @@ async function initDatabase() {
   db.pragma(`cipher = 'sqlcipher'`);
   db.pragma(`legacy = 4`); // SQLCipher 4.x compatibility mode
   db.pragma(`key = "x'${encryptionKey}'"`); // Hex key format for binary key
-  
+
+  // Explicit HIPAA-grade cipher parameters (better-sqlite3-multiple-ciphers pragmas)
+  db.pragma('cipher_page_size = 4096');
+  db.pragma('kdf_iter = 256000');
+  db.pragma('cipher_hmac_algorithm = HMAC_SHA512');
+  db.pragma('cipher_kdf_algorithm = PBKDF2_HMAC_SHA512');
+
   // Verify encryption is working by trying to read
   try {
     db.pragma('cipher_version');
@@ -1064,6 +1108,110 @@ async function rekeyDatabase(newKey) {
   }
 }
 
+/**
+ * Restore database from a backup file with full verification.
+ *
+ * Steps:
+ *   1. Verify backup opens with the current encryption key
+ *   2. Close the live database
+ *   3. Copy live DB to .pre-restore backup
+ *   4. Copy backup to temp path, verify temp
+ *   5. Atomic rename over the live DB
+ *   6. Schedule app relaunch
+ */
+async function restoreDatabaseFromBackup(backupPath) {
+  const Database = require('better-sqlite3-multiple-ciphers');
+
+  if (!fs.existsSync(backupPath)) {
+    throw new Error('Backup file not found: ' + backupPath);
+  }
+
+  const encryptionKey = getEncryptionKey();
+  const dbPath = getDatabasePath();
+
+  // Step 1: Verify backup opens with key
+  let testDb = null;
+  try {
+    testDb = new Database(backupPath, { readonly: true, verbose: null });
+    testDb.pragma(`cipher = 'sqlcipher'`);
+    testDb.pragma(`legacy = 4`);
+    testDb.pragma(`key = "x'${encryptionKey}'"`);
+    testDb.pragma('cipher_page_size = 4096');
+    testDb.pragma('kdf_iter = 256000');
+    testDb.pragma('cipher_hmac_algorithm = HMAC_SHA512');
+    testDb.pragma('cipher_kdf_algorithm = PBKDF2_HMAC_SHA512');
+    const check = testDb.pragma('integrity_check');
+    if (check[0]?.integrity_check !== 'ok') {
+      throw new Error('Backup integrity check failed');
+    }
+    testDb.close();
+    testDb = null;
+  } catch (err) {
+    if (testDb) { try { testDb.close(); } catch { /* ignore */ } }
+    throw new Error('Backup verification failed: ' + err.message);
+  }
+
+  // Step 2: Close live database
+  if (db) {
+    db.close();
+    db = null;
+    encryptionEnabled = false;
+  }
+
+  // Step 3: Copy live to .pre-restore
+  const preRestorePath = dbPath + '.pre-restore.' + Date.now();
+  if (fs.existsSync(dbPath)) {
+    fs.copyFileSync(dbPath, preRestorePath);
+  }
+
+  // Step 4: Copy backup to temp, verify temp
+  const tempPath = dbPath + '.restore-tmp';
+  try {
+    fs.copyFileSync(backupPath, tempPath);
+
+    let verifyDb = null;
+    try {
+      verifyDb = new Database(tempPath, { readonly: true, verbose: null });
+      verifyDb.pragma(`cipher = 'sqlcipher'`);
+      verifyDb.pragma(`legacy = 4`);
+      verifyDb.pragma(`key = "x'${encryptionKey}'"`);
+      verifyDb.pragma('cipher_page_size = 4096');
+      verifyDb.pragma('kdf_iter = 256000');
+      verifyDb.pragma('cipher_hmac_algorithm = HMAC_SHA512');
+      verifyDb.pragma('cipher_kdf_algorithm = PBKDF2_HMAC_SHA512');
+      const check2 = verifyDb.pragma('integrity_check');
+      if (check2[0]?.integrity_check !== 'ok') {
+        throw new Error('Copied backup failed integrity check');
+      }
+      verifyDb.close();
+      verifyDb = null;
+    } catch (verifyErr) {
+      if (verifyDb) { try { verifyDb.close(); } catch { /* ignore */ } }
+      throw verifyErr;
+    }
+
+    // Step 5: Atomic rename over live DB
+    fs.renameSync(tempPath, dbPath);
+  } catch (restoreErr) {
+    // Cleanup temp on failure
+    try { fs.unlinkSync(tempPath); } catch { /* ignore */ }
+    throw new Error('Restore failed: ' + restoreErr.message);
+  }
+
+  // Step 6: Schedule app relaunch
+  if (app) {
+    app.relaunch();
+    app.exit(0);
+  }
+
+  return {
+    success: true,
+    preRestoreBackup: preRestorePath,
+    restoredFrom: backupPath,
+    requiresRestart: true,
+  };
+}
+
 module.exports = {
   // Database initialization
   initDatabase,
@@ -1074,6 +1222,7 @@ module.exports = {
   
   // Encryption
   isEncryptionEnabled,
+  getDatabaseEncryptionKey,
   verifyDatabaseIntegrity,
   rekeyDatabase,
   getEncryptionStatus,
@@ -1088,4 +1237,7 @@ module.exports = {
   hasValidLicense,
   getPatientCount,
   getUserCount,
+
+  // Restore
+  restoreDatabaseFromBackup,
 };

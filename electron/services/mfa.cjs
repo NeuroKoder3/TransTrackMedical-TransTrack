@@ -122,9 +122,23 @@ function timingSafeEqualStr(a, b) {
 
 // ---------------- Encryption at rest ----------------
 
+function _isSafeStorageReady() {
+  return !!(safeStorage && safeStorage.isEncryptionAvailable && safeStorage.isEncryptionAvailable());
+}
+
+function _isProductionMfa() {
+  try {
+    const { app } = require('electron');
+    return app.isPackaged;
+  } catch { return process.env.NODE_ENV === 'production'; }
+}
+
 function encryptSecret(secret) {
-  if (safeStorage && safeStorage.isEncryptionAvailable && safeStorage.isEncryptionAvailable()) {
+  if (_isSafeStorageReady()) {
     return 'safe:' + safeStorage.encryptString(secret).toString('base64');
+  }
+  if (_isProductionMfa()) {
+    throw new Error('Cannot enroll MFA: OS keychain (safeStorage) is unavailable in production');
   }
   return 'b64:' + Buffer.from(secret, 'utf8').toString('base64');
 }
@@ -132,15 +146,31 @@ function encryptSecret(secret) {
 function decryptSecret(stored) {
   if (!stored) throw new Error('No MFA secret stored');
   if (stored.startsWith('safe:')) {
-    if (!safeStorage || !safeStorage.isEncryptionAvailable || !safeStorage.isEncryptionAvailable()) {
+    if (!_isSafeStorageReady()) {
       throw new Error('safeStorage unavailable; cannot decrypt MFA secret');
     }
     return safeStorage.decryptString(Buffer.from(stored.slice(5), 'base64'));
   }
   if (stored.startsWith('b64:')) {
-    return Buffer.from(stored.slice(4), 'base64').toString('utf8');
+    const plaintext = Buffer.from(stored.slice(4), 'base64').toString('utf8');
+    // Auto-migrate b64 to safeStorage-encrypted form when available
+    if (_isSafeStorageReady()) {
+      try {
+        const upgraded = 'safe:' + safeStorage.encryptString(plaintext).toString('base64');
+        const { getDatabase } = require('../database/init.cjs');
+        getDatabase().prepare('UPDATE user_mfa SET secret_encrypted = ? WHERE secret_encrypted = ?').run(upgraded, stored);
+      } catch { /* best effort — will retry next read */ }
+    }
+    return plaintext;
   }
-  // legacy plaintext fallback
+  // legacy plaintext fallback — migrate on read
+  if (_isSafeStorageReady()) {
+    try {
+      const upgraded = 'safe:' + safeStorage.encryptString(stored).toString('base64');
+      const { getDatabase } = require('../database/init.cjs');
+      getDatabase().prepare('UPDATE user_mfa SET secret_encrypted = ? WHERE secret_encrypted = ?').run(upgraded, stored);
+    } catch { /* best effort */ }
+  }
   return stored;
 }
 

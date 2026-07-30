@@ -64,6 +64,19 @@ function register() {
   ipcMain.handle('mfa:disable', async (_event, params = {}) => {
     requireSession();
     const { currentUser } = shared.getSessionState();
+
+    // Re-auth with current password is mandatory before disabling MFA.
+    if (!params.currentPassword) {
+      throw new Error('Current password is required to disable MFA');
+    }
+    const bcrypt = require('bcryptjs');
+    const { getDatabase } = require('../../database/init.cjs');
+    const db = getDatabase();
+    const userRow = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(currentUser.id);
+    if (!userRow) throw new Error('User not found');
+    const pwValid = await bcrypt.compare(params.currentPassword, userRow.password_hash);
+    if (!pwValid) throw new Error('Current password is incorrect');
+
     // Only allow self-disable, or admin disabling another user
     let targetUserId = currentUser.id;
     if (params.user_id && params.user_id !== currentUser.id) {

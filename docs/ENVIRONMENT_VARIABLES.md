@@ -58,20 +58,77 @@ the `.app` bundle is shipped unnotarized (Gatekeeper will flag it).
 
 | Variable                   | Required? | Default | Notes |
 |----------------------------|-----------|---------|-------|
-| `PORT`                     | Optional  | `8080`  | Server listen port. |
-| `DATABASE_URL`             | Required  | —       | PostgreSQL connection URL. |
-| `JWT_SIGNING_KEY`          | Required  | —       | Random 32+ byte string. |
-| `MFA_ENCRYPTION_KEY`       | Required  | —       | 32-byte hex for TOTP secret encryption. |
+| `HTTP_PORT`                | Optional  | `8080`  | Server listen port. |
+| `HTTP_HOST`                | Optional  | `0.0.0.0` | Server listen address. |
+| `DATABASE_URL`             | Required  | —       | PostgreSQL connection URL (e.g. `postgres://user:pass@host/db`). |
+| `JWT_SECRET`               | Required  | —       | Random 32+ byte string for signing JWTs. |
+| `JWT_ISSUER`               | Optional  | `transtrack` | JWT `iss` claim value. |
+| `JWT_AUDIENCE`             | Optional  | `transtrack-api` | JWT `aud` claim value. |
+| `JWT_ACCESS_TTL_SECONDS`   | Optional  | `3600`  | Access token TTL. |
+| `JWT_REFRESH_TTL_SECONDS`  | Optional  | `2592000` | Refresh token TTL. |
+| `MFA_ISSUER_LABEL`         | Optional  | `TransTrack` | Label shown in authenticator apps. |
+| `MFA_REQUIRED_FOR_ROLES`   | Optional  | `admin,coordinator,physician,regulator` | Comma-separated list of roles that require MFA. |
+| `LOCKOUT_THRESHOLD`        | Optional  | `5`     | Failed login attempts before lockout. |
+| `LOCKOUT_WINDOW_MINUTES`   | Optional  | `15`    | Window for counting failures. |
+| `LOCKOUT_DURATION_MINUTES` | Optional  | `30`    | Account lockout duration. |
+| `PASSWORD_MIN_LENGTH`      | Optional  | `12`    | Minimum password length. |
+| `PASSWORD_HISTORY_COUNT`   | Optional  | `10`    | Number of previous passwords to block. |
+| `LOG_LEVEL`                | Optional  | `info`  | Pino log level (fatal/error/warn/info/debug/trace). |
+| `TRUST_PROXY`              | Optional  | `false` | Set `true` behind a reverse proxy. |
+| `CORS_ALLOWED_ORIGINS`     | Optional  | —       | Comma-separated origins for CORS. |
 
-### Identity provider
+### Identity provider (SSO)
 
 | Variable                   | Required when    | Notes |
 |----------------------------|------------------|-------|
-| `OIDC_ISSUER_URL`          | OIDC enabled     | e.g. `https://customer.okta.com` |
+| `OIDC_ENABLED`             | Optional         | `true` to enable OIDC login. |
+| `OIDC_ISSUER`              | OIDC enabled     | Discovery URL, e.g. `https://customer.okta.com`. |
 | `OIDC_CLIENT_ID`           | OIDC enabled     | |
 | `OIDC_CLIENT_SECRET`       | OIDC enabled     | |
-| `SAML_IDP_METADATA_URL`    | SAML enabled     | |
-| `SAML_SP_ENTITY_ID`        | SAML enabled     | |
+| `OIDC_REDIRECT_URI`        | OIDC enabled     | Callback URL. |
+| `OIDC_SCOPES`              | Optional         | Default: `openid profile email`. |
+| `OIDC_ROLE_CLAIM`          | Optional         | Default: `transtrack_role`. |
+| `SAML_ENABLED`             | Optional         | `true` to enable SAML login. |
+| `SAML_ENTRY_POINT`         | SAML enabled     | IdP SSO URL. |
+| `SAML_ISSUER`              | Optional         | SP entity ID. Default: `urn:transtrack:sp`. |
+| `SAML_CALLBACK_URL`        | SAML enabled     | SP ACS URL. |
+| `SAML_IDP_CERT`            | SAML enabled     | IdP signing certificate (PEM). |
+| `SAML_ROLE_ATTRIBUTE`      | Optional         | OID for role claim. |
+| `SSO_ROLE_MAP`             | Optional         | JSON mapping IdP roles to TransTrack roles, e.g. `{"IdPAdmin":"admin"}`. |
+| `SSO_UNKNOWN_ROLE_POLICY`  | Optional         | `deny` or `default_user` (default). |
+
+### HL7 / FHIR (server)
+
+| Variable                           | Required? | Default | Notes |
+|------------------------------------|-----------|---------|-------|
+| `HL7_MLLP_ENABLED`                | Optional  | `true`  | Enable MLLP listener. |
+| `HL7_MLLP_HOST`                   | Optional  | `0.0.0.0` | MLLP bind address. |
+| `HL7_MLLP_PORT`                   | Optional  | `2575`  | MLLP listen port. |
+| `HL7_MLLP_TLS_CERT_FILE`          | Optional  | —       | TLS cert for MLLP. |
+| `HL7_MLLP_TLS_KEY_FILE`           | Optional  | —       | TLS key for MLLP. |
+| `HL7_MLLP_TLS_CA_FILE`            | Optional  | —       | CA cert for client auth. |
+| `HL7_MLLP_TLS_REQUIRE_CLIENT_CERT`| Optional  | `true`  | Require mutual TLS. |
+| `HL7_DEFAULT_ORG_ID`              | Optional  | —       | Default org for SSO and HL7 ingest. |
+| `FHIR_BASE_URL`                   | Optional  | `http://localhost:8080/fhir` | FHIR base for self-references. |
+| `FHIR_REQUIRE_AUTH`               | Optional  | `true`  | Require auth on FHIR endpoints. |
+
+### Stripe billing & license provisioning (server)
+
+| Variable                     | Required? | Default | Notes |
+|------------------------------|-----------|---------|-------|
+| `STRIPE_SECRET_KEY`          | Optional  | —       | Routes return 503 if absent. |
+| `STRIPE_WEBHOOK_SECRET`      | Optional  | —       | Webhook signature verification. |
+| `STRIPE_BILLING_RETURN_URL`  | Optional  | —       | Success/cancel URL base. |
+| `STRIPE_PRICE_ID_STARTER`    | Optional  | —       | Stripe price ID for starter tier. |
+| `STRIPE_PRICE_ID_PROFESSIONAL` | Optional | —      | Stripe price ID for professional tier. |
+| `STRIPE_PRICE_ID_ENTERPRISE` | Optional  | —       | Stripe price ID for enterprise tier. |
+| `LICENSE_PRIVATE_KEY_PATH`   | Optional  | —       | Ed25519 private key for signing licenses. Never commit. |
+| `SMTP_HOST`                  | Optional  | —       | SMTP server for emailing licenses. |
+| `SMTP_PORT`                  | Optional  | `587`   | SMTP port. |
+| `SMTP_SECURE`                | Optional  | `false` | Use TLS for SMTP. |
+| `SMTP_USER`                  | Optional  | —       | SMTP username. |
+| `SMTP_PASSWORD`              | Optional  | —       | SMTP password. |
+| `SMTP_FROM`                  | Optional  | —       | Sender email for license delivery. |
 
 ## Epic on FHIR (multi-tenant)
 

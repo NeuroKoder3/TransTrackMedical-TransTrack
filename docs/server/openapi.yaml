@@ -1,0 +1,160 @@
+openapi: 3.0.3
+info:
+  title: TransTrack Server API
+  version: 1.2.0
+  description: |
+    Fastify REST / FHIR / SMART / CDS HTTP API for the optional TransTrack server tier.
+    Desktop IPC APIs remain documented in docs/API_REFERENCE.md.
+    This document matches implemented routes as of the enterprise production-hardening branch.
+  license:
+    name: Proprietary / UNLICENSED
+servers:
+  - url: https://{host}
+    variables:
+      host:
+        default: api.transtrack.example
+paths:
+  /health:
+    get:
+      summary: Liveness
+      security: []
+      responses:
+        '200':
+          description: OK
+  /ready:
+    get:
+      summary: Readiness (DB)
+      security: []
+      responses:
+        '200':
+          description: Ready
+        '503':
+          description: Not ready
+  /metrics:
+    get:
+      summary: Operational counters (localhost or admin)
+      responses:
+        '200':
+          description: Prometheus-like or JSON counters
+  /auth/login:
+    post:
+      summary: Password login (sets httpOnly cookies; access may be in body; refresh cookie-only)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        '200':
+          description: session | mfa_required | must_enroll
+  /auth/mfa/verify:
+    post:
+      summary: Complete MFA challenge
+      security: []
+      responses:
+        '200':
+          description: session
+  /auth/mfa/enroll/begin:
+    post:
+      summary: Begin MFA enrollment (session or enrollment JWT)
+  /auth/mfa/enroll/confirm:
+    post:
+      summary: Confirm MFA enrollment
+  /auth/refresh:
+    post:
+      summary: Rotate refresh cookie; requires active user
+      security: []
+  /auth/logout:
+    post:
+      summary: Revoke session / clear cookies
+  /auth/password/change:
+    post:
+      summary: Change password (accepts current/next or currentPassword/newPassword)
+  /patients:
+    get:
+      summary: List patients (audited as patient.list)
+    post:
+      summary: Create patient
+  /patients/{id}:
+    get:
+      summary: Get patient (audited as patient.read)
+    patch:
+      summary: Update patient
+    delete:
+      summary: Delete / deactivate patient
+  /fhir/metadata:
+    get:
+      summary: CapabilityStatement
+      security: []
+  /fhir/{type}:
+    get:
+      summary: Search
+    post:
+      summary: Create
+  /fhir/{type}/{id}:
+    get:
+      summary: Read
+    put:
+      summary: Update
+    delete:
+      summary: Delete (soft)
+  /fhir/{type}/{id}/_history:
+    get:
+      summary: History (current framing)
+  /fhir/{type}/{id}/_history/{vid}:
+    get:
+      summary: Version read
+  /fhir:
+    post:
+      summary: transaction Bundle
+  /.well-known/smart-configuration:
+    get:
+      summary: SMART discovery
+      security: []
+  /oauth2/authorize:
+    get:
+      summary: Authorization endpoint (redirect_uri + scope constrained)
+      security: []
+    post:
+      summary: Consent + password/MFA (no code until MFA complete)
+      security: []
+  /oauth2/token:
+    post:
+      summary: Token endpoint (authorization_code, refresh_token, client_credentials, jwt-bearer)
+      security: []
+  /oauth2/introspect:
+    post:
+      summary: RFC 7662
+      security: []
+  /oauth2/revoke:
+    post:
+      summary: RFC 7009
+      security: []
+  /hl7/dead-letters:
+    get:
+      summary: List HL7 dead letters (admin)
+  /hl7/dead-letters/{id}/replay:
+    post:
+      summary: Replay dead letter
+  /integrations/epic/import:
+    post:
+      summary: Epic FHIR patient import (org registry in production)
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: transtrack_access
+security:
+  - bearerAuth: []
+  - cookieAuth: []

@@ -515,6 +515,55 @@ const MIGRATIONS = [
       addCol('ehr_imports', 'fhir_version', 'TEXT');
     },
   },
+  {
+    version: 13,
+    name: 'add_audit_hash_chain',
+    description: 'Add prev_hash and record_hash to audit_logs for tamper-evident hash chaining',
+    rollbackSql: null,
+    up(db) {
+      const cols = db.prepare("PRAGMA table_info(audit_logs)").all().map(c => c.name);
+      if (!cols.includes('prev_hash')) {
+        db.exec('ALTER TABLE audit_logs ADD COLUMN prev_hash TEXT');
+      }
+      if (!cols.includes('record_hash')) {
+        db.exec('ALTER TABLE audit_logs ADD COLUMN record_hash TEXT');
+      }
+      if (!cols.includes('user_id')) {
+        db.exec('ALTER TABLE audit_logs ADD COLUMN user_id TEXT');
+      }
+      db.exec('CREATE INDEX IF NOT EXISTS idx_audit_logs_hash_chain ON audit_logs(org_id, id)');
+    },
+  },
+  {
+    version: 14,
+    name: 'add_electronic_signatures',
+    description: 'Electronic signature table for 21 CFR Part 11 compliance',
+    rollbackSql: 'DROP TABLE IF EXISTS electronic_signatures;',
+    up(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS electronic_signatures (
+          id TEXT PRIMARY KEY,
+          org_id TEXT NOT NULL,
+          user_id TEXT NOT NULL,
+          user_email TEXT NOT NULL,
+          user_full_name TEXT,
+          meaning TEXT NOT NULL,
+          entity_type TEXT NOT NULL,
+          entity_id TEXT NOT NULL,
+          payload_hash TEXT NOT NULL,
+          signature_hash TEXT NOT NULL,
+          signed_at TEXT NOT NULL DEFAULT (datetime('now')),
+          ip_address TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE,
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_esig_org ON electronic_signatures(org_id);
+        CREATE INDEX IF NOT EXISTS idx_esig_entity ON electronic_signatures(org_id, entity_type, entity_id);
+        CREATE INDEX IF NOT EXISTS idx_esig_user ON electronic_signatures(org_id, user_id, signed_at DESC);
+      `);
+    },
+  },
 ];
 
 /**

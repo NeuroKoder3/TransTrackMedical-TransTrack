@@ -6,10 +6,12 @@
 
 const { ipcMain } = require('electron');
 const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
 const { getDatabase } = require('../../database/init.cjs');
 const shared = require('../shared.cjs');
 const { hasPermission, PERMISSIONS } = require('../../services/accessControl.cjs');
 const { encryptField, isEncrypted } = require('../../services/secretEncryption.cjs');
+const electronicSignature = require('../../services/electronicSignature.cjs');
 
 /**
  * Columns that hold raw secrets we must transparently encrypt on write.
@@ -63,15 +65,15 @@ function redactSecretsForRenderer(tableName, row) {
 const ENTITY_PERMISSION_MAP = {
   Patient:       { view: PERMISSIONS.PATIENT_VIEW, create: PERMISSIONS.PATIENT_CREATE, update: PERMISSIONS.PATIENT_UPDATE, delete: PERMISSIONS.PATIENT_DELETE },
   DonorOrgan:    { view: PERMISSIONS.DONOR_VIEW,   create: PERMISSIONS.DONOR_CREATE,   update: PERMISSIONS.DONOR_UPDATE,   delete: PERMISSIONS.DONOR_DELETE },
-  Match:         { view: PERMISSIONS.MATCH_VIEW,    create: PERMISSIONS.MATCH_CREATE,   update: PERMISSIONS.MATCH_UPDATE,   delete: null },
-  Notification:       { view: null, create: null, update: null, delete: null },
-  NotificationRule:   { view: null, create: PERMISSIONS.SETTINGS_MANAGE, update: PERMISSIONS.SETTINGS_MANAGE, delete: PERMISSIONS.SETTINGS_MANAGE },
-  PriorityWeights:    { view: null, create: PERMISSIONS.SETTINGS_MANAGE, update: PERMISSIONS.SETTINGS_MANAGE, delete: PERMISSIONS.SETTINGS_MANAGE },
-  EHRIntegration:     { view: null, create: PERMISSIONS.SYSTEM_CONFIGURE, update: PERMISSIONS.SYSTEM_CONFIGURE, delete: PERMISSIONS.SYSTEM_CONFIGURE },
-  EHRImport:          { view: null, create: PERMISSIONS.SYSTEM_CONFIGURE, update: null, delete: null },
-  EHRSyncLog:         { view: null, create: null, update: null, delete: null },
-  EHRValidationRule:  { view: null, create: PERMISSIONS.SYSTEM_CONFIGURE, update: PERMISSIONS.SYSTEM_CONFIGURE, delete: PERMISSIONS.SYSTEM_CONFIGURE },
-  AuditLog:           { view: PERMISSIONS.AUDIT_VIEW, create: null, update: null, delete: null },
+  Match:         { view: PERMISSIONS.MATCH_VIEW,    create: PERMISSIONS.MATCH_CREATE,   update: PERMISSIONS.MATCH_UPDATE,   delete: PERMISSIONS.MATCH_VIEW },
+  Notification:       { view: PERMISSIONS.PATIENT_VIEW, create: PERMISSIONS.PATIENT_VIEW, update: PERMISSIONS.PATIENT_VIEW, delete: PERMISSIONS.SETTINGS_MANAGE },
+  NotificationRule:   { view: PERMISSIONS.SETTINGS_MANAGE, create: PERMISSIONS.SETTINGS_MANAGE, update: PERMISSIONS.SETTINGS_MANAGE, delete: PERMISSIONS.SETTINGS_MANAGE },
+  PriorityWeights:    { view: PERMISSIONS.SETTINGS_MANAGE, create: PERMISSIONS.SETTINGS_MANAGE, update: PERMISSIONS.SETTINGS_MANAGE, delete: PERMISSIONS.SETTINGS_MANAGE },
+  EHRIntegration:     { view: PERMISSIONS.SYSTEM_CONFIGURE, create: PERMISSIONS.SYSTEM_CONFIGURE, update: PERMISSIONS.SYSTEM_CONFIGURE, delete: PERMISSIONS.SYSTEM_CONFIGURE },
+  EHRImport:          { view: PERMISSIONS.SYSTEM_CONFIGURE, create: PERMISSIONS.SYSTEM_CONFIGURE, update: PERMISSIONS.SYSTEM_CONFIGURE, delete: PERMISSIONS.SYSTEM_CONFIGURE },
+  EHRSyncLog:         { view: PERMISSIONS.SYSTEM_CONFIGURE, create: PERMISSIONS.SYSTEM_CONFIGURE, update: PERMISSIONS.SYSTEM_CONFIGURE, delete: PERMISSIONS.SYSTEM_CONFIGURE },
+  EHRValidationRule:  { view: PERMISSIONS.SYSTEM_CONFIGURE, create: PERMISSIONS.SYSTEM_CONFIGURE, update: PERMISSIONS.SYSTEM_CONFIGURE, delete: PERMISSIONS.SYSTEM_CONFIGURE },
+  AuditLog:           { view: PERMISSIONS.AUDIT_VIEW, create: PERMISSIONS.AUDIT_VIEW, update: PERMISSIONS.AUDIT_VIEW, delete: PERMISSIONS.AUDIT_VIEW },
   User:               { view: PERMISSIONS.USER_MANAGE, create: PERMISSIONS.USER_MANAGE, update: PERMISSIONS.USER_MANAGE, delete: PERMISSIONS.USER_MANAGE },
   ReadinessBarrier:   { view: PERMISSIONS.PATIENT_VIEW, create: PERMISSIONS.PATIENT_UPDATE, update: PERMISSIONS.PATIENT_UPDATE, delete: PERMISSIONS.PATIENT_DELETE },
   AdultHealthHistoryQuestionnaire: { view: PERMISSIONS.PATIENT_VIEW, create: PERMISSIONS.PATIENT_UPDATE, update: PERMISSIONS.PATIENT_UPDATE, delete: PERMISSIONS.PATIENT_DELETE },
@@ -79,9 +81,13 @@ const ENTITY_PERMISSION_MAP = {
 
 function enforcePermission(currentUser, entityName, action) {
   const perms = ENTITY_PERMISSION_MAP[entityName];
-  if (!perms) return; // unmapped entities fall through to session-only check
+  if (!perms) {
+    throw new Error(`Access denied: unknown entity type "${entityName}"`);
+  }
   const required = perms[action];
-  if (!required) return; // null means no specific permission needed beyond session
+  if (!required) {
+    throw new Error(`Access denied: action "${action}" is not permitted on ${entityName}`);
+  }
   if (!hasPermission(currentUser.role, required)) {
     throw new Error(`Unauthorized: your role (${currentUser.role}) does not have ${required} permission.`);
   }
@@ -168,7 +174,29 @@ function register() {
     enforcePermission(currentUser, entityName, 'view');
     const tableName = shared.entityTableMap[entityName];
     if (!tableName) throw new Error(`Unknown entity: ${entityName}`);
-    return redactSecretsForRenderer(tableName, shared.getEntityByIdAndOrg(tableName, id, shared.getSessionOrgId()));
+    const orgId = shared.getSessionOrgId();
+
+    // PHI detail reads require a valid justification grant (Patient.get).
+    if (entityName === 'Patient') {
+      const accessControl = require('../../services/accessControl.cjs');
+      if (!accessControl.hasValidPhiGrant(currentUser.id, 'Patient', id)) {
+        throw new Error('PHI access justification required before viewing patient details');
+      }
+    }
+
+    const row = shared.getEntityByIdAndOrg(tableName, id, orgId);
+    if (entityName === 'Patient' && row) {
+      shared.logAudit(
+        'read',
+        entityName,
+        id,
+        null,
+        `Patient read id=${id}`,
+        currentUser.email,
+        currentUser.role
+      );
+    }
+    return redactSecretsForRenderer(tableName, row);
   });
 
   ipcMain.handle('entity:update', async (event, entityName, id, data) => {
@@ -194,11 +222,38 @@ function register() {
     db.prepare(`UPDATE ${tableName} SET ${updates} WHERE id = ? AND org_id = ?`).run(...values);
 
     const entity = shared.getEntityByIdAndOrg(tableName, id, orgId);
-    let patientName = null;
-    if (entityName === 'Patient') patientName = `${entity.first_name} ${entity.last_name}`;
-    else if (entity.patient_name) patientName = entity.patient_name;
+    const changedKeys = Object.keys(safeData).filter((k) => !['updated_by', 'updated_at'].includes(k));
+    const before = {};
+    const after = {};
+    for (const k of changedKeys) {
+      before[k] = existingEntity[k];
+      after[k] = entity[k];
+    }
+    shared.logAudit(
+      'update',
+      entityName,
+      id,
+      null,
+      JSON.stringify({ message: `${entityName} updated`, before, after }),
+      currentUser.email,
+      currentUser.role
+    );
 
-    shared.logAudit('update', entityName, id, patientName, `${entityName} updated`, currentUser.email, currentUser.role);
+    // Electronic signature for patient status changes
+    if (entityName === 'Patient' && safeData.waitlist_status && safeData.waitlist_status !== existingEntity.waitlist_status) {
+      try {
+        const payloadHash = crypto.createHash('sha256').update(
+          JSON.stringify({ patientId: id, fromStatus: existingEntity.waitlist_status, toStatus: safeData.waitlist_status })
+        ).digest('hex');
+        electronicSignature.signRecord({
+          orgId, userId: currentUser.id, userEmail: currentUser.email,
+          userFullName: currentUser.full_name,
+          meaning: `status_change:${safeData.waitlist_status}`,
+          entityType: 'Patient', entityId: id, payloadHash,
+        });
+      } catch { /* best effort */ }
+    }
+
     return redactSecretsForRenderer(tableName, entity);
   });
 
@@ -231,6 +286,17 @@ function register() {
     const tableName = shared.entityTableMap[entityName];
     if (!tableName) throw new Error(`Unknown entity: ${entityName}`);
     const rows = shared.listEntitiesByOrg(tableName, shared.getSessionOrgId(), orderBy, limit);
+    if (entityName === 'Patient') {
+      shared.logAudit(
+        'list',
+        entityName,
+        null,
+        null,
+        `Patient list count=${rows.length}`,
+        currentUser.email,
+        currentUser.role
+      );
+    }
     return rows.map((r) => redactSecretsForRenderer(tableName, r));
   });
 

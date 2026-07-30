@@ -31,6 +31,14 @@ function register() {
     );
   });
 
+  ipcMain.handle('access:authorizePhiAccess', async (event, { permission, entityType, entityId, justification }) => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
+    const { currentUser } = shared.getSessionState();
+    return accessControl.authorizeAndLogPhiAccess({
+      permission, entityType, entityId, justification, user: currentUser,
+    });
+  });
+
   ipcMain.handle('access:getRoles', async () => {
     if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
     return accessControl.getAllRoles();
@@ -109,40 +117,39 @@ function register() {
     return complianceView.getAccessLogReport({ ...options, orgId });
   });
 
-  // Offline reconciliation
+  // Offline reconciliation (disabled — single-workstation mode)
   ipcMain.handle('reconciliation:getStatus', async () => {
     if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
     return offlineReconciliation.getReconciliationStatus();
   });
   ipcMain.handle('reconciliation:getPendingChanges', async () => {
     if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
-    return offlineReconciliation.getPendingChanges();
+    return [];
   });
-
-  ipcMain.handle('reconciliation:reconcile', async (event, strategy) => {
-    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
-    const { currentUser } = shared.getSessionState();
-    if (!currentUser || currentUser.role !== 'admin') throw new Error('Admin access required');
-    return await offlineReconciliation.reconcilePendingChanges(strategy);
+  ipcMain.handle('reconciliation:reconcile', async () => {
+    throw new Error('Offline reconciliation is disabled; TransTrack is single-workstation offline-first without multi-device sync');
   });
-
-  ipcMain.handle('reconciliation:setMode', async (event, mode) => {
-    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
-    const { currentUser } = shared.getSessionState();
-    if (!currentUser || currentUser.role !== 'admin') throw new Error('Admin access required');
-    return offlineReconciliation.setOperationMode(mode);
+  ipcMain.handle('reconciliation:setMode', async () => {
+    throw new Error('Offline reconciliation is disabled; TransTrack is single-workstation offline-first without multi-device sync');
   });
-
   ipcMain.handle('reconciliation:getMode', async () => {
     if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
-    return offlineReconciliation.getOperationMode();
+    return 'normal';
   });
 
   // --- file operations ---
-  ipcMain.handle('file:exportCSV', async (event, data, filename) => {
+  ipcMain.handle('file:exportCSV', async (event, data, filename, justification) => {
     if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
 
     const { currentUser } = shared.getSessionState();
+    if (!accessControl.hasPermission(currentUser.role, accessControl.PERMISSIONS.REPORT_EXPORT) &&
+        !['admin', 'coordinator'].includes(currentUser.role)) {
+      throw new Error('Unauthorized: REPORT_EXPORT permission or admin/coordinator role required for data export');
+    }
+    shared.logAudit('export_authorized', 'System', null, null,
+      `CSV export authorized. Justification: ${justification || 'N/A'}`,
+      currentUser.email, currentUser.role);
+
     const fs = require('fs');
     const { filePath } = await dialog.showSaveDialog({
       title: 'Export CSV',
@@ -177,10 +184,18 @@ function register() {
   });
 
   // Excel export
-  ipcMain.handle('file:exportExcel', async (event, data, filename) => {
+  ipcMain.handle('file:exportExcel', async (event, data, filename, justification) => {
     if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
 
     const { currentUser } = shared.getSessionState();
+    if (!accessControl.hasPermission(currentUser.role, accessControl.PERMISSIONS.REPORT_EXPORT) &&
+        !['admin', 'coordinator'].includes(currentUser.role)) {
+      throw new Error('Unauthorized: REPORT_EXPORT permission or admin/coordinator role required for data export');
+    }
+    shared.logAudit('export_authorized', 'System', null, null,
+      `Excel export authorized. Justification: ${justification || 'N/A'}`,
+      currentUser.email, currentUser.role);
+
     const fs = require('fs');
     const { filePath } = await dialog.showSaveDialog({
       title: 'Export Excel (CSV)',
@@ -215,10 +230,18 @@ function register() {
   });
 
   // PDF export
-  ipcMain.handle('file:exportPDF', async (event, data, filename) => {
+  ipcMain.handle('file:exportPDF', async (event, data, filename, justification) => {
     if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
 
     const { currentUser } = shared.getSessionState();
+    if (!accessControl.hasPermission(currentUser.role, accessControl.PERMISSIONS.REPORT_EXPORT) &&
+        !['admin', 'coordinator'].includes(currentUser.role)) {
+      throw new Error('Unauthorized: REPORT_EXPORT permission or admin/coordinator role required for data export');
+    }
+    shared.logAudit('export_authorized', 'System', null, null,
+      `PDF/Report export authorized. Justification: ${justification || 'N/A'}`,
+      currentUser.email, currentUser.role);
+
     const fs = require('fs');
     const { filePath } = await dialog.showSaveDialog({
       title: 'Export PDF (Text Report)',
@@ -324,8 +347,9 @@ function register() {
       throw new Error(`Unsupported file type: ${ext}. Use .csv or .json files.`);
     }
 
+    const fileStats = fs.statSync(importPath);
     shared.logAudit('import', 'System', null, null,
-      `File imported: ${path.basename(importPath)} (${ext}, ${stat.size} bytes)`,
+      `File imported: ${path.basename(importPath)} (${ext}, ${fileStats.size} bytes)`,
       currentUser.email, currentUser.role);
 
     return {
@@ -362,23 +386,12 @@ function register() {
       throw new Error('Backup file not found');
     }
 
-    const { backupDatabase, getDatabasePath } = require('../../database/init.cjs');
-    const dbPath = getDatabasePath();
-
-    const autoBackupPath = dbPath + '.pre-restore.' + Date.now() + '.bak';
-    await backupDatabase(autoBackupPath);
-
     shared.logAudit('restore', 'System', null, null,
-      `Database restore initiated from: ${path.basename(restorePath)}. Auto-backup saved to: ${path.basename(autoBackupPath)}`,
+      `Database restore initiated from: ${path.basename(restorePath)}`,
       currentUser.email, currentUser.role);
 
-    return {
-      success: true,
-      restoredFrom: path.basename(restorePath),
-      autoBackup: path.basename(autoBackupPath),
-      message: 'Database restore prepared. Application restart required to complete restore.',
-      requiresRestart: true,
-    };
+    const { restoreDatabaseFromBackup } = require('../../database/init.cjs');
+    return await restoreDatabaseFromBackup(restorePath);
   });
 }
 

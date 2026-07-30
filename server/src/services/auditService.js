@@ -11,6 +11,13 @@ const { sha256 } = require('../util/ids');
  * Rows cannot be UPDATEd or DELETEd (enforced by trigger).
  */
 async function record(client, ctx, event) {
+  // Serialize hash-chain appends per org to prevent concurrent inserts
+  // from reading the same prev_hash (lost-update on the chain).
+  await client.query(
+    `SELECT pg_advisory_xact_lock(hashtext('audit:' || $1))`,
+    [ctx.orgId]
+  );
+
   const prev = await client.query(
     `SELECT record_hash FROM audit_logs
      WHERE org_id = $1

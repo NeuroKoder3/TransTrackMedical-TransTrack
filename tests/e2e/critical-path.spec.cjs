@@ -189,9 +189,7 @@ test.describe('TransTrack — Critical Path (login → patient → audit → bac
     }, payload);
 
     if (!result.ok) {
-      console.warn('[critical-path] patient.create skipped:', result.error);
-      test.skip(true, `patient.create unavailable: ${result.error}`);
-      return;
+      throw new Error(`[critical-path] patient.create MUST be available: ${result.error}`);
     }
 
     expect(result).toBeDefined();
@@ -251,9 +249,7 @@ test.describe('TransTrack — Critical Path (login → patient → audit → bac
     }, ctx.patientId);
 
     if (!audit.ok) {
-      console.warn('[critical-path] audit-log read skipped:', audit.error);
-      test.skip(true, `audit-log surface unavailable: ${audit.error}`);
-      return;
+      throw new Error(`[critical-path] audit-log surface MUST be available: ${audit.error}`);
     }
 
     expect(audit).toBeDefined();
@@ -288,9 +284,7 @@ test.describe('TransTrack — Critical Path (login → patient → audit → bac
     });
 
     if (!result.ok) {
-      console.warn('[critical-path] recovery.createBackup skipped:', result.error);
-      test.skip(true, `recovery.createBackup unavailable: ${result.error}`);
-      return;
+      throw new Error(`[critical-path] recovery.createBackup MUST be available: ${result.error}`);
     }
 
     expect(result).toBeDefined();
@@ -330,9 +324,7 @@ test.describe('TransTrack — Critical Path (login → patient → audit → bac
     }
 
     if (!ctx.backupId) {
-      console.warn('[critical-path] no backup id available — verify step skipped');
-      test.skip(true, 'no backup id available');
-      return;
+      throw new Error('[critical-path] no backup id available — previous step must have created one');
     }
 
     const result = await window.evaluate(async (backupId) => {
@@ -348,9 +340,7 @@ test.describe('TransTrack — Critical Path (login → patient → audit → bac
     }, ctx.backupId);
 
     if (!result.ok) {
-      console.warn('[critical-path] verifyBackup skipped:', result.error);
-      test.skip(true, `verifyBackup unavailable: ${result.error}`);
-      return;
+      throw new Error(`[critical-path] verifyBackup MUST be available: ${result.error}`);
     }
 
     expect(result).toBeDefined();
@@ -383,9 +373,7 @@ test.describe('TransTrack — Critical Path (login → patient → audit → bac
   // -----------------------------------------------------------------------
   test('Step 6 — restore from the backup (recovery.restoreBackup)', async () => {
     if (!ctx.backupId) {
-      console.warn('[critical-path] no backup id available — restore step skipped');
-      test.skip(true, 'no backup id available');
-      return;
+      throw new Error('[critical-path] no backup id available — previous step must have created one');
     }
 
     const result = await window.evaluate(async (backupId) => {
@@ -401,9 +389,7 @@ test.describe('TransTrack — Critical Path (login → patient → audit → bac
     }, ctx.backupId);
 
     if (!result.ok) {
-      console.warn('[critical-path] restoreBackup skipped:', result.error);
-      test.skip(true, `restoreBackup unavailable: ${result.error}`);
-      return;
+      throw new Error(`[critical-path] restoreBackup MUST be available: ${result.error}`);
     }
 
     expect(result).toBeDefined();
@@ -432,9 +418,7 @@ test.describe('TransTrack — Critical Path (login → patient → audit → bac
     });
 
     if (!result.ok) {
-      console.warn('[critical-path] system.getHealth not exposed:', result.error);
-      test.skip(true, `system.getHealth unavailable: ${result.error}`);
-      return;
+      throw new Error(`[critical-path] system.getHealth MUST be available: ${result.error}`);
     }
 
     expect(result).toBeDefined();

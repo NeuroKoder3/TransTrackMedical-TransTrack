@@ -32,8 +32,7 @@ if (!gotLock) {
 // Disable hardware acceleration for better compatibility
 app.disableHardwareAcceleration();
 
-// Security: Disable remote module
-app.commandLine.appendSwitch('disable-features', 'OutOfBlinkCors');
+// Security hardening — OutOfBlinkCors intentionally NOT disabled
 
 let mainWindow = null;
 let splashWindow = null;
@@ -46,7 +45,7 @@ const isDev = process.env.NODE_ENV !== 'test' &&
 // Application metadata
 const APP_INFO = {
   name: 'TransTrack',
-  version: '1.0.0',
+  get version() { try { return app.getVersion(); } catch { return '0.0.0'; } },
   description: 'Transplant Waitlist Management System (HIPAA Security Rule aligned, 21 CFR Part 11 architected)',
   author: 'TransTrack Medical Software',
   designAlignment: ['HIPAA Security Rule', '21 CFR Part 11', 'AATB Standards'],
@@ -161,9 +160,10 @@ function createMainWindow() {
       : ["'self'"];
     if (apiOrigin && !connectSrc.includes(apiOrigin)) connectSrc.push(apiOrigin);
 
+    const scriptSrc = isDev ? "script-src 'self' 'unsafe-inline'" : "script-src 'self'";
     const cspDirectives = [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline'",
+      scriptSrc,
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob:",
       "font-src 'self' data:",
@@ -258,7 +258,7 @@ function createMenu() {
             dialog.showMessageBox(mainWindow, {
               type: 'info',
               title: 'About TransTrack',
-              message: 'TransTrack v1.0.0',
+              message: `TransTrack v${APP_INFO.version}`,
               detail: `${APP_INFO.description}\n\nDesign alignment: ${APP_INFO.designAlignment.join(', ')}\n\nNote: Alignment statements describe product design controls only and are not certifications.\n\n© 2026 TransTrack Medical Software`
             });
           }
@@ -371,6 +371,14 @@ app.whenReady().then(async () => {
     setupIPCHandlers();
     logger.info('IPC handlers registered');
 
+    // Start automated backup schedule
+    try {
+      const { startAutoBackupSchedule } = require('./services/disasterRecovery.cjs');
+      startAutoBackupSchedule();
+    } catch (backupErr) {
+      logger.error('Failed to start automated backup schedule', { error: backupErr.message });
+    }
+
     if (app.isPackaged) {
       initAutoUpdater();
     }
@@ -443,8 +451,22 @@ async function handleProtocolUrl(url) {
   }
 }
 
+// Fail-closed: log uncaught exceptions and exit immediately.
+process.on('uncaughtException', (err) => {
+  try { logger.fatal('Uncaught exception — exiting', { error: err.message, stack: err.stack }); } catch { /* ignore */ }
+  app.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  try { logger.error('Unhandled promise rejection', { reason: String(reason) }); } catch { /* ignore */ }
+});
+
 app.on('before-quit', async () => {
   logger.info('Application shutting down...');
+  try {
+    const { stopAutoBackupSchedule } = require('./services/disasterRecovery.cjs');
+    stopAutoBackupSchedule();
+  } catch { /* ignore */ }
   await closeDatabase();
   closeLogger();
 });

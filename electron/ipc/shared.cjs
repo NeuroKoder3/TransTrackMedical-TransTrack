@@ -24,8 +24,8 @@ function clearRequestContext() {
   _requestSenderId = null;
 }
 
-// TODO: make this configurable per-org via settings table
-const IDLE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
+const securityPolicy = require('../config/securityPolicy.cjs');
+const IDLE_TIMEOUT_MS = securityPolicy.IDLE_TIMEOUT_MS;
 
 function getSessionState() {
   return { currentSession, currentUser, sessionExpiry };
@@ -90,7 +90,7 @@ function validateSession(senderWebContentsId) {
   if (boundWebContentsId && effectiveSenderId && effectiveSenderId !== boundWebContentsId) {
     return false;
   }
-  // Validate session still exists in DB
+  // Validate session still exists in DB — fail closed on any error.
   try {
     const db = getDatabase();
     const dbSession = db.prepare('SELECT id FROM sessions WHERE id = ? AND user_id = ?').get(currentSession, currentUser.id);
@@ -98,21 +98,65 @@ function validateSession(senderWebContentsId) {
       clearSession();
       return false;
     }
+
+    // Verify the user account is still active (soft-fail if column absent).
+    try {
+      const userRow = db.prepare('SELECT is_active FROM users WHERE id = ?').get(currentUser.id);
+      if (userRow && userRow.is_active === 0) {
+        clearSession();
+        return false;
+      }
+    } catch { /* is_active column may not exist in older schemas */ }
   } catch {
-    // If DB is unavailable, allow in-memory session to continue
+    clearSession();
+    return false;
   }
   touchSession();
   return true;
 }
 
+// --- session restrictions ---
+
+const UNRESTRICTED_CHANNELS = new Set([
+  'auth:changePassword',
+  'auth:logout',
+  'auth:me',
+  'auth:isAuthenticated',
+  'auth:status',
+  'auth:getCurrentUser',
+  'mfa:status',
+  'mfa:beginEnrollment',
+  'mfa:confirmEnrollment',
+  'mfa:verifyChallenge',
+  'mfa:regenerateBackupCodes',
+]);
+
+function sessionAllows(action) {
+  if (!currentUser || !currentUser.session_restrictions || currentUser.session_restrictions.length === 0) {
+    return true;
+  }
+  return UNRESTRICTED_CHANNELS.has(action);
+}
+
+function assertSessionUnrestricted() {
+  if (currentUser && currentUser.session_restrictions && currentUser.session_restrictions.length > 0) {
+    throw new Error('Complete account security requirements before continuing');
+  }
+}
+
 // --- handler wrapper ---
 
-function wrapHandler(handlerFn) {
+function wrapHandler(handlerFn, opts) {
+  const allowRestricted = opts?.allowRestricted || false;
   return async (event, ...args) => {
     const senderId = event?.sender?.id;
 
     if (!validateSession(senderId)) {
       throw new Error('Session expired. Please log in again.');
+    }
+
+    if (!allowRestricted) {
+      assertSessionUnrestricted();
     }
 
     const userId = currentUser?.id || 'anon';
@@ -130,7 +174,7 @@ function wrapHandler(handlerFn) {
 
 const MAX_LOGIN_ATTEMPTS = 5;
 const LOCKOUT_DURATION_MS = 15 * 60 * 1000;
-const SESSION_DURATION_MS = 8 * 60 * 60 * 1000;
+const SESSION_DURATION_MS = securityPolicy.SESSION_ABSOLUTE_MS;
 
 const ALLOWED_ORDER_COLUMNS = {
   patients: ['id', 'patient_id', 'first_name', 'last_name', 'blood_type', 'organ_needed', 'medical_urgency', 'waitlist_status', 'priority_score', 'date_of_birth', 'email', 'phone', 'created_at', 'updated_at'],
@@ -414,26 +458,67 @@ function sanitizeForSQLite(entityData) {
   return entityData;
 }
 
-// --- audit logging ---
+// --- audit logging with hash chain ---
+
+const crypto = require('crypto');
+
+function _computeAuditHash(prevHash, payload) {
+  const canonical = JSON.stringify(payload, Object.keys(payload).sort());
+  return crypto.createHash('sha256').update(prevHash + canonical).digest('hex');
+}
 
 function logAudit(action, entityType, entityId, patientName, details, userEmail, userRole, requestId) {
   const db = getDatabase();
   const id = uuidv4();
   const orgId = currentUser?.org_id || 'SYSTEM';
+  const userId = currentUser?.id || null;
   const now = new Date().toISOString();
 
   try {
-    db.prepare(
-      'INSERT INTO audit_logs (id, org_id, action, entity_type, entity_id, patient_name, details, user_email, user_role, request_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-    ).run(id, orgId, action, entityType, entityId, patientName, details, userEmail, userRole, requestId || null, now);
+    const insertWithChain = db.transaction(() => {
+      // Fetch the most recent record_hash for this org
+      let prevHash = 'GENESIS';
+      try {
+        const prev = db.prepare(
+          'SELECT record_hash FROM audit_logs WHERE org_id = ? AND record_hash IS NOT NULL ORDER BY id DESC LIMIT 1'
+        ).get(orgId);
+        if (prev?.record_hash) prevHash = prev.record_hash;
+      } catch { /* hash chain columns may not exist yet */ }
+
+      const payload = {
+        action,
+        details: details || null,
+        entity_id: entityId || null,
+        entity_type: entityType || null,
+        org_id: orgId,
+        patient_name: patientName || null,
+        user_email: userEmail || null,
+        user_id: userId,
+        user_role: userRole || null,
+      };
+      const recordHash = _computeAuditHash(prevHash, payload);
+
+      try {
+        db.prepare(
+          'INSERT INTO audit_logs (id, org_id, action, entity_type, entity_id, patient_name, details, user_id, user_email, user_role, request_id, prev_hash, record_hash, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        ).run(id, orgId, action, entityType, entityId, patientName, details, userId, userEmail, userRole, requestId || null, prevHash, recordHash, now);
+      } catch {
+        db.prepare(
+          'INSERT INTO audit_logs (id, org_id, action, entity_type, entity_id, patient_name, details, user_email, user_role, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        ).run(id, orgId, action, entityType, entityId, patientName, details, userEmail, userRole, now);
+      }
+    });
+    insertWithChain();
   } catch {
-    db.prepare(
-      'INSERT INTO audit_logs (id, org_id, action, entity_type, entity_id, patient_name, details, user_email, user_role, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-    ).run(id, orgId, action, entityType, entityId, patientName, details, userEmail, userRole, now);
+    // Fallback: insert without chain if transaction fails
+    try {
+      db.prepare(
+        'INSERT INTO audit_logs (id, org_id, action, entity_type, entity_id, patient_name, details, user_email, user_role, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      ).run(id, orgId, action, entityType, entityId, patientName, details, userEmail, userRole, now);
+    } catch { /* ignore total failure */ }
   }
 
-  // Best-effort forwarding to SIEM destinations. Forwarder absorbs all
-  // errors and never throws back into the audit-log write path.
+  // Best-effort forwarding to SIEM destinations
   try {
     const siem = require('../services/siemForwarder.cjs');
     siem.forwardAuditRow({
@@ -458,6 +543,10 @@ module.exports = {
   SESSION_DURATION_MS,
   IDLE_TIMEOUT_MS,
   wrapHandler,
+
+  // Session restrictions
+  sessionAllows,
+  assertSessionUnrestricted,
 
   // Request context (WebContents binding)
   setRequestContext,

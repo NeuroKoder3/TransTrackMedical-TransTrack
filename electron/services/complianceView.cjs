@@ -67,7 +67,7 @@ function getComplianceSummary(orgId) {
     matches: matchStats,
     auditActivity: auditStats,
     systemInfo: {
-      version: '1.0.0',
+      version: (() => { try { return require('electron').app.getVersion(); } catch { return require('../../package.json').version; } })(),
       complianceStandards: ['HIPAA', 'FDA 21 CFR Part 11', 'AATB'],
     },
   };
@@ -225,7 +225,7 @@ function generateValidationReport(orgId) {
   
   const report = {
     title: 'TransTrack System Validation Report',
-    version: '1.0.0',
+    version: (() => { try { return require('electron').app.getVersion(); } catch { return require('../../package.json').version; } })(),
     generatedAt: new Date().toISOString(),
     sections: [],
   };

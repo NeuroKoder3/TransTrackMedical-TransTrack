@@ -78,6 +78,10 @@ function buildAssertion({ clientId, tokenUrl, privateKeyPem, kid, ttlSeconds }) 
   );
 }
 
+// --- Circuit breaker state ---
+const CIRCUIT_FAILURE_THRESHOLD = 5;
+const CIRCUIT_RESET_MS = 60_000;
+
 /**
  * Build an Epic FHIR client.
  *
@@ -91,6 +95,8 @@ function buildAssertion({ clientId, tokenUrl, privateKeyPem, kid, ttlSeconds }) 
  *   kid        - key id, default "transtrack-epic-1"
  *   scope      - granted scope string, default DEFAULT_SCOPES
  *   fetchImpl  - inject a custom fetch (for tests). Defaults to globalThis.fetch.
+ *   timeoutMs  - HTTP request timeout in ms (default 30000)
+ *   logger     - optional logger instance
  */
 function createEpicClient(opts) {
   const clientId = opts?.clientId;
@@ -106,11 +112,78 @@ function createEpicClient(opts) {
   const kid = opts.kid || 'transtrack-epic-1';
   const scope = opts.scope || DEFAULT_SCOPES;
   const httpFetch = opts.fetchImpl || globalThis.fetch;
+  const timeoutMs = opts.timeoutMs || 30_000;
+  const logger = opts.logger || null;
   if (typeof httpFetch !== 'function') {
     throw new Error('createEpicClient: no fetch implementation available');
   }
 
   let cached = null;
+
+  // Circuit breaker
+  let circuitFailures = 0;
+  let circuitOpenedAt = 0;
+
+  function checkCircuit() {
+    if (circuitFailures >= CIRCUIT_FAILURE_THRESHOLD) {
+      if (Date.now() - circuitOpenedAt < CIRCUIT_RESET_MS) {
+        throw new Error('Epic circuit breaker OPEN — too many consecutive failures');
+      }
+      circuitFailures = 0;
+    }
+  }
+
+  function recordSuccess() { circuitFailures = 0; }
+  function recordFailure() {
+    circuitFailures++;
+    if (circuitFailures >= CIRCUIT_FAILURE_THRESHOLD) circuitOpenedAt = Date.now();
+  }
+
+  async function fetchWithTimeout(url, options) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await httpFetch(url, { ...options, signal: controller.signal });
+      return res;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  async function fetchWithRetry(url, options, { maxRetries = 3 } = {}) {
+    checkCircuit();
+    let lastError;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const res = await fetchWithTimeout(url, options);
+        if (res.status === 429 || res.status >= 500) {
+          const retryAfter = res.headers?.get?.('Retry-After');
+          const waitMs = retryAfter
+            ? Math.min(parseInt(retryAfter, 10) * 1000 || 5000, 60_000)
+            : Math.min(1000 * Math.pow(2, attempt), 30_000);
+          if (attempt < maxRetries) {
+            await new Promise((r) => setTimeout(r, waitMs));
+            continue;
+          }
+          recordFailure();
+          throw new Error(`Epic request failed with status ${res.status} after ${maxRetries + 1} attempts`);
+        }
+        recordSuccess();
+        return res;
+      } catch (e) {
+        lastError = e;
+        if (e.name === 'AbortError') {
+          lastError = new Error('Epic request timed out');
+        }
+        if (attempt < maxRetries) {
+          await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, attempt)));
+          continue;
+        }
+        recordFailure();
+      }
+    }
+    throw lastError;
+  }
 
   async function getAccessToken() {
     const skewMs = 30_000;
@@ -130,14 +203,15 @@ function createEpicClient(opts) {
       client_assertion: assertion,
       scope,
     });
-    const res = await httpFetch(tokenUrl, {
+    const res = await fetchWithRetry(tokenUrl, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body,
     });
     const text = await res.text();
     if (!res.ok) {
-      throw new Error(`Epic token request failed (${res.status}): ${text}`);
+      if (logger) logger.error({ status: res.status }, 'Epic token request failed');
+      throw new Error(`Epic token request failed (${res.status})`);
     }
     const parsed = JSON.parse(text);
     cached = {
@@ -154,7 +228,7 @@ function createEpicClient(opts) {
     const url = resourcePath.startsWith('http')
       ? resourcePath
       : `${fhirBase}/${resourcePath.replace(/^\/+/, '')}`;
-    const res = await httpFetch(url, {
+    const res = await fetchWithRetry(url, {
       headers: {
         authorization: `${tok.tokenType} ${tok.accessToken}`,
         accept: 'application/fhir+json',
@@ -162,11 +236,27 @@ function createEpicClient(opts) {
     });
     const text = await res.text();
     if (!res.ok) {
-      throw new Error(
-        `Epic FHIR GET ${resourcePath} failed (${res.status}): ${text}`,
-      );
+      if (logger) logger.error({ status: res.status, path: resourcePath }, 'Epic FHIR GET failed');
+      throw new Error(`Epic FHIR request failed (${res.status})`);
     }
     return JSON.parse(text);
+  }
+
+  /**
+   * Paginate a FHIR search by following Bundle.link[relation=next] until
+   * exhausted or maxPages reached.
+   */
+  async function fhirSearchAll(resourcePath, { maxPages = 10 } = {}) {
+    const allEntries = [];
+    let nextUrl = resourcePath;
+    for (let page = 0; page < maxPages && nextUrl; page++) {
+      const bundle = await fhirGet(nextUrl);
+      const entries = (bundle.entry || []).map((e) => e.resource).filter(Boolean);
+      allEntries.push(...entries);
+      const nextLink = (bundle.link || []).find((l) => l.relation === 'next');
+      nextUrl = nextLink?.url || null;
+    }
+    return allEntries;
   }
 
   /**
@@ -207,6 +297,7 @@ function createEpicClient(opts) {
   return {
     getAccessToken,
     fhirGet,
+    fhirSearchAll,
     fetchPatientBundle,
     config: { tokenUrl, fhirBase, clientId, kid, scope },
   };

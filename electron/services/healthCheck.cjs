@@ -95,15 +95,11 @@ function _checkDatabase() {
 
 function _checkEncryption() {
   return _safe(() => {
-    let svc;
-    try { svc = require('./encryption.cjs'); }
-    catch { return { status: 'warn', error: 'encryption service not loaded' }; }
-    if (typeof svc.getEncryptionStatus === 'function') {
-      const s = svc.getEncryptionStatus();
-      return { status: s?.enabled ? 'ok' : 'warn', ...s };
-    }
-    if (typeof svc.isEncryptionEnabled === 'function') {
-      const enabled = !!svc.isEncryptionEnabled();
+    let dbInit;
+    try { dbInit = require('../database/init.cjs'); }
+    catch { return { status: 'warn', error: 'database init module not loaded' }; }
+    if (typeof dbInit.isEncryptionEnabled === 'function') {
+      const enabled = !!dbInit.isEncryptionEnabled();
       return { status: enabled ? 'ok' : 'warn', enabled };
     }
     return { status: 'warn', error: 'no encryption status accessor available' };
@@ -133,8 +129,8 @@ function _checkRiskEngine() {
 function _checkBackups() {
   return _safe(() => {
     let svc;
-    try { svc = require('./backupService.cjs'); }
-    catch { return { status: 'warn', error: 'backup service not loaded' }; }
+    try { svc = require('./disasterRecovery.cjs'); }
+    catch { return { status: 'warn', error: 'disaster recovery service not loaded' }; }
     if (typeof svc.listBackups !== 'function') {
       return { status: 'warn', error: 'no listBackups accessor' };
     }

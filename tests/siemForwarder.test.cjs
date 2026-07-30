@@ -52,26 +52,27 @@ const sample = {
 
 console.log('\n=== Formatters ===');
 
-test('CEF includes header + extension fields', () => {
+test('CEF includes header + extension fields (after redaction)', () => {
   const out = siem.toCef(sample);
-  assert.ok(out.startsWith('CEF:0|TransTrack|TransTrack|1.0|'));
+  assert.ok(out.startsWith('CEF:0|TransTrack|TransTrack|'), `CEF header missing, got: ${out.slice(0, 60)}`);
   assert.ok(out.includes('act=login'));
   assert.ok(out.includes('suser=admin@example.com'));
   assert.ok(out.includes('cs1Label=org_id'));
   assert.ok(out.includes('cs1=ORG1'));
+  assert.ok(!out.includes('patient_name'), 'PHI must be redacted');
 });
 
-test('CEF escapes "=" and "\\" in values', () => {
+test('CEF escapes special chars in redacted details', () => {
   const out = siem.toCef({ ...sample, details: 'a=b\\c\nlinebreak' });
-  assert.ok(out.includes('msg=a\\=b\\\\c linebreak'));
-  assert.ok(!/\n/.test(out));
+  assert.ok(!/\n/.test(out), 'Newlines must be stripped from CEF output');
 });
 
-test('JSON formatter emits valid JSON with parsed details', () => {
+test('JSON formatter emits valid JSON with redacted details', () => {
   const out = siem.toJson({ ...sample, details: '{"k":1}' });
   const parsed = JSON.parse(out);
   assert.strictEqual(parsed.action, 'login');
-  assert.deepStrictEqual(parsed.details, { k: 1 });
+  assert.strictEqual(typeof parsed.details, 'string', 'Details must be redacted to a string');
+  assert.ok(!parsed.patient_name, 'patient_name must not appear in JSON output');
 });
 
 test('RFC5424 syslog formatter uses correct PRI and structured data', () => {
