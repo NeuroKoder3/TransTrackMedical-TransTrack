@@ -291,20 +291,25 @@ async function migrateToEncrypted(unencryptedPath, encryptedPath, encryptionKey)
     // Move new encrypted database to final location
     fs.renameSync(encryptedPath + '.new', encryptedPath);
 
-    // Securely overwrite the plaintext database: write zeros over the file,
-    // then unlink. Never leave plaintext PHI on disk.
+    // Securely overwrite the plaintext database: open by fd, fstat that fd,
+    // zero the contents, then unlink. Avoids TOCTOU between exists/stat and write.
     try {
-      const stat = fs.statSync(unencryptedPath);
-      const fd = fs.openSync(unencryptedPath, 'w');
-      const zeroChunk = Buffer.alloc(Math.min(stat.size, 64 * 1024), 0);
-      let remaining = stat.size;
-      while (remaining > 0) {
-        const toWrite = Math.min(remaining, zeroChunk.length);
-        fs.writeSync(fd, zeroChunk, 0, toWrite);
-        remaining -= toWrite;
+      const fd = fs.openSync(unencryptedPath, 'r+');
+      try {
+        const stat = fs.fstatSync(fd);
+        const zeroChunk = Buffer.alloc(Math.min(stat.size, 64 * 1024), 0);
+        let remaining = stat.size;
+        let offset = 0;
+        while (remaining > 0) {
+          const toWrite = Math.min(remaining, zeroChunk.length);
+          fs.writeSync(fd, zeroChunk, 0, toWrite, offset);
+          offset += toWrite;
+          remaining -= toWrite;
+        }
+        fs.fdatasyncSync(fd);
+      } finally {
+        fs.closeSync(fd);
       }
-      fs.fdatasyncSync(fd);
-      fs.closeSync(fd);
       fs.unlinkSync(unencryptedPath);
     } catch (wipeErr) {
       // Best-effort: at minimum, unlink it

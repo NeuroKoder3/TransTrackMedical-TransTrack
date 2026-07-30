@@ -342,18 +342,23 @@ module.exports = async function smartRoutes(app, opts) {
 
       if (grantType === 'refresh_token') {
         const data = z.object({ refresh_token: z.string().min(1) }).parse(body);
-        // Authenticate confidential client if credentials are provided
-        if (clientId) {
-          const smartClient = await clients.getUnscoped(clientId);
-          if (smartClient && smartClient.client_type === 'confidential') {
-            const ok = await clients.verifySecret(smartClient, clientSecret);
-            if (!ok) throw errors.unauthorized('invalid_client');
-          }
+        // Resolve the client from the refresh token (server-controlled), not from
+        // caller-supplied client_id. Confidential clients MUST authenticate.
+        const tokenClientId = await tokens.lookupTokenClientId(data.refresh_token);
+        if (!tokenClientId) throw errors.unauthorized('invalid_grant');
+        if (clientId && clientId !== tokenClientId) {
+          throw errors.unauthorized('invalid_grant');
+        }
+        const smartClient = await clients.getUnscoped(tokenClientId);
+        if (!smartClient) throw errors.unauthorized('invalid_client');
+        if (smartClient.client_type === 'confidential') {
+          const ok = await clients.verifySecret(smartClient, clientSecret);
+          if (!ok) throw errors.unauthorized('invalid_client');
         }
         try {
           return await tokens.refresh(data.refresh_token, {
             ttlSeconds: config.JWT_ACCESS_TTL_SECONDS,
-            clientId: clientId || undefined,
+            clientId: tokenClientId,
           });
         } catch (_e) {
           throw errors.unauthorized('invalid_grant');

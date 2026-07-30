@@ -179,7 +179,9 @@ module.exports = async function authRoutes(app, opts) {
       const secret = mfa.decryptSecret(r.rows[0].secret_encrypted, config.JWT_SECRET);
       if (!mfa.verifyCode(secret, body.code)) throw errors.badRequest('Invalid code');
       const codes = mfa.generateRecoveryCodes(10);
-      const stored = codes.map(c => ({ hash: mfa.hashRecoveryCode(c), used_at: null }));
+      const stored = await Promise.all(
+        codes.map(async (c) => ({ hash: await mfa.hashRecoveryCode(c), used_at: null }))
+      );
       await client.query(
         `UPDATE mfa_enrollments
            SET confirmed_at = now(), recovery_codes = $1

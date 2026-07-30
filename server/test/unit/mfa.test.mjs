@@ -28,6 +28,25 @@ describe('mfa', () => {
     const codes = mfa.generateRecoveryCodes(10);
     expect(codes).toHaveLength(10);
     expect(new Set(codes).size).toBe(10);
+    for (const c of codes) {
+      expect(c).toMatch(/^[0-9A-F]{20}$/);
+    }
+  });
+
+  it('hashes recovery codes with Argon2id and verifies them', async () => {
+    const codes = mfa.generateRecoveryCodes(1);
+    const hash = await mfa.hashRecoveryCode(codes[0]);
+    expect(hash.startsWith('$argon2')).toBe(true);
+    expect(await mfa.verifyRecoveryCode(codes[0], hash)).toBe(true);
+    expect(await mfa.verifyRecoveryCode('DEADBEEFDEADBEEFDEAD', hash)).toBe(false);
+  });
+
+  it('still accepts legacy SHA-256 recovery hashes', async () => {
+    const code = 'ABCDEF1234567890ABCD';
+    const crypto = require('crypto');
+    const legacy = crypto.createHash('sha256').update(code).digest('hex');
+    expect(mfa.isLegacySha256Hash(legacy)).toBe(true);
+    expect(await mfa.verifyRecoveryCode(code, legacy)).toBe(true);
   });
 
   it('builds an otpauth URI', () => {
