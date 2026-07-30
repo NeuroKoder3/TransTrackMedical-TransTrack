@@ -10,6 +10,19 @@ function copyToClipboard(text) {
   if (navigator?.clipboard?.writeText) navigator.clipboard.writeText(text);
 }
 
+/** Normalize desktop/server MFA begin payloads to one shape. */
+function normalizeEnrollment(data) {
+  if (!data) return null;
+  const secret = data.secret_base32 || data.secret || '';
+  const otpauthUrl = data.otpauth_url || data.otpauth || '';
+  return {
+    ...data,
+    secret,
+    secret_base32: secret,
+    otpauth_url: otpauthUrl,
+  };
+}
+
 export default function ForceMfaEnrollment() {
   const { logout, clearMfaEnrollmentRequired } = useAuth();
   const [enrollment, setEnrollment] = useState(null);
@@ -19,14 +32,23 @@ export default function ForceMfaEnrollment() {
 
   const beginMutation = useMutation({
     mutationFn: () => api.mfa.beginEnrollment(),
-    onSuccess: (data) => setEnrollment(data),
+    onSuccess: (data) => {
+      setError(null);
+      setEnrollment(normalizeEnrollment(data));
+    },
     onError: (e) => setError(e.message),
   });
 
   const confirmMutation = useMutation({
-    mutationFn: (code) => api.mfa.confirmEnrollment({ code }),
+    mutationFn: (code) =>
+      api.mfa.confirmEnrollment({
+        code,
+        secret: enrollment?.secret_base32 || enrollment?.secret,
+      }),
     onSuccess: (data) => {
-      setBackupCodes(data.backup_codes || enrollment?.backup_codes || []);
+      const codes = data?.backup_codes || data?.backupCodes || [];
+      setBackupCodes(Array.isArray(codes) ? codes : []);
+      setError(null);
     },
     onError: (e) => setError(e.message),
   });
@@ -50,14 +72,18 @@ export default function ForceMfaEnrollment() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="bg-slate-50 p-3 rounded-md font-mono text-sm space-y-1 border">
-              {backupCodes.map((code, i) => (
-                <div key={i} className="flex justify-between items-center">
-                  <span>{code}</span>
-                  <button onClick={() => copyToClipboard(code)} className="text-slate-400 hover:text-slate-600">
-                    <Copy className="w-3 h-3" />
-                  </button>
-                </div>
-              ))}
+              {backupCodes.length === 0 ? (
+                <p className="text-slate-500">No backup codes returned — MFA is still enabled.</p>
+              ) : (
+                backupCodes.map((code, i) => (
+                  <div key={i} className="flex justify-between items-center">
+                    <span>{code}</span>
+                    <button type="button" onClick={() => copyToClipboard(code)} className="text-slate-400 hover:text-slate-600">
+                      <Copy className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))
+              )}
             </div>
             <Button className="w-full bg-cyan-600 hover:bg-cyan-700" onClick={handleComplete}>
               I have saved my backup codes — Continue
@@ -90,7 +116,8 @@ export default function ForceMfaEnrollment() {
           {!enrollment ? (
             <div className="space-y-3">
               <p className="text-sm text-slate-600">
-                Use an authenticator app (Google Authenticator, Authy, etc.) to set up your second factor.
+                Use an authenticator app (Microsoft Authenticator, Google Authenticator, Authy, etc.)
+                to set up your second factor.
               </p>
               <Button
                 className="w-full bg-cyan-600 hover:bg-cyan-700"
@@ -102,28 +129,44 @@ export default function ForceMfaEnrollment() {
             </div>
           ) : (
             <div className="space-y-4">
-              {enrollment.otpauth_url && (
-                <div className="text-center">
-                  <p className="text-sm text-slate-600 mb-2">
-                    Scan this QR code with your authenticator app, or enter the secret manually:
-                  </p>
-                  <img
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(enrollment.otpauth_url)}`}
-                    alt="MFA QR Code"
-                    className="mx-auto mb-2"
-                    width={200}
-                    height={200}
-                  />
-                  <div className="flex items-center justify-center gap-2">
-                    <code className="text-xs bg-slate-100 px-2 py-1 rounded border">{enrollment.secret_base32}</code>
-                    <button onClick={() => copyToClipboard(enrollment.secret_base32)} className="text-slate-400 hover:text-slate-600">
-                      <Copy className="w-3 h-3" />
-                    </button>
-                  </div>
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-slate-800">
+                  1. Add TransTrack in your authenticator app
+                </p>
+                <p className="text-sm text-slate-600">
+                  Choose “Enter a setup key” (or similar) and paste this secret:
+                </p>
+                <div className="flex items-center gap-2 bg-slate-50 border rounded-md px-3 py-2">
+                  <code className="flex-1 text-sm font-mono break-all select-all">
+                    {enrollment.secret_base32}
+                  </code>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => copyToClipboard(enrollment.secret_base32)}
+                  >
+                    <Copy className="w-3 h-3 mr-1" />
+                    Copy
+                  </Button>
                 </div>
-              )}
+                <p className="text-xs text-slate-500">
+                  Account: TransTrack · Type: Time-based · Digits: 6
+                </p>
+                {enrollment.otpauth_url ? (
+                  <details className="text-xs text-slate-500">
+                    <summary className="cursor-pointer hover:text-slate-700">Advanced: otpauth URI</summary>
+                    <code className="mt-1 block break-all bg-slate-50 border rounded p-2">
+                      {enrollment.otpauth_url}
+                    </code>
+                  </details>
+                ) : null}
+              </div>
+
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Verification Code</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  2. Enter the 6-digit code from your app
+                </label>
                 <input
                   type="text"
                   inputMode="numeric"
@@ -131,15 +174,28 @@ export default function ForceMfaEnrollment() {
                   value={confirmCode}
                   onChange={(e) => setConfirmCode(e.target.value.replace(/\D/g, ''))}
                   placeholder="000000"
+                  autoFocus
                   className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm text-center font-mono text-lg tracking-widest focus:outline-none focus:ring-2 focus:ring-cyan-500"
                 />
               </div>
               <Button
                 className="w-full bg-cyan-600 hover:bg-cyan-700"
                 onClick={() => confirmMutation.mutate(confirmCode)}
-                disabled={confirmCode.length < 6 || confirmMutation.isPending}
+                disabled={confirmCode.length < 6 || confirmMutation.isPending || !enrollment.secret_base32}
               >
                 {confirmMutation.isPending ? 'Verifying...' : 'Verify & Enable'}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                className="w-full"
+                onClick={() => {
+                  setEnrollment(null);
+                  setConfirmCode('');
+                  setError(null);
+                }}
+              >
+                Start over
               </Button>
             </div>
           )}

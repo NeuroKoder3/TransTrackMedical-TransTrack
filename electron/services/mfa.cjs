@@ -216,7 +216,17 @@ function beginEnrollment({ userId, orgId, userEmail }) {
   const label = encodeURIComponent(`${ISSUER}:${userEmail}`);
   const issuer = encodeURIComponent(ISSUER);
   const otpauth = `otpauth://totp/${label}?secret=${secret}&issuer=${issuer}&algorithm=SHA1&digits=${TOTP_DIGITS}&period=${TOTP_PERIOD}`;
-  return { secret, otpauth, issuer: ISSUER, account: userEmail, algorithm: 'SHA1', digits: TOTP_DIGITS, period: TOTP_PERIOD };
+  return {
+    secret,
+    secret_base32: secret,
+    otpauth,
+    otpauth_url: otpauth,
+    issuer: ISSUER,
+    account: userEmail,
+    algorithm: 'SHA1',
+    digits: TOTP_DIGITS,
+    period: TOTP_PERIOD,
+  };
 }
 
 /**
@@ -249,7 +259,7 @@ function verifyAndEnableEnrollment({ userId, orgId, secret, code }) {
     return codes;
   });
   const codes = tx();
-  return { enabled: true, backupCodes: codes };
+  return { enabled: true, backupCodes: codes, backup_codes: codes };
 }
 
 /**

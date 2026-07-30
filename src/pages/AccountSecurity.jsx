@@ -38,16 +38,22 @@ function MfaPanel() {
   const beginMutation = useMutation({
     mutationFn: () => api.mfa.beginEnrollment(),
     onSuccess: (data) => {
-      setEnrollment(data);
+      const secret = data?.secret_base32 || data?.secret || '';
+      const otpauth_url = data?.otpauth_url || data?.otpauth || '';
+      setEnrollment({ ...data, secret_base32: secret, otpauth_url });
       setSavedBackupCodes(null);
     },
     onError: (e) => toast({ title: 'Could not start MFA enrollment', description: e.message, variant: 'destructive' }),
   });
 
   const confirmMutation = useMutation({
-    mutationFn: (code) => api.mfa.confirmEnrollment({ code }),
+    mutationFn: (code) =>
+      api.mfa.confirmEnrollment({
+        code,
+        secret: enrollment?.secret_base32 || enrollment?.secret,
+      }),
     onSuccess: (data) => {
-      setSavedBackupCodes(data.backup_codes || enrollment?.backup_codes || []);
+      setSavedBackupCodes(data.backup_codes || data.backupCodes || enrollment?.backup_codes || []);
       setEnrollment(null);
       setConfirmCode('');
       queryClient.invalidateQueries({ queryKey: ['mfa-status'] });
