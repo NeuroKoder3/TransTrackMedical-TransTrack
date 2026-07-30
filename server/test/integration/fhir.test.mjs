@@ -10,6 +10,7 @@ const require = createRequire(import.meta.url);
 const { build } = require('../../src/index');
 const { withTransaction, query } = require('../../src/db/pool');
 const password = require('../../src/auth/password');
+const { destroyTestOrg } = require('./cleanup.cjs');
 
 let app, orgId, access;
 const PW = 'fhir-pw-AAAAAAAAAAAAAA';
@@ -38,15 +39,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  if (orgId) {
-    await query(`DELETE FROM audit_logs WHERE org_id = $1`, [orgId]).catch(() => {});
-    await query(`DELETE FROM sessions WHERE org_id = $1`, [orgId]).catch(() => {});
-    await query(`DELETE FROM lab_results WHERE org_id = $1`, [orgId]).catch(() => {});
-    await query(`DELETE FROM fhir_resources WHERE org_id = $1`, [orgId]).catch(() => {});
-    await query(`DELETE FROM patients WHERE org_id = $1`, [orgId]).catch(() => {});
-    await query(`DELETE FROM users WHERE org_id = $1`, [orgId]).catch(() => {});
-    await query(`DELETE FROM organizations WHERE id = $1`, [orgId]).catch(() => {});
-  }
+  await destroyTestOrg(query, orgId);
   if (app) await app.close();
 });
 

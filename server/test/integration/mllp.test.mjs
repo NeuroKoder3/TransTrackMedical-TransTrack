@@ -12,6 +12,7 @@ const { build } = require('../../src/index');
 const hl7Server = require('../../src/hl7/server');
 const { withTransaction, query } = require('../../src/db/pool');
 const { frame, MllpFramer } = require('../../src/hl7/mllp');
+const { destroyTestOrg } = require('./cleanup.cjs');
 
 let app, mllp, port, orgId;
 
