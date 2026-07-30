@@ -110,37 +110,16 @@ function normalizeRecoveryCode(code) {
   return String(code || '').toUpperCase().trim();
 }
 
-function isLegacySha256Hash(stored) {
-  return typeof stored === 'string' && /^[a-f0-9]{64}$/i.test(stored);
-}
-
-/**
- * Hash a recovery code with Argon2id (same parameters as passwords).
- * Legacy SHA-256 hashes are still accepted by verifyRecoveryCode.
- */
+/** Hash a recovery code with Argon2id (same parameters as passwords). */
 async function hashRecoveryCode(code) {
   return password.hash(normalizeRecoveryCode(code));
 }
 
-/**
- * Verify a recovery code against a stored hash.
- * Supports Argon2id and legacy SHA-256 hex digests.
- */
+/** Verify a recovery code against an Argon2id stored hash. */
 async function verifyRecoveryCode(code, storedHash) {
   if (!storedHash) return false;
   const normalized = normalizeRecoveryCode(code);
   if (!normalized) return false;
-  if (isLegacySha256Hash(storedHash)) {
-    const legacy = crypto.createHash('sha256').update(normalized).digest('hex');
-    try {
-      return crypto.timingSafeEqual(
-        Buffer.from(legacy, 'utf8'),
-        Buffer.from(storedHash.toLowerCase(), 'utf8')
-      );
-    } catch {
-      return false;
-    }
-  }
   return password.verify(storedHash, normalized);
 }
 
@@ -153,7 +132,6 @@ module.exports = {
   generateRecoveryCodes,
   hashRecoveryCode,
   verifyRecoveryCode,
-  isLegacySha256Hash,
   encryptSecret,
   decryptSecret,
 };
