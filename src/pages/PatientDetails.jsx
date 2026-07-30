@@ -27,22 +27,23 @@ export default function PatientDetails() {
   const queryClient = useQueryClient();
   const { requireJustification, dialogOpen, handleConfirm, handleCancel, pendingAction } = useJustifiedAccess();
   const [accessGranted, setAccessGranted] = useState(false);
+  const [accessError, setAccessError] = useState(null);
 
   useEffect(() => {
+    let cancelled = false;
     if (patientId && !accessGranted) {
+      setAccessError(null);
       requireJustification('patient:view_phi', 'Patient', patientId).then((result) => {
-        if (result.authorized) {
+        if (cancelled) return;
+        if (result?.authorized) {
           setAccessGranted(true);
-          if (window.electronAPI?.functions?.invoke) {
-            window.electronAPI.functions.invoke('logError', {
-              message: `PHI access justified: ${result.justification}`,
-              stack: `Patient ID: ${patientId}`,
-            }).catch(() => {});
-          }
+        } else if (!result?.cancelled) {
+          setAccessError(result?.reason || 'Access was not granted');
         }
       });
     }
-  }, [patientId]);
+    return () => { cancelled = true; };
+  }, [patientId, accessGranted, requireJustification]);
 
   const { data: patient, isLoading, isError } = useQuery({
     queryKey: ['patient', patientId],
@@ -53,7 +54,7 @@ export default function PatientDetails() {
   const { data: auditLogs = [] } = useQuery({
     queryKey: ['auditLogs', patientId],
     queryFn: () => api.entities.AuditLog.filter({ entity_id: patientId }, '-created_at', 50),
-    enabled: !!patientId,
+    enabled: !!patientId && accessGranted,
   });
 
   const recalculatePriorityMutation = useMutation({
@@ -62,6 +63,23 @@ export default function PatientDetails() {
       queryClient.invalidateQueries({ queryKey: ['patient', patientId] });
     },
   });
+
+  if (!patientId) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6">
+        <div className="max-w-4xl mx-auto">
+          <Card>
+            <CardContent className="p-12 text-center">
+              <p className="text-slate-600">No patient selected</p>
+              <Link to={createPageUrl('RiskDashboard')}>
+                <Button className="mt-4">Back to Risk Intel</Button>
+              </Link>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
 
   if (!accessGranted) {
     return (
@@ -77,7 +95,25 @@ export default function PatientDetails() {
           action="view"
         />
         <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6 flex items-center justify-center">
-          <div className="text-slate-600">Awaiting access justification...</div>
+          <div className="text-center space-y-3">
+            <div className="text-slate-600">
+              {accessError || 'Awaiting access justification...'}
+            </div>
+            {accessError ? (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setAccessError(null);
+                  requireJustification('patient:view_phi', 'Patient', patientId).then((result) => {
+                    if (result?.authorized) setAccessGranted(true);
+                    else if (!result?.cancelled) setAccessError(result?.reason || 'Access was not granted');
+                  });
+                }}
+              >
+                Try again
+              </Button>
+            ) : null}
+          </div>
         </div>
       </>
     );

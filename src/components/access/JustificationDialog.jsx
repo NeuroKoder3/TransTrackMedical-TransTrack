@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import {
   AlertDialog,
   AlertDialogContent,
@@ -14,6 +14,10 @@ import { Shield } from 'lucide-react';
 
 export default function JustificationDialog({ open, onConfirm, onCancel, entityType, action }) {
   const [justification, setJustification] = useState('');
+  // Radix closes the dialog on Confirm and fires onOpenChange(false). Without
+  // this flag that looks identical to Cancel and callers that history.back()
+  // on cancel bounce the user off PatientDetails.
+  const confirmingRef = useRef(false);
 
   const predefinedReasons = [
     'Direct patient care',
@@ -24,14 +28,26 @@ export default function JustificationDialog({ open, onConfirm, onCancel, entityT
     'Emergency access',
   ];
 
-  const handleSubmit = () => {
+  const handleSubmit = (e) => {
+    e?.preventDefault?.();
     if (!justification.trim()) return;
-    onConfirm(justification.trim());
+    confirmingRef.current = true;
+    const text = justification.trim();
+    onConfirm(text);
     setJustification('');
   };
 
+  const handleOpenChange = (isOpen) => {
+    if (isOpen) return;
+    if (confirmingRef.current) {
+      confirmingRef.current = false;
+      return;
+    }
+    onCancel?.();
+  };
+
   return (
-    <AlertDialog open={open} onOpenChange={(isOpen) => { if (!isOpen) onCancel(); }}>
+    <AlertDialog open={open} onOpenChange={handleOpenChange}>
       <AlertDialogContent className="max-w-md">
         <AlertDialogHeader>
           <AlertDialogTitle className="flex items-center gap-2">
@@ -72,8 +88,18 @@ export default function JustificationDialog({ open, onConfirm, onCancel, entityT
         </div>
 
         <AlertDialogFooter>
-          <AlertDialogCancel onClick={onCancel}>Cancel</AlertDialogCancel>
-          <AlertDialogAction onClick={handleSubmit} disabled={!justification.trim()}>
+          <AlertDialogCancel
+            onClick={() => {
+              confirmingRef.current = false;
+              onCancel?.();
+            }}
+          >
+            Cancel
+          </AlertDialogCancel>
+          <AlertDialogAction
+            onClick={handleSubmit}
+            disabled={!justification.trim()}
+          >
             Confirm Access
           </AlertDialogAction>
         </AlertDialogFooter>
