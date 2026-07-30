@@ -414,6 +414,8 @@ function createSchema(db) {
       user_role TEXT,
       ip_address TEXT,
       user_agent TEXT,
+      prev_hash TEXT,
+      record_hash TEXT,
       created_at TEXT DEFAULT (datetime('now')),
       FOREIGN KEY (org_id) REFERENCES organizations(id)
     )
