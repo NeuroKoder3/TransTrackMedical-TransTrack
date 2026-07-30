@@ -7,102 +7,21 @@ updates:
       day: "monday"
       time: "06:00"
       timezone: "UTC"
-    open-pull-requests-limit: 5
+    # Keep the PR queue tiny so Dependabot cannot flood the repo.
+    open-pull-requests-limit: 2
     labels:
       - "dependencies"
     commit-message:
       prefix: "deps"
-    # Only allow patch updates (safest)
     versioning-strategy: increase-if-necessary
-    # Ignore ALL major version updates for stability
     ignore:
-      # Core React - NEVER auto-update major versions
-      - dependency-name: "react"
+      # Never auto-bump majors — review those manually.
+      - dependency-name: "*"
         update-types: ["version-update:semver-major"]
-      - dependency-name: "react-dom"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "@types/react"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "@types/react-dom"
-        update-types: ["version-update:semver-major"]
-      
-      # Electron - NEVER auto-update major versions
+      # Native / Electron stack — bump only with intentional rebuild + CI.
       - dependency-name: "electron"
-        update-types: ["version-update:semver-major"]
       - dependency-name: "electron-builder"
-        update-types: ["version-update:semver-major"]
-      
-      # Build tools - avoid breaking changes
-      - dependency-name: "vite"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "@vitejs/plugin-react"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "tailwindcss"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "postcss"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "autoprefixer"
-        update-types: ["version-update:semver-major"]
-      
-      # UI Libraries - avoid breaking changes
-      - dependency-name: "framer-motion"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "recharts"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "lucide-react"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "three"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "@hello-pangea/dnd"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "react-leaflet"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "react-day-picker"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "react-resizable-panels"
-        update-types: ["version-update:semver-major"]
-      
-      # Form/validation libraries
-      - dependency-name: "react-hook-form"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "@hookform/resolvers"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "zod"
-        update-types: ["version-update:semver-major"]
-      
-      # Routing
-      - dependency-name: "react-router-dom"
-        update-types: ["version-update:semver-major"]
-      
-      # Utilities
-      - dependency-name: "date-fns"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "uuid"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "lodash"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "moment"
-        update-types: ["version-update:semver-major"]
-      
-      # Radix UI - keep consistent versions
-      - dependency-name: "@radix-ui/*"
-        update-types: ["version-update:semver-major"]
-      
-      # Dev tools
-      - dependency-name: "eslint"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "typescript"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "concurrently"
-        update-types: ["version-update:semver-major"]
-      
-      # Other
-      - dependency-name: "react-markdown"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "bcryptjs"
-        update-types: ["version-update:semver-major"]
       - dependency-name: "better-sqlite3-multiple-ciphers"
-        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "npm"
     directory: "/server"
@@ -111,7 +30,7 @@ updates:
       day: "monday"
       time: "06:00"
       timezone: "UTC"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 2
     labels:
       - "dependencies"
       - "server"
@@ -119,29 +38,21 @@ updates:
       prefix: "deps(server)"
     versioning-strategy: increase-if-necessary
     ignore:
-      - dependency-name: "fastify"
+      - dependency-name: "*"
         update-types: ["version-update:semver-major"]
-      - dependency-name: "pg"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "openid-client"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "zod"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "stripe"
-        update-types: ["version-update:semver-major"]
-      # otplib v13 is a full rewrite; MFA module supports both APIs, but majors
-      # must be upgraded intentionally with a Node-matched lockfile regenerate.
+      # otplib v13 is a full rewrite; upgrade only with intentional lockfile work.
       - dependency-name: "otplib"
-        update-types: ["version-update:semver-major"]
 
-  # GitHub Actions - be conservative
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "monthly"
-    open-pull-requests-limit: 3
+    open-pull-requests-limit: 1
     labels:
       - "dependencies"
       - "github-actions"
     commit-message:
       prefix: "ci"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]

@@ -246,7 +246,10 @@ jobs:
         run: npm test
 
       - name: Build Windows installer
+        # Verification only — never publish a GitHub Release from CI (needs GH_TOKEN).
         run: npm run build:win
+        env:
+          ELECTRON_BUILDER_PUBLISH: never
 
       - name: Verify packaged native module
         run: npm run verify:packaged-native
