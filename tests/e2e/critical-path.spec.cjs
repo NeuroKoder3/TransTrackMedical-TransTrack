@@ -271,12 +271,18 @@ test.describe('TransTrack — Critical Path (login → patient → audit → bac
   test('Step 4 — create an encrypted backup via recovery.createBackup', async () => {
     const result = await window.evaluate(async () => {
       try {
-        if (!window.electronAPI?.recovery?.createBackup) {
-          return { ok: false, error: 'no recovery.createBackup on bridge' };
+        const api = window.electronAPI;
+        const create =
+          api?.recovery?.createBackup ||
+          api?.createBackup ||
+          null;
+        if (!create) {
+          return {
+            ok: false,
+            error: `no recovery.createBackup on bridge; keys=${Object.keys(api || {}).join(',')}`,
+          };
         }
-        const r = await window.electronAPI.recovery.createBackup({
-          note: 'critical-path E2E backup',
-        });
+        const r = await create({ note: 'critical-path E2E backup' });
         return { ok: true, raw: r };
       } catch (e) {
         return { ok: false, error: String(e && e.message ? e.message : e) };
@@ -290,8 +296,6 @@ test.describe('TransTrack — Critical Path (login → patient → audit → bac
     expect(result).toBeDefined();
     expect(result.ok).toBe(true);
 
-    // The handler may return the backup record as { id, ... } or wrap it
-    // as { success: true, backup: { id, ... } } — accept either shape.
     const id =
       (result.raw && (result.raw.id || result.raw.backupId)) ||
       (result.raw && result.raw.backup && (result.raw.backup.id || result.raw.backup.backupId)) ||
@@ -306,13 +310,11 @@ test.describe('TransTrack — Critical Path (login → patient → audit → bac
   // -----------------------------------------------------------------------
   test('Step 5 — verify the backup integrity (recovery.verifyBackup)', async () => {
     if (!ctx.backupId) {
-      // Try to discover any existing backup to verify against.
       const list = await window.evaluate(async () => {
         try {
-          if (!window.electronAPI?.recovery?.listBackups) {
-            return { ok: false };
-          }
-          const r = await window.electronAPI.recovery.listBackups();
+          const listFn = window.electronAPI?.recovery?.listBackups || window.electronAPI?.listBackups;
+          if (!listFn) return { ok: false };
+          const r = await listFn();
           return { ok: true, list: r };
         } catch (e) {
           return { ok: false, error: String(e && e.message ? e.message : e) };
@@ -329,10 +331,11 @@ test.describe('TransTrack — Critical Path (login → patient → audit → bac
 
     const result = await window.evaluate(async (backupId) => {
       try {
-        if (!window.electronAPI?.recovery?.verifyBackup) {
-          return { ok: false, error: 'no recovery.verifyBackup on bridge' };
+        const verify = window.electronAPI?.recovery?.verifyBackup || window.electronAPI?.verifyBackup;
+        if (!verify) {
+          return { ok: false, error: `no recovery.verifyBackup on bridge; keys=${Object.keys(window.electronAPI || {}).join(',')}` };
         }
-        const r = await window.electronAPI.recovery.verifyBackup(backupId);
+        const r = await verify(backupId);
         return { ok: true, raw: r };
       } catch (e) {
         return { ok: false, error: String(e && e.message ? e.message : e) };
@@ -346,9 +349,6 @@ test.describe('TransTrack — Critical Path (login → patient → audit → bac
     expect(result).toBeDefined();
     expect(result.ok).toBe(true);
 
-    // A passing verification reports at minimum a checksum-verified flag.
-    // Accept any of the documented verification fields:
-    //   { checksumVerified, integrityCheckPassed, restoreTestPassed, valid, ok }
     const raw = result.raw || {};
     const verifiedFields = [
       raw.checksumVerified,
@@ -368,9 +368,6 @@ test.describe('TransTrack — Critical Path (login → patient → audit → bac
     }
   });
 
-  // -----------------------------------------------------------------------
-  // STEP 6 — Restore from the backup
-  // -----------------------------------------------------------------------
   test('Step 6 — restore from the backup (recovery.restoreBackup)', async () => {
     if (!ctx.backupId) {
       throw new Error('[critical-path] no backup id available — previous step must have created one');
@@ -378,10 +375,11 @@ test.describe('TransTrack — Critical Path (login → patient → audit → bac
 
     const result = await window.evaluate(async (backupId) => {
       try {
-        if (!window.electronAPI?.recovery?.restoreBackup) {
-          return { ok: false, error: 'no recovery.restoreBackup on bridge' };
+        const restore = window.electronAPI?.recovery?.restoreBackup || window.electronAPI?.restoreBackup;
+        if (!restore) {
+          return { ok: false, error: `no recovery.restoreBackup on bridge; keys=${Object.keys(window.electronAPI || {}).join(',')}` };
         }
-        const r = await window.electronAPI.recovery.restoreBackup(backupId);
+        const r = await restore(backupId);
         return { ok: true, raw: r };
       } catch (e) {
         return { ok: false, error: String(e && e.message ? e.message : e) };
@@ -394,23 +392,17 @@ test.describe('TransTrack — Critical Path (login → patient → audit → bac
 
     expect(result).toBeDefined();
     expect(result.ok).toBe(true);
-
-    // The restore handler should return either { success: true } or
-    // { restored: true } or the restored backup record. Any non-null,
-    // non-error response satisfies the contract for this E2E.
     expect(result.raw).toBeTruthy();
   });
 
-  // -----------------------------------------------------------------------
-  // FINAL — health-check + bridge-surface invariants
-  // -----------------------------------------------------------------------
   test('Final — system:getHealth reports a structured envelope', async () => {
     const result = await window.evaluate(async () => {
       try {
-        if (!window.electronAPI?.system?.getHealth) {
-          return { ok: false, error: 'no system.getHealth on bridge' };
+        const getHealth = window.electronAPI?.system?.getHealth || window.electronAPI?.getHealth;
+        if (!getHealth) {
+          return { ok: false, error: `no system.getHealth on bridge; keys=${Object.keys(window.electronAPI || {}).join(',')}` };
         }
-        const r = await window.electronAPI.system.getHealth();
+        const r = await getHealth();
         return { ok: true, raw: r };
       } catch (e) {
         return { ok: false, error: String(e && e.message ? e.message : e) };

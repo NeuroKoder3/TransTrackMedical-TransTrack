@@ -525,6 +525,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     restoreBackup: (backupId) => ipcRenderer.invoke('recovery:restoreBackup', backupId),
     getStatus: () => ipcRenderer.invoke('recovery:getStatus'),
   },
+  // Flat aliases (E2E + older bridge consumers)
+  createBackup: (options) => ipcRenderer.invoke('recovery:createBackup', options),
+  listBackups: () => ipcRenderer.invoke('recovery:listBackups'),
+  verifyBackup: (backupId) => ipcRenderer.invoke('recovery:verifyBackup', backupId),
+  restoreBackup: (backupId) => ipcRenderer.invoke('recovery:restoreBackup', backupId),
+  getHealth: () => ipcRenderer.invoke('system:getHealth'),
   
   // Compliance View
   compliance: {
