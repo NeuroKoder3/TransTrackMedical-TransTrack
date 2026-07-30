@@ -399,6 +399,7 @@ function register() {
       purgeSetupTokenFile();
     }
 
+    shared.clearSessionRestriction('password_change');
     shared.logAudit('update', 'User', currentUser.id, null, 'Password changed', currentUser.email, currentUser.role);
     return { success: true };
   });

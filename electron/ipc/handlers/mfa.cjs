@@ -39,6 +39,8 @@ function register() {
       secret: params?.secret,
       code: params?.code,
     });
+    // Enrollment completed — lift the mfa_enroll gate so the session can proceed.
+    shared.clearSessionRestriction('mfa_enroll');
     shared.logAudit('mfa_enroll', 'User', currentUser.id, null,
       JSON.stringify({ enabled: true }), currentUser.email, currentUser.role);
     return result;

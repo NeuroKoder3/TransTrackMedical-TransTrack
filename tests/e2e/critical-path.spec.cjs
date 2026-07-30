@@ -116,40 +116,78 @@ test.describe('TransTrack — Critical Path (login → patient → audit → bac
       { timeout: 30000 },
     );
 
+    const { totpCode } = require('../../electron/services/mfa.cjs');
     const e2ePassword =
       process.env.TRANSTRACK_INITIAL_ADMIN_PASSWORD || 'E2E_ONLY_DoNotUseInProd!';
     const nextPassword = `${e2ePassword}_Rotated1!`;
 
     const result = await window.evaluate(async ({ password, next }) => {
       try {
-        const r = await window.electronAPI.auth.login({
+        let activePassword = password;
+        let r = await window.electronAPI.auth.login({
           email: 'admin@transtrack.local',
-          password,
+          password: activePassword,
         });
-        if (r && (r.mustChangePassword || r.mfaEnrollmentRequired || r.user?.must_change_password)) {
-          if (r.mustChangePassword || r.user?.must_change_password) {
-            await window.electronAPI.auth.changePassword({
-              currentPassword: password,
-              newPassword: next,
-            });
-            const r2 = await window.electronAPI.auth.login({
-              email: 'admin@transtrack.local',
-              password: next,
-            });
-            return { ok: true, hasUser: !!(r2 && (r2.user || r2.id || r2.email)), rotated: true };
+        if (!r || (!r.success && !r.user && !r.mfa_required)) {
+          return { ok: false, error: `login failed: ${JSON.stringify(r)}` };
+        }
+
+        // Forced password change gate
+        if (r.mustChangePassword || r.user?.must_change_password) {
+          await window.electronAPI.auth.changePassword({
+            currentPassword: activePassword,
+            newPassword: next,
+          });
+          activePassword = next;
+          r = await window.electronAPI.auth.me?.() || r;
+        }
+
+        // Admin MFA enrollment gate (restricted session until enrolled)
+        if (r.mfaEnrollmentRequired || r.user?.session_restrictions?.includes('mfa_enroll') || r.user?.mfa_required) {
+          const enrolled = r.user?.mfa_enrolled;
+          if (!enrolled) {
+            const begin = await window.electronAPI.mfa.beginEnrollment();
+            return {
+              ok: true,
+              needsMfaConfirm: true,
+              secret: begin.secret,
+              hasUser: true,
+              password: activePassword,
+            };
           }
         }
-        return { ok: true, hasUser: !!(r && (r.user || r.id || r.email || r.success)) };
+
+        return {
+          ok: true,
+          hasUser: !!(r && (r.user || r.success || r.id || r.email)),
+          password: activePassword,
+        };
       } catch (e) {
         return { ok: false, error: String(e && e.message ? e.message : e) };
       }
     }, { password: e2ePassword, next: nextPassword });
 
-    ctx.loginAttempted = true;
-    expect(result).toBeDefined();
     if (!result.ok) {
       throw new Error(`[critical-path] login MUST succeed via electronAPI: ${result.error}`);
     }
+
+    if (result.needsMfaConfirm && result.secret) {
+      const code = totpCode(result.secret);
+      const confirm = await window.evaluate(async ({ secret, code }) => {
+        try {
+          await window.electronAPI.mfa.confirmEnrollment({ secret, code });
+          const me = await window.electronAPI.auth.me();
+          return { ok: true, me };
+        } catch (e) {
+          return { ok: false, error: String(e && e.message ? e.message : e) };
+        }
+      }, { secret: result.secret, code });
+      if (!confirm.ok) {
+        throw new Error(`[critical-path] MFA enrollment MUST succeed: ${confirm.error}`);
+      }
+    }
+
+    ctx.loginAttempted = true;
     expect(result.hasUser).toBeTruthy();
   });
 
@@ -205,9 +243,23 @@ test.describe('TransTrack — Critical Path (login → patient → audit → bac
     expect(result.id).toBeTruthy();
     ctx.patientId = result.id;
 
-    // Round-trip check: confirm the record is retrievable.
+    // Round-trip check: authorize PHI justification, then fetch.
     const fetched = await window.evaluate(async (id) => {
       try {
+        const authorize =
+          window.electronAPI?.accessControl?.authorizePhiAccess ||
+          window.electronAPI?.access?.authorizePhiAccess;
+        if (authorize) {
+          const grant = await authorize({
+            permission: 'patient:view_phi',
+            entityType: 'Patient',
+            entityId: id,
+            justification: 'E2E critical-path verification',
+          });
+          if (grant && grant.granted === false) {
+            return { error: `PHI grant denied: ${grant.reason || 'unknown'}` };
+          }
+        }
         if (window.electronAPI?.entities?.Patient?.get) {
           return await window.electronAPI.entities.Patient.get(id);
         }
@@ -217,10 +269,11 @@ test.describe('TransTrack — Critical Path (login → patient → audit → bac
       }
     }, ctx.patientId);
 
-    if (fetched && !fetched.error) {
-      expect(fetched.first_name).toBe('Critical');
-      expect(fetched.last_name).toBe('PathTest');
+    if (fetched && fetched.error) {
+      throw new Error(`[critical-path] Patient.get after create failed: ${fetched.error}`);
     }
+    expect(fetched.first_name).toBe('Critical');
+    expect(fetched.last_name).toBe('PathTest');
   });
 
   // -----------------------------------------------------------------------

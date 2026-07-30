@@ -145,6 +145,22 @@ function assertSessionUnrestricted() {
   }
 }
 
+/** Remove a completed gate from the in-memory session (password_change / mfa_enroll). */
+function clearSessionRestriction(restriction) {
+  if (!currentUser || !Array.isArray(currentUser.session_restrictions)) return;
+  currentUser.session_restrictions = currentUser.session_restrictions.filter((r) => r !== restriction);
+  if (currentUser.session_restrictions.length === 0) {
+    delete currentUser.session_restrictions;
+  }
+  if (restriction === 'password_change') {
+    currentUser.must_change_password = false;
+  }
+  if (restriction === 'mfa_enroll') {
+    currentUser.mfa_enrolled = true;
+    currentUser.mfa_required = true;
+  }
+}
+
 // --- handler wrapper ---
 
 function wrapHandler(handlerFn, opts) {
@@ -591,6 +607,7 @@ module.exports = {
   // Session restrictions
   sessionAllows,
   assertSessionUnrestricted,
+  clearSessionRestriction,
 
   // Request context (WebContents binding)
   setRequestContext,

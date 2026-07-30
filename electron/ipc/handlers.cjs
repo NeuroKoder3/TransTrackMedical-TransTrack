@@ -49,6 +49,14 @@ function installRateLimitMiddleware() {
         const { currentUser } = shared.getSessionState();
         const userId = currentUser?.id || 'anon';
 
+        // Restricted sessions (must change password / enroll MFA) may only
+        // call the allow-listed security-setup channels.
+        if (currentUser?.session_restrictions?.length) {
+          if (!shared.sessionAllows(channel)) {
+            throw new Error('Complete account security requirements before continuing');
+          }
+        }
+
         const rateResult = checkRateLimit(userId, channel);
         if (!rateResult.allowed) {
           throw new Error(rateResult.error);
