@@ -1,9 +1,12 @@
 /**
  * Production npm audit gate with allowlisted advisories.
  *
- * GHSA-qwww-vcr4-c8h2 only affects unstable React Router RSC APIs.
+ * GHSA-qwww-vcr4-c8h2 — patched in react-router-dom >=7.18.2 (backport via
+ * remix-run/react-router#15353). The fix only affects unstable RSC APIs;
  * TransTrack uses Declarative Mode (HashRouter) in an Electron SPA and does
- * not enable RSC. See https://github.com/advisories/GHSA-qwww-vcr4-c8h2
+ * not enable RSC. The allowlist entry remains until the GHSA database range
+ * update propagates to npm. See:
+ *   https://github.com/remix-run/react-router/security/advisories/GHSA-qwww-vcr4-c8h2
  */
 import { spawnSync } from 'node:child_process';
 import process from 'node:process';

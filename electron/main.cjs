@@ -43,10 +43,11 @@ let splashWindow = null;
 const isDev = process.env.NODE_ENV !== 'test' &&
   (!app.isPackaged || process.env.NODE_ENV === 'development' || process.env.ELECTRON_DEV === '1');
 
-// Application metadata
+// Application metadata — version sourced from package.json (single source of truth)
+const { version: PKG_VERSION } = require('../package.json');
 const APP_INFO = {
   name: 'TransTrack',
-  version: '1.0.0',
+  version: PKG_VERSION,
   description: 'Transplant Waitlist Management System (HIPAA Security Rule aligned, 21 CFR Part 11 architected)',
   author: 'TransTrack Medical Software',
   designAlignment: ['HIPAA Security Rule', '21 CFR Part 11', 'AATB Standards'],

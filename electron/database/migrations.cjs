@@ -437,6 +437,21 @@ const MIGRATIONS = [
     },
   },
   {
+    version: 12,
+    name: 'add_audit_log_hash_chain',
+    description: 'Add prev_hash/record_hash columns for tamper-evident hash chaining (HIPAA 164.312(b))',
+    rollbackSql: null,
+    up(db) {
+      const cols = db.prepare("PRAGMA table_info(audit_logs)").all().map(c => c.name);
+      if (!cols.includes('prev_hash')) {
+        db.exec('ALTER TABLE audit_logs ADD COLUMN prev_hash TEXT');
+      }
+      if (!cols.includes('record_hash')) {
+        db.exec('ALTER TABLE audit_logs ADD COLUMN record_hash TEXT');
+      }
+    },
+  },
+  {
     version: 10,
     name: 'encrypt_legacy_ehr_api_keys',
     description: 'Re-encrypt any plaintext EHR integration credentials in place (AES-256-GCM)',

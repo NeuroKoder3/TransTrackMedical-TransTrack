@@ -18,6 +18,19 @@ const shared = require('./shared.cjs');
 const log = createLogger('auditReport');
 
 function register() {
+  ipcMain.handle('compliance:verify-audit-chain', async () => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
+    const { currentUser } = shared.getSessionState();
+    if (!currentUser || !['admin', 'regulator'].includes(currentUser.role)) {
+      throw new Error('Admin or regulator access required for audit chain verification');
+    }
+    const orgId = shared.getSessionOrgId();
+    log.audit('audit_chain_verification_requested', { org_id: orgId });
+    const result = shared.verifyAuditChain(orgId);
+    log.audit('audit_chain_verification_completed', { org_id: orgId, ok: result.ok, broken_at: result.brokenAt || null });
+    return result;
+  });
+
   ipcMain.handle('compliance:generate-audit-report', async (_event, options = {}) => {
     if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
     const { currentUser } = shared.getSessionState();
