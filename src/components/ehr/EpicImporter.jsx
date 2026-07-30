@@ -39,10 +39,34 @@ export default function EpicImporter({ onImportComplete }) {
     let cancelled = false;
     (async () => {
       try {
-        const s = await api.integrations.epic.status();
+        // Offline desktop: no live Epic status endpoint — avoid TypeError when
+        // integrations.epic is missing from an older client binding.
+        if (getApiMode() === 'local') {
+          const localStatus =
+            (await api.integrations?.epic?.status?.()) || {
+              enabled: false,
+              reason:
+                'Live Epic FHIR import requires the optional server tier. Use Import Bundle or CSV while offline.',
+              modes: [],
+            };
+          if (!cancelled) setStatus(localStatus);
+          return;
+        }
+        const statusFn = api.integrations?.epic?.status;
+        if (typeof statusFn !== 'function') {
+          if (!cancelled) {
+            setStatus({
+              enabled: false,
+              reason: 'Epic integration is not available in this build.',
+              modes: [],
+            });
+          }
+          return;
+        }
+        const s = await statusFn();
         if (!cancelled) setStatus(s);
       } catch (e) {
-        if (!cancelled) setStatusError(e.message || 'Failed to load status');
+        if (!cancelled) setStatusError(e?.message || 'Failed to load status');
       }
     })();
     return () => { cancelled = true; };
@@ -53,7 +77,13 @@ export default function EpicImporter({ onImportComplete }) {
     setError(null);
     setResult(null);
     try {
-      const r = await api.integrations.epic.import({
+      const importFn = api.integrations?.epic?.import;
+      if (typeof importFn !== 'function') {
+        throw new Error(
+          'Epic on FHIR import requires the API server. Use Import Bundle or Patients → Import CSV in offline desktop mode.'
+        );
+      }
+      const r = await importFn({
         epicPatientId: patientId.trim(),
       });
       setResult(r);

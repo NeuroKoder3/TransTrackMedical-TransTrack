@@ -515,6 +515,17 @@ const MIGRATIONS = [
       addCol('ehr_imports', 'fhir_version', 'TEXT');
     },
   },
+  {
+    version: 13,
+    name: 'add_patient_assigned_coordinator',
+    description: 'Optional coordinator assignment for prevention queue workload balancing',
+    up(db) {
+      const cols = db.prepare('PRAGMA table_info(patients)').all().map((c) => c.name);
+      if (!cols.includes('assigned_coordinator_id')) {
+        db.exec('ALTER TABLE patients ADD COLUMN assigned_coordinator_id TEXT');
+      }
+    },
+  },
 ];
 
 /**

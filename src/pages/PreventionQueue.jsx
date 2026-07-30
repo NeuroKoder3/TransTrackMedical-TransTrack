@@ -169,7 +169,7 @@ export default function PreventionQueue() {
   const [isSaving, setIsSaving] = useState(false);
   const [expandedPatientId, setExpandedPatientId] = useState(null);
 
-  const { data: queueReport, isLoading, isError, refetch } = useQuery({
+  const { data: queueReport, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['actionQueue'],
     queryFn: () => api.actionQueue.build({ size: 25 }),
     refetchInterval: 120000,
@@ -236,7 +236,16 @@ export default function PreventionQueue() {
   }
 
   if (isError) {
-    return <ErrorState title="Action queue unavailable" />;
+    return (
+      <ErrorState
+        title="Action queue unavailable"
+        message={
+          error?.message
+            ? `${error.message} — try refreshing, or contact your administrator if this persists.`
+            : 'Please try again or contact your administrator.'
+        }
+      />
+    );
   }
 
   const impact = queueReport?.aggregateExpectedImpact;

@@ -160,6 +160,7 @@ function createSchema(db) {
       support_system_rating TEXT,
       document_urls TEXT,
       notes TEXT,
+      assigned_coordinator_id TEXT,
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now')),
       created_by TEXT,

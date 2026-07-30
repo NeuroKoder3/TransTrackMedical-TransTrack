@@ -373,9 +373,26 @@ class RemoteClient {
 
   functions = {
     invoke: async (functionName, params) => {
-      // Local-only IPC functions (priority recalc, etc.) are not on the HTTP API yet.
-      console.warn(`[remoteClient] functions.invoke(${functionName}) not implemented remotely`, params);
-      return { data: null };
+      // Prefer desktop IPC when available (hybrid Electron + API). Matching,
+      // priority recalc, and other clinical functions live in the main process.
+      const ipcInvoke =
+        typeof window !== 'undefined' ? window.electronAPI?.functions?.invoke : null;
+      if (typeof ipcInvoke === 'function') {
+        const result = await ipcInvoke(functionName, params);
+        if (result && result.data !== undefined) return result;
+        return { data: result };
+      }
+      console.warn(
+        `[remoteClient] functions.invoke(${functionName}) requires Electron IPC`,
+        params
+      );
+      return {
+        data: {
+          success: false,
+          matches: [],
+          error: `${functionName} is only available in the TransTrack desktop app.`,
+        },
+      };
     },
   };
 }

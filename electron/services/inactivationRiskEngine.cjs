@@ -651,7 +651,7 @@ function buildInputsFromDatabase(orgId, patientId, opts = {}) {
   try {
     const rows = db.prepare(
       `SELECT id, barrier_type as type, risk_level as riskLevel,
-              CASE WHEN due_date IS NOT NULL AND due_date < date('now')
+              CASE WHEN target_resolution_date IS NOT NULL AND target_resolution_date < date('now')
                    THEN 1 ELSE 0 END as overdue
          FROM readiness_barriers
         WHERE org_id = ? AND patient_id = ? AND status != 'resolved'`

@@ -319,12 +319,15 @@ function buildActionQueueFromDatabase(orgId, opts = {}) {
   const getDb = opts.getDatabase || (() => require('../database/init.cjs').getDatabase());
   const db = opts.db || getDb();
 
+  // Older DBs may not have assigned_coordinator_id — never fail the whole queue on it.
+  const patientCols = db.prepare('PRAGMA table_info(patients)').all().map((c) => c.name);
+  const hasCoordinator = patientCols.includes('assigned_coordinator_id');
   const patients = db
     .prepare(
       `SELECT id, patient_id as mrn,
               first_name || ' ' || last_name as patient_name,
               organ_needed,
-              assigned_coordinator_id,
+              ${hasCoordinator ? 'assigned_coordinator_id,' : ''}
               created_at,
               updated_at
          FROM patients
@@ -344,7 +347,7 @@ function buildActionQueueFromDatabase(orgId, opts = {}) {
       patientName: p.patient_name || null,
       mrn: p.mrn || null,
       organNeeded: p.organ_needed || null,
-      assignedCoordinatorId: p.assigned_coordinator_id || null,
+      assignedCoordinatorId: hasCoordinator ? (p.assigned_coordinator_id || null) : null,
       daysOnWaitlist,
     };
   });

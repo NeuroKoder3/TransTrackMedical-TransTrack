@@ -63,9 +63,15 @@ export default function DonorMatching() {
       const response = await api.functions.invoke('matchDonorAdvanced', {
         donor_organ_id: donor.id,
       });
-      setMatches(response.data.matches);
+      const payload = response?.data ?? response;
+      const list = Array.isArray(payload?.matches) ? payload.matches : [];
+      setMatches(list);
+      if (list.length === 0) {
+        console.info('No compatible recipients found for donor', donor.id);
+      }
     } catch (error) {
       console.error('Matching error:', error);
+      setMatches([]);
     } finally {
       setMatching(false);
     }

@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useRef, useState } from 'react';
 import { api } from '@/api/apiClient';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ArrowLeft, User, Heart, Droplet, Calendar, Phone, Mail, FileText, Download, RefreshCw } from 'lucide-react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { format } from 'date-fns';
 import ErrorState from '@/components/ui/ErrorState';
@@ -16,68 +16,101 @@ import { ReadinessBarrierList } from '../components/barriers';
 import { AHHQPanel } from '../components/ahhq';
 import { LabsPanel } from '../components/labs';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useJustifiedAccess } from '@/hooks/useJustifiedAccess';
 import JustificationDialog from '@/components/access/JustificationDialog';
 
 export default function PatientDetails() {
   // Use React Router's useLocation to get query params (works with HashRouter)
   const location = useLocation();
+  const navigate = useNavigate();
   const urlParams = new URLSearchParams(location.search);
   const patientId = urlParams.get('id');
   const queryClient = useQueryClient();
-  const { requireJustification, dialogOpen, handleConfirm, handleCancel, pendingAction } = useJustifiedAccess();
   const [accessGranted, setAccessGranted] = useState(false);
+  const accessGrantedRef = useRef(false);
 
-  useEffect(() => {
-    if (patientId && !accessGranted) {
-      requireJustification('patient:view_phi', 'Patient', patientId).then((result) => {
-        if (result.authorized) {
-          setAccessGranted(true);
-          if (window.electronAPI?.functions?.invoke) {
-            window.electronAPI.functions.invoke('logError', {
-              message: `PHI access justified: ${result.justification}`,
-              stack: `Patient ID: ${patientId}`,
-            }).catch(() => {});
-          }
-        }
-      });
+  const handleAccessConfirm = (justification) => {
+    // Set ref synchronously BEFORE any dialog unmount/onOpenChange(cancel) can run.
+    accessGrantedRef.current = true;
+    setAccessGranted(true);
+    if (window.electronAPI?.functions?.invoke) {
+      window.electronAPI.functions
+        .invoke('logError', {
+          message: `PHI access justified: ${justification}`,
+          stack: `Patient ID: ${patientId}`,
+        })
+        .catch(() => {});
     }
-  }, [patientId]);
+  };
+
+  const handleAccessCancel = () => {
+    // Dialog unmount after Confirm can still emit a spurious cancel — ignore it.
+    if (accessGrantedRef.current) return;
+    if (window.history.length > 1) {
+      navigate(-1);
+    } else {
+      navigate(createPageUrl('RiskDashboard'));
+    }
+  };
 
   const { data: patient, isLoading, isError } = useQuery({
     queryKey: ['patient', patientId],
     queryFn: async () => {
       const patients = await api.entities.Patient.list();
-      return patients.find(p => p.id === patientId) ?? null;
+      return (
+        patients.find((p) => p.id === patientId) ||
+        patients.find((p) => p.patient_id === patientId) ||
+        null
+      );
     },
-    enabled: !!patientId,
+    enabled: !!patientId && accessGranted,
   });
 
   const { data: auditLogs = [] } = useQuery({
     queryKey: ['auditLogs', patientId],
-    queryFn: () => api.entities.AuditLog.filter({ entity_id: patientId }, '-created_at', 50),
-    enabled: !!patientId,
+    queryFn: () =>
+      api.entities.AuditLog.filter(
+        { entity_id: patient?.id || patientId },
+        '-created_at',
+        50
+      ),
+    enabled: !!patientId && accessGranted,
   });
 
   const recalculatePriorityMutation = useMutation({
-    mutationFn: () => api.functions.invoke('calculatePriorityAdvanced', { patient_id: patientId }),
+    mutationFn: () =>
+      api.functions.invoke('calculatePriorityAdvanced', {
+        patient_id: patient?.id || patientId,
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['patient', patientId] });
     },
   });
 
+  if (!patientId) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6">
+        <div className="max-w-4xl mx-auto">
+          <Card>
+            <CardContent className="p-12 text-center">
+              <p className="text-slate-600">No patient selected</p>
+              <Link to={createPageUrl('RiskDashboard')}>
+                <Button className="mt-4">Back to Risk Intel</Button>
+              </Link>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
   if (!accessGranted) {
     return (
       <>
         <JustificationDialog
-          open={dialogOpen}
-          onConfirm={handleConfirm}
-          onCancel={() => {
-            handleCancel();
-            window.history.back();
-          }}
+          open
+          onConfirm={handleAccessConfirm}
+          onCancel={handleAccessCancel}
           entityType="patient"
-          action="view"
         />
         <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6 flex items-center justify-center">
           <div className="text-slate-600">Awaiting access justification...</div>

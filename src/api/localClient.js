@@ -634,6 +634,19 @@ const createElectronClient = () => {
           return { url: URL.createObjectURL(file), name: file.name };
         },
       },
+      epic: {
+        status: async () => ({
+          enabled: false,
+          reason:
+            'Live Epic FHIR import requires the optional server tier. Use Import Bundle or CSV while offline.',
+          modes: [],
+        }),
+        import: async () => {
+          throw new Error(
+            'Epic on FHIR import requires the API server. Use Import Bundle or Patients → Import CSV in offline desktop mode.'
+          );
+        },
+      },
     },
     // Database Encryption (HIPAA Compliance)
     encryption: {

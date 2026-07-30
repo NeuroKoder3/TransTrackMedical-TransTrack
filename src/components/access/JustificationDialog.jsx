@@ -1,53 +1,87 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
-  AlertDialog,
-  AlertDialogContent,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogCancel,
-  AlertDialogAction,
-} from '@/components/ui/alert-dialog';
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Shield } from 'lucide-react';
 
-export default function JustificationDialog({ open, onConfirm, onCancel, entityType, action }) {
+const PREDEFINED_REASONS = [
+  'Direct patient care',
+  'Care coordination',
+  'Clinical review',
+  'Quality assurance audit',
+  'Regulatory compliance review',
+  'Emergency access',
+];
+
+/**
+ * HIPAA access justification gate.
+ *
+ * Important: Confirm must NOT go through Dialog onOpenChange(false)→onCancel.
+ * After confirm the parent unmounts this dialog, which can fire onOpenChange(false);
+ * treating that as cancel was sending users back to Risk Intel.
+ */
+export default function JustificationDialog({ open, onConfirm, onCancel, entityType }) {
   const [justification, setJustification] = useState('');
+  const outcomeRef = useRef(null); // 'confirmed' | 'cancelled' | null
 
-  const predefinedReasons = [
-    'Direct patient care',
-    'Care coordination',
-    'Clinical review',
-    'Quality assurance audit',
-    'Regulatory compliance review',
-    'Emergency access',
-  ];
-
-  const handleSubmit = () => {
-    if (!justification.trim()) return;
-    onConfirm(justification.trim());
+  const finishConfirm = () => {
+    const reason = justification.trim();
+    if (!reason || outcomeRef.current) return;
+    outcomeRef.current = 'confirmed';
     setJustification('');
+    onConfirm(reason);
+  };
+
+  const finishCancel = () => {
+    if (outcomeRef.current) return;
+    outcomeRef.current = 'cancelled';
+    setJustification('');
+    onCancel?.();
   };
 
   return (
-    <AlertDialog open={open} onOpenChange={(isOpen) => { if (!isOpen) onCancel(); }}>
-      <AlertDialogContent className="max-w-md">
-        <AlertDialogHeader>
-          <AlertDialogTitle className="flex items-center gap-2">
+    <Dialog
+      open={open}
+      onOpenChange={(isOpen) => {
+        if (isOpen) {
+          outcomeRef.current = null;
+          return;
+        }
+        // Closed by overlay / Escape / built-in X — not by Confirm.
+        if (outcomeRef.current === 'confirmed') return;
+        finishCancel();
+      }}
+    >
+      <DialogContent
+        className="max-w-md"
+        onPointerDownOutside={(e) => e.preventDefault()}
+        onEscapeKeyDown={(e) => {
+          e.preventDefault();
+          finishCancel();
+        }}
+      >
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
             <Shield className="w-5 h-5 text-amber-600" />
             Access Justification Required
-          </AlertDialogTitle>
-          <AlertDialogDescription>
-            Accessing {entityType || 'patient'} records requires a documented reason per HIPAA policy. 
+          </DialogTitle>
+          <DialogDescription>
+            Accessing {entityType || 'patient'} records requires a documented reason per HIPAA policy.
             This will be recorded in the audit log.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
+          </DialogDescription>
+        </DialogHeader>
 
         <div className="space-y-3 py-2">
           <Label htmlFor="justification-reason">Select or describe your reason</Label>
           <div className="flex flex-wrap gap-2">
-            {predefinedReasons.map((reason) => (
+            {PREDEFINED_REASONS.map((reason) => (
               <button
                 key={reason}
                 type="button"
@@ -71,13 +105,19 @@ export default function JustificationDialog({ open, onConfirm, onCancel, entityT
           />
         </div>
 
-        <AlertDialogFooter>
-          <AlertDialogCancel onClick={onCancel}>Cancel</AlertDialogCancel>
-          <AlertDialogAction onClick={handleSubmit} disabled={!justification.trim()}>
+        <DialogFooter className="gap-2 sm:gap-0">
+          <Button type="button" variant="outline" onClick={finishCancel}>
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            onClick={finishConfirm}
+            disabled={!justification.trim()}
+          >
             Confirm Access
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

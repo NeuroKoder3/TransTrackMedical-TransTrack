@@ -4,9 +4,16 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { api } from '@/api/apiClient';
-import { Beaker, Play, X } from 'lucide-react';
+import { Beaker, Play, X, AlertCircle } from 'lucide-react';
 import MatchList from './MatchList';
+
+function unwrapMatches(response) {
+  const payload = response?.data ?? response;
+  const list = payload?.matches;
+  return Array.isArray(list) ? list : [];
+}
 
 export default function MatchSimulator({ onClose }) {
   const [hypotheticalDonor, setHypotheticalDonor] = useState({
@@ -21,7 +28,10 @@ export default function MatchSimulator({ onClose }) {
   });
 
   const [matches, setMatches] = useState([]);
+  const [hasRun, setHasRun] = useState(false);
   const [simulating, setSimulating] = useState(false);
+  const [error, setError] = useState(null);
+  const [emptyHint, setEmptyHint] = useState(null);
 
   const handleChange = (field, value) => {
     setHypotheticalDonor({ ...hypotheticalDonor, [field]: value });
@@ -29,14 +39,32 @@ export default function MatchSimulator({ onClose }) {
 
   const handleRunSimulation = async () => {
     setSimulating(true);
+    setError(null);
+    setEmptyHint(null);
+    setHasRun(false);
     try {
       const response = await api.functions.invoke('matchDonorAdvanced', {
         simulation_mode: true,
-        hypothetical_donor: hypotheticalDonor,
+        hypothetical_donor: {
+          ...hypotheticalDonor,
+          donor_age: Number(hypotheticalDonor.donor_age) || null,
+          donor_weight_kg: Number(hypotheticalDonor.donor_weight_kg) || null,
+          donor_height_cm: Number(hypotheticalDonor.donor_height_cm) || null,
+        },
       });
-      setMatches(response.data.matches);
-    } catch (error) {
-      console.error('Simulation error:', error);
+      const next = unwrapMatches(response);
+      setMatches(next);
+      setHasRun(true);
+      if (next.length === 0) {
+        setEmptyHint(
+          'No compatible active waitlist recipients found for this organ/blood type. Add active patients on the Patients tab, or adjust donor parameters and run again.'
+        );
+      }
+    } catch (err) {
+      console.error('Simulation error:', err);
+      setMatches([]);
+      setHasRun(true);
+      setError(err?.message || 'Simulation failed. Please try again.');
     } finally {
       setSimulating(false);
     }
@@ -158,8 +186,23 @@ export default function MatchSimulator({ onClose }) {
             </div>
           </div>
 
+          {error && (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+
+          {emptyHint && !error && (
+            <Alert className="bg-amber-50 border-amber-200">
+              <AlertCircle className="h-4 w-4 text-amber-600" />
+              <AlertDescription className="text-amber-900">{emptyHint}</AlertDescription>
+            </Alert>
+          )}
+
           <div className="flex justify-end pt-4">
             <Button
+              type="button"
               onClick={handleRunSimulation}
               disabled={simulating}
               className="bg-purple-600 hover:bg-purple-700"
@@ -171,7 +214,7 @@ export default function MatchSimulator({ onClose }) {
         </CardContent>
       </Card>
 
-      {matches.length > 0 && (
+      {hasRun && matches.length > 0 && (
         <div>
           <Card className="border-purple-200 bg-purple-50 mb-4">
             <CardContent className="p-4">
@@ -184,7 +227,7 @@ export default function MatchSimulator({ onClose }) {
                 </div>
                 <div className="text-right">
                   <div className="text-2xl font-bold text-purple-700">
-                    {matches[0]?.compatibility_score.toFixed(0)}%
+                    {(matches[0]?.compatibility_score ?? 0).toFixed(0)}%
                   </div>
                   <p className="text-xs text-purple-600">Top Match</p>
                 </div>
