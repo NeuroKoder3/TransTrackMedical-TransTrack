@@ -80,7 +80,7 @@ async function lookupAccess(rawToken) {
   };
 }
 
-async function refresh(rawRefresh, { ttlSeconds = 3600 } = {}) {
+async function refresh(rawRefresh, { ttlSeconds = 3600, clientId } = {}) {
   const refreshHash = hash(rawRefresh);
   return withTransaction({}, async (client) => {
     const r = await client.query(
@@ -94,7 +94,11 @@ async function refresh(rawRefresh, { ttlSeconds = 3600 } = {}) {
     if (row.refresh_expires_at && new Date(row.refresh_expires_at).getTime() < Date.now()) {
       throw new Error('invalid_grant');
     }
-    // Rotate: revoke prior, issue new
+    // Verify clientId matches if provided (prevent token theft across clients)
+    if (clientId && row.client_id !== clientId) {
+      throw new Error('invalid_grant');
+    }
+    // Rotate: revoke prior, issue new — scope is NOT expanded (carried forward)
     await client.query(
       `UPDATE smart_access_tokens SET revoked_at = now() WHERE refresh_token_hash = $1`,
       [refreshHash]

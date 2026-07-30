@@ -33,6 +33,10 @@ module.exports = async function authRoutes(app, opts) {
         refresh: result.refresh,
         config,
       });
+      // Sanitize: keep access in body (remoteClient needs it for Authorization header)
+      // but remove refresh from JSON — it's carried by httpOnly cookie only
+      const { refresh: _omit, ...sanitized } = result;
+      return sanitized;
     }
     return result;
   });
@@ -57,6 +61,8 @@ module.exports = async function authRoutes(app, opts) {
         refresh: result.refresh,
         config,
       });
+      const { refresh: _omit, ...sanitized } = result;
+      return sanitized;
     }
     return result;
   });
@@ -78,7 +84,9 @@ module.exports = async function authRoutes(app, opts) {
       refresh: result.refresh,
       config,
     });
-    return result;
+    // Remove refresh from JSON body — cookie carries it
+    const { refresh: _omit, ...sanitized } = result;
+    return sanitized;
   });
 
   // ----- POST /auth/logout -----
@@ -92,9 +100,33 @@ module.exports = async function authRoutes(app, opts) {
     return { ok: true };
   });
 
+  /**
+   * Extract auth context from either normal session auth (req.auth) or
+   * a Bearer token with purpose=mfa_enroll (enrollment JWT).
+   */
+  function resolveEnrollAuth(req) {
+    if (req.auth) return req.auth;
+    const header = req.headers.authorization || '';
+    if (!header.toLowerCase().startsWith('bearer ')) return null;
+    const token = header.slice(7).trim();
+    if (!token) return null;
+    const jwtMod = require('../auth/jwt');
+    try {
+      const payload = jwtMod.verify(token, config.JWT_SECRET, { issuer: config.JWT_ISSUER });
+      if (payload.purpose !== 'mfa_enroll') return null;
+      return { userId: payload.sub, orgId: payload.org };
+    } catch {
+      return null;
+    }
+  }
+
   // ----- POST /auth/mfa/enroll/begin -----
   app.post('/auth/mfa/enroll/begin', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req) => {
-    if (!req.auth) throw errors.unauthorized();
+    const enrollAuth = resolveEnrollAuth(req);
+    if (!enrollAuth) throw errors.unauthorized();
+    const reqAuth = enrollAuth;
+    // Override req.auth for downstream compatibility
+    if (!req.auth) req.auth = reqAuth;
     const secret = mfa.generateSecret();
     const otpauth = mfa.buildOtpauthUrl({
       secret,
@@ -120,7 +152,9 @@ module.exports = async function authRoutes(app, opts) {
 
   // ----- POST /auth/mfa/enroll/confirm -----
   app.post('/auth/mfa/enroll/confirm', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req) => {
-    if (!req.auth) throw errors.unauthorized();
+    const enrollAuth = resolveEnrollAuth(req);
+    if (!enrollAuth) throw errors.unauthorized();
+    if (!req.auth) req.auth = enrollAuth;
     const body = z.object({ code: z.string().min(6).max(10) }).parse(req.body);
     return withTransaction({ orgId: req.auth.orgId, userId: req.auth.userId }, async (client) => {
       const r = await client.query(
@@ -145,10 +179,14 @@ module.exports = async function authRoutes(app, opts) {
   // ----- POST /auth/password/change -----
   app.post('/auth/password/change', { config: { rateLimit: { max: 5, timeWindow: '1 minute' } } }, async (req) => {
     if (!req.auth) throw errors.unauthorized();
+    const raw = req.body || {};
     const body = z.object({
       current: z.string().min(1),
       next: z.string().min(config.PASSWORD_MIN_LENGTH),
-    }).parse(req.body);
+    }).parse({
+      current: raw.current || raw.currentPassword,
+      next: raw.next || raw.newPassword,
+    });
     if (!password.meetsPolicy(body.next, config.PASSWORD_MIN_LENGTH)) {
       throw errors.badRequest('Password does not meet policy');
     }

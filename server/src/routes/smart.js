@@ -31,6 +31,10 @@ const authzCodes = require('../smart/authzCodes');
 const clients = require('../smart/clients');
 const backendJwt = require('../smart/backendJwt');
 const { authenticateOAuthClient } = require('../smart/clientAuth');
+const {
+  assertRegisteredRedirect, constrainScopes, requirePkceForPublic,
+} = require('../smart/scopes');
+const authService = require('../services/authService');
 
 module.exports = async function smartRoutes(app, opts) {
   const { config } = opts;
@@ -121,31 +125,34 @@ module.exports = async function smartRoutes(app, opts) {
         aud: z.string().optional(),
         launch: z.string().optional(),
         code_challenge: z.string().optional(),
-        code_challenge_method: z.enum(['S256', 'plain']).optional(),
+        code_challenge_method: z.enum(['S256']).optional(),
         nonce: z.string().optional(),
       }).parse(req.query);
 
       const smartClient = await clients.getUnscoped(q.client_id);
       if (!smartClient) throw errors.badRequest('unknown client_id');
-      const allowedRedirects = smartClient.redirect_uris || [];
-      if (allowedRedirects.length && !allowedRedirects.includes(q.redirect_uri)) {
-        throw errors.badRequest('redirect_uri not registered');
-      }
-      // Confidential / public clients require PKCE per SMART v2
-      if ((smartClient.client_type === 'public') && !q.code_challenge) {
-        throw errors.badRequest('PKCE code_challenge is required for public clients');
+
+      // Validate redirect unconditionally
+      assertRegisteredRedirect(smartClient, q.redirect_uri);
+
+      // Constrain scopes to registered set
+      const constrainedScope = constrainScopes(q.scope, smartClient.scope);
+
+      // Require S256 PKCE for public clients
+      requirePkceForPublic(smartClient, q.code_challenge, q.code_challenge_method);
+
+      // Validate aud against config.FHIR_BASE_URL if provided
+      if (q.aud && q.aud !== baseUrl) {
+        throw errors.badRequest('aud parameter does not match this server\'s FHIR base URL');
       }
 
-      // Render minimal consent HTML — production deployments typically use
-      // their authenticated SSO / user sessions; this server-side page is
-      // suitable for first-party SMART apps.
       const launchContext = q.launch ? await resolveLaunchContext(q.launch, smartClient.org_id) : {};
       reply.type('text/html');
       return consentPage({
         clientId: q.client_id,
         clientName: smartClient.client_name,
         redirectUri: q.redirect_uri,
-        scope: q.scope,
+        scope: constrainedScope,
         state: q.state || '',
         codeChallenge: q.code_challenge || '',
         codeChallengeMethod: q.code_challenge_method || '',
@@ -158,27 +165,34 @@ module.exports = async function smartRoutes(app, opts) {
   app.post('/oauth2/authorize',
     { config: { public: true, rateLimit: { max: 15, timeWindow: '1 minute' } } },
     async (req, reply) => {
-      // Form post from the consent screen — the API caller is expected to
-      // have presented some authentication challenge (the username/password
-      // fields come from the form). For headless tests, we accept user_id
-      // directly as a query param so the smoke test can drive the flow.
       const body = z.object({
         client_id: z.string(),
         redirect_uri: z.string().url(),
         scope: z.string(),
         state: z.string().optional(),
         code_challenge: z.string().optional(),
-        code_challenge_method: z.enum(['S256', 'plain']).optional(),
+        code_challenge_method: z.enum(['S256']).optional(),
         nonce: z.string().optional(),
         launch_patient: z.string().optional(),
         launch_encounter: z.string().optional(),
         username: z.string().optional(),
         password: z.string().optional(),
+        mfa_code: z.string().optional(),
+        mfa_challenge_id: z.string().optional(),
         decision: z.enum(['approve', 'deny']).default('approve'),
       }).parse(req.body || {});
 
       const smartClient = await clients.getUnscoped(body.client_id);
       if (!smartClient) throw errors.badRequest('unknown client_id');
+
+      // FIRST: validate redirect_uri BEFORE any redirect (including deny)
+      assertRegisteredRedirect(smartClient, body.redirect_uri);
+
+      // Constrain scopes
+      const constrainedScope = constrainScopes(body.scope, smartClient.scope);
+
+      // Require PKCE S256 for public clients
+      requirePkceForPublic(smartClient, body.code_challenge, body.code_challenge_method);
 
       if (body.decision === 'deny') {
         const url = new URL(body.redirect_uri);
@@ -188,18 +202,42 @@ module.exports = async function smartRoutes(app, opts) {
         return;
       }
 
-      let userId = null;
-      {
-        if (!body.username || !body.password) {
-          throw errors.unauthorized('username and password required');
+      // Authenticate using the hardened authenticateForSmart
+      if (!body.username || !body.password) {
+        throw errors.unauthorized('username and password required');
+      }
+
+      let userId;
+      // If MFA code is provided alongside a challenge, verify it
+      if (body.mfa_code && body.mfa_challenge_id) {
+        const mfaResult = await authService.verifySmartMfa({
+          challengeId: body.mfa_challenge_id,
+          code: body.mfa_code,
+          userId: null,
+        });
+        if (mfaResult.kind !== 'ok') {
+          throw errors.unauthorized('MFA verification failed');
         }
-        const authService = require('../services/authService');
-        const result = await authService.authenticatePassword({
+        userId = mfaResult.userId;
+      } else {
+        const result = await authService.authenticateForSmart(smartClient, config, {
           orgHint: smartClient.org_id,
           email: body.username,
-          password: body.password,
+          plaintext: body.password,
+          ip: req.ip,
         });
-        if (result.kind !== 'ok' && result.kind !== 'mfa_required') {
+
+        if (result.kind === 'mfa_required') {
+          // Do NOT issue auth code — return MFA challenge info
+          throw errors.unauthorized('mfa_required', {
+            challengeId: result.challengeId,
+            userId: result.userId,
+          });
+        }
+        if (result.kind === 'must_enroll') {
+          throw errors.unauthorized('MFA enrollment required before authorization');
+        }
+        if (result.kind !== 'ok') {
           throw errors.unauthorized('invalid credentials');
         }
         userId = result.userId;
@@ -215,7 +253,7 @@ module.exports = async function smartRoutes(app, opts) {
         clientId: smartClient.client_id,
         userId,
         redirectUri: body.redirect_uri,
-        scope: body.scope,
+        scope: constrainedScope,
         codeChallenge: body.code_challenge,
         codeChallengeMethod: body.code_challenge_method,
         launchContext,
@@ -304,8 +342,19 @@ module.exports = async function smartRoutes(app, opts) {
 
       if (grantType === 'refresh_token') {
         const data = z.object({ refresh_token: z.string().min(1) }).parse(body);
+        // Authenticate confidential client if credentials are provided
+        if (clientId) {
+          const smartClient = await clients.getUnscoped(clientId);
+          if (smartClient && smartClient.client_type === 'confidential') {
+            const ok = await clients.verifySecret(smartClient, clientSecret);
+            if (!ok) throw errors.unauthorized('invalid_client');
+          }
+        }
         try {
-          return await tokens.refresh(data.refresh_token, { ttlSeconds: config.JWT_ACCESS_TTL_SECONDS });
+          return await tokens.refresh(data.refresh_token, {
+            ttlSeconds: config.JWT_ACCESS_TTL_SECONDS,
+            clientId: clientId || undefined,
+          });
         } catch (_e) {
           throw errors.unauthorized('invalid_grant');
         }
@@ -319,7 +368,12 @@ module.exports = async function smartRoutes(app, opts) {
         }
         const ok = await clients.verifySecret(smartClient, clientSecret);
         if (!ok) throw errors.unauthorized('invalid_client');
-        const requestedScope = body.scope || smartClient.scope || 'system/*.rs';
+        if (!smartClient.scope) {
+          throw errors.badRequest('Client has no registered scopes');
+        }
+        const requestedScope = body.scope
+          ? constrainScopes(body.scope, smartClient.scope)
+          : smartClient.scope;
         return tokens.issue({
           orgId: smartClient.org_id,
           clientId: smartClient.client_id,
@@ -337,7 +391,6 @@ module.exports = async function smartRoutes(app, opts) {
           client_assertion: z.string().min(20),
           scope: z.string().optional(),
         }).parse(body);
-        // Determine client_id from the JWT
         const [, payloadB64] = data.client_assertion.split('.');
         let assertedClientId;
         try {
@@ -354,14 +407,19 @@ module.exports = async function smartRoutes(app, opts) {
         } catch (e) {
           throw errors.unauthorized(e.message);
         }
-        const requestedScope = data.scope || smartClient.scope || 'system/*.rs';
+        if (!smartClient.scope) {
+          throw errors.badRequest('Client has no registered scopes');
+        }
+        const requestedScope = data.scope
+          ? constrainScopes(data.scope, smartClient.scope)
+          : smartClient.scope;
         return tokens.issue({
           orgId: smartClient.org_id,
           clientId: smartClient.client_id,
           userId: null,
           scope: requestedScope,
           launchContext: {},
-          accessTtlSeconds: 300, // backend-services tokens are short-lived
+          accessTtlSeconds: 300,
           withRefresh: false,
         });
       }
