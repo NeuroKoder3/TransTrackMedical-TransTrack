@@ -204,12 +204,20 @@ async function consumeMfaChallenge(client, config, { challengeId, code, ip, user
   const secret = mfa.decryptSecret(ch.secret_encrypted, config.JWT_SECRET);
   const ok = mfa.verifyCode(secret, code);
   if (!ok) {
-    // Try recovery codes (one-time)
-    const codeHash = mfa.hashRecoveryCode(String(code || ''));
+    // Try recovery codes (one-time). Argon2id (with legacy SHA-256 upgrade).
     const list = ch.recovery_codes || [];
-    const idx = list.findIndex(c => c.hash === codeHash && !c.used_at);
-    if (idx < 0) throw errors.unauthorized('Invalid code');
-    list[idx].used_at = new Date().toISOString();
+    let matched = false;
+    for (let i = 0; i < list.length; i++) {
+      if (list[i].used_at) continue;
+      if (!(await mfa.verifyRecoveryCode(code, list[i].hash))) continue;
+      list[i].used_at = new Date().toISOString();
+      if (mfa.isLegacySha256Hash(list[i].hash)) {
+        list[i].hash = await mfa.hashRecoveryCode(code);
+      }
+      matched = true;
+      break;
+    }
+    if (!matched) throw errors.unauthorized('Invalid code');
     await client.query(
       `UPDATE mfa_enrollments SET recovery_codes = $1 WHERE user_id = $2`,
       [JSON.stringify(list), ch.user_id]
@@ -444,11 +452,19 @@ async function verifySmartMfa({ challengeId, code, userId }) {
     const secret = mfa.decryptSecret(ch.secret_encrypted, config.JWT_SECRET);
     const valid = mfa.verifyCode(secret, code);
     if (!valid) {
-      const codeHash = mfa.hashRecoveryCode(String(code || ''));
       const list = ch.recovery_codes || [];
-      const idx = list.findIndex(c => c.hash === codeHash && !c.used_at);
-      if (idx < 0) throw errors.unauthorized('Invalid code');
-      list[idx].used_at = new Date().toISOString();
+      let matched = false;
+      for (let i = 0; i < list.length; i++) {
+        if (list[i].used_at) continue;
+        if (!(await mfa.verifyRecoveryCode(code, list[i].hash))) continue;
+        list[i].used_at = new Date().toISOString();
+        if (mfa.isLegacySha256Hash(list[i].hash)) {
+          list[i].hash = await mfa.hashRecoveryCode(code);
+        }
+        matched = true;
+        break;
+      }
+      if (!matched) throw errors.unauthorized('Invalid code');
       await client.query(
         `UPDATE mfa_enrollments SET recovery_codes = $1 WHERE user_id = $2`,
         [JSON.stringify(list), ch.user_id]

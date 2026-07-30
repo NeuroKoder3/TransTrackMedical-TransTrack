@@ -3,6 +3,7 @@
 const crypto = require('crypto');
 const otplib = require('otplib');
 const QRCode = require('qrcode');
+const password = require('./password');
 
 /**
  * TOTP (RFC 6238) helpers, plus AES-256-GCM encryption of the shared secret
@@ -99,13 +100,48 @@ async function buildQrCodeDataUrl(otpauthUrl) {
 function generateRecoveryCodes(n = 10) {
   const codes = [];
   for (let i = 0; i < n; i++) {
-    codes.push(crypto.randomBytes(5).toString('hex').toUpperCase());
+    // 80 bits of entropy (10 random bytes → 20 hex chars)
+    codes.push(crypto.randomBytes(10).toString('hex').toUpperCase());
   }
   return codes;
 }
 
-function hashRecoveryCode(code) {
-  return crypto.createHash('sha256').update(code.toUpperCase().trim()).digest('hex');
+function normalizeRecoveryCode(code) {
+  return String(code || '').toUpperCase().trim();
+}
+
+function isLegacySha256Hash(stored) {
+  return typeof stored === 'string' && /^[a-f0-9]{64}$/i.test(stored);
+}
+
+/**
+ * Hash a recovery code with Argon2id (same parameters as passwords).
+ * Legacy SHA-256 hashes are still accepted by verifyRecoveryCode.
+ */
+async function hashRecoveryCode(code) {
+  return password.hash(normalizeRecoveryCode(code));
+}
+
+/**
+ * Verify a recovery code against a stored hash.
+ * Supports Argon2id and legacy SHA-256 hex digests.
+ */
+async function verifyRecoveryCode(code, storedHash) {
+  if (!storedHash) return false;
+  const normalized = normalizeRecoveryCode(code);
+  if (!normalized) return false;
+  if (isLegacySha256Hash(storedHash)) {
+    const legacy = crypto.createHash('sha256').update(normalized).digest('hex');
+    try {
+      return crypto.timingSafeEqual(
+        Buffer.from(legacy, 'utf8'),
+        Buffer.from(storedHash.toLowerCase(), 'utf8')
+      );
+    } catch {
+      return false;
+    }
+  }
+  return password.verify(storedHash, normalized);
 }
 
 module.exports = {
@@ -116,6 +152,8 @@ module.exports = {
   buildQrCodeDataUrl,
   generateRecoveryCodes,
   hashRecoveryCode,
+  verifyRecoveryCode,
+  isLegacySha256Hash,
   encryptSecret,
   decryptSecret,
 };
