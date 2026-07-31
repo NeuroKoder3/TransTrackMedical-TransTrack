@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 
 /**
  * Hook for handling access with justification requirements.
@@ -12,6 +12,11 @@ import { useState, useCallback } from 'react';
 export function useJustifiedAccess() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [pendingAction, setPendingAction] = useState(null);
+  // The authorization IPC is async, so the dialog can emit a close event while
+  // it is still running. A promise settles once, so a cancellation arriving in
+  // that window would permanently decide the outcome as "denied" no matter what
+  // the grant came back as. This lets handleCancel stand down instead.
+  const confirmInFlight = useRef(false);
 
   const requireJustification = useCallback((permission, entityType, entityId) => {
     return new Promise((resolve) => {
@@ -32,6 +37,7 @@ export function useJustifiedAccess() {
       ? justification
       : justification?.details || justification?.reason || '';
 
+    confirmInFlight.current = true;
     try {
       const ipc = window.electronAPI?.accessControl?.authorizePhiAccess;
       if (ipc) {
@@ -51,12 +57,18 @@ export function useJustifiedAccess() {
       }
     } catch (err) {
       pendingAction.resolve({ authorized: false, reason: err.message });
+    } finally {
+      confirmInFlight.current = false;
+      setPendingAction(null);
+      setDialogOpen(false);
     }
-    setPendingAction(null);
-    setDialogOpen(false);
   }, [pendingAction]);
 
   const handleCancel = useCallback(() => {
+    // A confirm already owns this request's outcome; ignore the close event it
+    // caused rather than resolving the promise as a cancellation.
+    if (confirmInFlight.current) return;
+
     if (pendingAction) {
       pendingAction.resolve({
         authorized: false,
