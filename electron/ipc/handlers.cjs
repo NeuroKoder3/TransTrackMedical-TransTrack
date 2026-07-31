@@ -32,13 +32,24 @@ const { getMigrationStatus } = require('../database/migrations.cjs');
 
 /**
  * Wrap ipcMain.handle so every registered handler automatically runs through
- * the rate limiter. The original handler still decides whether it requires
- * an active session (auth:login obviously doesn't).
+ * the shared IPC security middleware. The original handler still decides
+ * whether it requires an active session (auth:login obviously doesn't).
+ *
+ * Order matters — cheapest and most decisive checks first:
+ *   1. Sender validation  (is this the trusted renderer top-level frame?)
+ *   2. Argument validation (is the payload structurally safe / in schema?)
+ *   3. Session restrictions (password change / MFA enrollment gates)
+ *   4. Rate limiting
+ *
+ * Rejections are logged without payload contents so no PHI reaches the logs.
  */
-function installRateLimitMiddleware() {
+function installIpcSecurityMiddleware() {
   const { ipcMain } = require('electron');
   const { checkRateLimit } = require('./rateLimiter.cjs');
   const shared = require('./shared.cjs');
+  const senderValidation = require('./senderValidation.cjs');
+  const argValidation = require('./argValidation.cjs');
+  const { logger } = require('../services/logger.cjs');
 
   const originalHandle = ipcMain.handle.bind(ipcMain);
 
@@ -46,17 +57,41 @@ function installRateLimitMiddleware() {
     originalHandle(channel, async (event, ...args) => {
       shared.setRequestContext(event?.sender?.id);
       try {
+        // 1. Sender validation — refuse IPC that did not come from the
+        //    trusted renderer's top-level frame.
+        const senderResult = senderValidation.validateSender(event, channel);
+        if (!senderResult.ok) {
+          logger.warn('Rejected IPC from untrusted sender', {
+            channel,
+            reason: senderResult.reason,
+          });
+          throw new Error('Request rejected: untrusted IPC sender');
+        }
+
+        // 2. Argument validation — structural guards for all channels plus
+        //    per-channel schemas where defined.
+        try {
+          argValidation.validateArgs(channel, args);
+        } catch (validationErr) {
+          logger.warn('Rejected IPC with invalid arguments', {
+            channel,
+            reason: validationErr.message,
+          });
+          throw validationErr;
+        }
+
         const { currentUser } = shared.getSessionState();
         const userId = currentUser?.id || 'anon';
 
-        // Restricted sessions (must change password / enroll MFA) may only
-        // call the allow-listed security-setup channels.
+        // 3. Restricted sessions (must change password / enroll MFA) may only
+        //    call the allow-listed security-setup channels.
         if (currentUser?.session_restrictions?.length) {
           if (!shared.sessionAllows(channel)) {
             throw new Error('Complete account security requirements before continuing');
           }
         }
 
+        // 4. Rate limiting.
         const rateResult = checkRateLimit(userId, channel);
         if (!rateResult.allowed) {
           throw new Error(rateResult.error);
@@ -166,7 +201,7 @@ function registerExtendedHandlers() {
 }
 
 function setupIPCHandlers() {
-  installRateLimitMiddleware();
+  installIpcSecurityMiddleware();
   authHandlers.register();
   entityHandlers.register();
   adminHandlers.register();

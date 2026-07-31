@@ -297,7 +297,7 @@ Contact [Trans_Track@outlook.com](mailto:Trans_Track@outlook.com) if you need as
 
 * Encryption at rest (AES-256, SQLCipher)
 * Role-based access control with justification logging
-* Automatic session timeouts and idle lockout
+* Automatic session timeouts and idle lockout, plus immediate session end on OS screen lock or suspend
 * Immutable audit trails enforced at the database trigger level
 * Multi-factor authentication (TOTP with backup codes)
 * Optional SIEM forwarding (RFC 5424 syslog / CEF)
@@ -314,9 +314,27 @@ Contact [Trans_Track@outlook.com](mailto:Trans_Track@outlook.com) if you need as
 * Fully offline operation by default
 * Local AES-256 encryption with key rotation support
 * Secure, encrypted backups and disaster-recovery tooling
+* Hardened Electron renderer: `sandbox: true`, `contextIsolation: true`, `nodeIntegration: false`, strict CSP, no renderer permissions
+* Every IPC call is sender-validated and argument-validated before any handler runs
+* Audit trail is tamper-evident on two layers: SHA-256 hash chain plus a keyed HMAC held in OS secure storage
+* Plaintext databases, database temp copies, rotated backups (including WAL sidecars), and the first-launch setup token are wiped by multi-pass overwrite rather than unlinked
 * Independent penetration test and SOC 2 Type II are the responsibility of the deploying organization
 
-[Compliance overview](docs/COMPLIANCE.md) · [Validation package](docs/compliance/README.md)
+[Compliance overview](docs/COMPLIANCE.md) · [Validation package](docs/compliance/README.md) · [Hardening & residual risk](docs/security/PRODUCTION_READINESS_HARDENING.md)
+
+### Running the test suites
+
+```bash
+npm test                # all Node suites (security + hardening + functional)
+npm run test:security   # compliance-critical suites only
+npm run test:hardening  # Electron/IPC/audit hardening suites
+npm run test:list       # show every suite group
+npm run test:e2e        # Playwright, against the real Electron app
+```
+
+Suite membership lives in `scripts/run-test-suites.cjs`. See
+[the hardening document](docs/security/PRODUCTION_READINESS_HARDENING.md#4-new-tests-and-how-to-run-them)
+for what each suite covers.
 
 ---
 

@@ -1,12 +1,59 @@
 const { contextBridge, ipcRenderer } = require('electron');
-const securityPolicy = require('./config/securityPolicy.cjs');
+
+// This preload runs with `sandbox: true`, where `require()` is limited to the
+// electron module and a small polyfilled set. Local modules such as
+// config/securityPolicy.cjs are therefore NOT requireable here. The main
+// process (which owns securityPolicy.cjs as the single source of truth)
+// forwards the resolved values through webPreferences.additionalArguments.
+// The literals below are only a fallback and must stay in sync with the
+// defaults in electron/config/securityPolicy.cjs.
+const SECURITY_POLICY_ARG_PREFIX = '--transtrack-security-policy=';
+const FALLBACK_SECURITY_POLICY = {
+  IDLE_TIMEOUT_MS: 15 * 60 * 1000,
+  SESSION_ABSOLUTE_MS: 8 * 60 * 60 * 1000,
+  WARNING_BEFORE_MS: 2 * 60 * 1000,
+};
+
+function readSecurityPolicyFromArgv() {
+  try {
+    const arg = (process.argv || []).find((a) => typeof a === 'string' && a.startsWith(SECURITY_POLICY_ARG_PREFIX));
+    if (!arg) return FALLBACK_SECURITY_POLICY;
+    const parsed = JSON.parse(arg.slice(SECURITY_POLICY_ARG_PREFIX.length));
+    const pick = (key) => (Number.isFinite(parsed?.[key]) && parsed[key] > 0 ? parsed[key] : FALLBACK_SECURITY_POLICY[key]);
+    return {
+      IDLE_TIMEOUT_MS: pick('IDLE_TIMEOUT_MS'),
+      SESSION_ABSOLUTE_MS: pick('SESSION_ABSOLUTE_MS'),
+      WARNING_BEFORE_MS: pick('WARNING_BEFORE_MS'),
+    };
+  } catch {
+    return FALLBACK_SECURITY_POLICY;
+  }
+}
+
+const securityPolicy = readSecurityPolicyFromArgv();
 
 // Prefer an explicit API URL from the shell env so Epic/remote mode works
 // even when Vite was started without VITE_TRANSTRACK_API_URL baked in.
 // Always expose transtrackConfig so the renderer can detect mode reliably.
+//
+// The env lookup is unchanged and still takes precedence. The launch-argument
+// fallback exists only so that remote/Epic mode cannot be lost if the
+// environment is not visible to this sandboxed preload.
+const API_BASE_URL_ARG_PREFIX = '--transtrack-api-base-url=';
+
+function readApiBaseUrlFromArgv() {
+  try {
+    const arg = (process.argv || []).find((a) => typeof a === 'string' && a.startsWith(API_BASE_URL_ARG_PREFIX));
+    return arg ? arg.slice(API_BASE_URL_ARG_PREFIX.length) : '';
+  } catch {
+    return '';
+  }
+}
+
 const apiBaseUrl = (
-  process.env.TRANSTRACK_API_URL
-  || process.env.VITE_TRANSTRACK_API_URL
+  process.env?.TRANSTRACK_API_URL
+  || process.env?.VITE_TRANSTRACK_API_URL
+  || readApiBaseUrlFromArgv()
   || ''
 ).replace(/^\uFEFF/, '').trim();
 
@@ -326,6 +373,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
   },
   
+  // Session lifecycle events pushed by the main process.
+  // 'session:locked' fires when the OS reports a screen lock or suspend; the
+  // main process has already ended the session, so the renderer's only job is
+  // to clear PHI from the screen. Payload: { reason, wasAuthenticated }.
+  session: {
+    onLocked: (callback) => {
+      const wrapped = (_event, payload) => callback(payload);
+      ipcRenderer.on('session:locked', wrapped);
+      return () => ipcRenderer.removeListener('session:locked', wrapped);
+    },
+  },
+
   // Menu event listeners
   onMenuExport: (callback) => {
     ipcRenderer.on('menu-export', callback);
@@ -539,6 +598,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getDataCompleteness: () => ipcRenderer.invoke('compliance:getDataCompleteness'),
     getValidationReport: () => ipcRenderer.invoke('compliance:getValidationReport'),
     getAccessLogs: (options) => ipcRenderer.invoke('compliance:getAccessLogs', options),
+    verifyAuditChain: () => ipcRenderer.invoke('compliance:verify-audit-chain'),
+    generateAuditReport: (options) => ipcRenderer.invoke('compliance:generate-audit-report', options),
+    // Human-readable + electronic inspection copies (21 CFR 11.10(b)).
+    // options: { format: 'json'|'csv'|'html'|'all', includePatientName, startDate, endDate, ... }
+    exportAuditReport: (options) => ipcRenderer.invoke('compliance:export-audit-report', options),
   },
   
   // Offline Reconciliation

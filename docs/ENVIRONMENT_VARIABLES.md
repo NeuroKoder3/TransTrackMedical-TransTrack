@@ -186,6 +186,46 @@ omitted: `EPIC_CLIENT_ID`, `EPIC_PRIVATE_KEY_FILE`, etc.
 |--------------------------------|-----------|---------|-------|
 | `TRANSTRACK_DB_KEY_OVERRIDE`   | No        | —       | Diagnostic-only; bypasses key derivation. Production builds reject this. |
 
+## Audit trail integrity (desktop)
+
+The audit HMAC key is created automatically on first launch and stored in OS
+secure storage (`safeStorage`: DPAPI / Keychain / libsecret) at
+`userData/.transtrack-audit-hmac`. No configuration is required. See
+[`docs/security/PRODUCTION_READINESS_HARDENING.md`](security/PRODUCTION_READINESS_HARDENING.md#5-new-configuration-and-key-management).
+
+| Variable                       | Required? | Default | Notes |
+|--------------------------------|-----------|---------|-------|
+| `TRANSTRACK_AUDIT_HMAC_KEY`    | No        | —       | **Test/CI only — enforced, not advisory.** 64 hex chars (256-bit). Honoured *only* when `NODE_ENV=test` in an unpackaged build. Ignored everywhere else. |
+| `TRANSTRACK_ALLOW_TEST_KEYS`   | No        | —       | Optional second opt-in for the above. If set at all it must be exactly `true`; any other value (e.g. `false`) vetoes the override even under `NODE_ENV=test`. |
+
+### How the test-key gate behaves
+
+`TRANSTRACK_AUDIT_HMAC_KEY` is only used when **all** of the following hold:
+
+1. the build is **not packaged** (`app.isPackaged === false`),
+2. `NODE_ENV` is exactly `test`, and
+3. `TRANSTRACK_ALLOW_TEST_KEYS`, if present, is exactly `true`.
+
+In every other environment — production, staging, `qa`, an unset or misspelled
+`NODE_ENV`, or any packaged build — the variable is **ignored completely**, a
+warning naming the variable is logged, and the key is taken from OS secure
+storage instead. The refusal is also reported by the `auditTrail` component of
+`system:getHealth` as `testOverrideRejected`, so a misconfigured host is visible
+in operational monitoring rather than only in the log.
+
+There is no production-reachable path that bypasses the OS keyring:
+
+| Situation | Behaviour |
+|---|---|
+| Keyring available | Key is minted/loaded and stored `safeStorage`-encrypted. Only production path. |
+| Keyring unavailable, `NODE_ENV` = `test`/`development`/unset, unpackaged | A `0600` hex key file is permitted so contributors are not blocked. Automatically re-sealed once a keyring appears. |
+| Keyring unavailable, any other `NODE_ENV`, or packaged | **No key is created and no file is written.** Fails closed with reason `safe_storage_unavailable`. |
+| An unprotected key file is found where the keyring is required | **Refused** with reason `unprotected_key_file_refused`, so a planted plaintext key cannot become the audit key. |
+
+> When no key can be established, HMAC tamper-evidence is skipped — the SHA-256
+> audit hash chain still applies — and the degradation is reported by
+> `system:getHealth`. Headless Linux hosts need `libsecret` and an unlocked keyring.
+
 ## Desktop authentication (enterprise)
 
 | Variable                                  | Required? | Default | Notes |

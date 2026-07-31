@@ -16,8 +16,10 @@
  *   2. logger        — log directory writable, log file size, rotation status.
  *   3. database      — encrypted SQLite reachable, table count, schema OK.
  *   4. encryption    — encryption status from existing service.
- *   5. riskEngine    — model version + factor weight invariant.
- *   6. backups       — newest backup age (when backup service available).
+ *   5. integrity     — tamper detection over security-critical source files.
+ *   6. auditTrail    — immutability triggers + HMAC tamper-evidence readiness.
+ *   7. riskEngine    — model version + factor weight invariant.
+ *   8. backups       — newest backup age (when backup service available).
  *
  * Each component returns one of: 'ok' | 'warn' | 'fail'. Overall status is
  * the worst of the per-component statuses, and is 'ok' only when every
@@ -126,6 +128,78 @@ function _checkRiskEngine() {
   });
 }
 
+function _checkIntegrity() {
+  return _safe(() => {
+    const monitor = require('./integrityMonitor.cjs');
+    const result = monitor.verifyIntegrity();
+
+    // 'modified' and 'baseline_untrusted' mean a security-critical file or the
+    // baseline itself changed — that is an incident, not a warning.
+    const failStatuses = new Set(['modified', 'baseline_untrusted']);
+    const status = result.status === 'ok'
+      ? 'ok'
+      : (failStatuses.has(result.status) ? 'fail' : 'warn');
+
+    return {
+      status,
+      detail: result.status,
+      checked: result.checked,
+      modified: result.modified,
+      missing: result.missing,
+      added: result.added,
+      sealAlgorithm: result.sealAlgorithm || null,
+      ...(status === 'ok' ? {} : { error: result.reason || result.status }),
+    };
+  });
+}
+
+function _checkAuditTrail() {
+  return _safe(() => {
+    const { getDatabase } = require('../database/init.cjs');
+    const db = getDatabase();
+
+    const triggers = db.prepare(
+      `SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'audit_logs_immutable_%'`
+    ).all().map((t) => t.name);
+
+    const hasHmacColumn = db.prepare('PRAGMA table_info(audit_logs)')
+      .all()
+      .some((c) => c.name === 'record_hmac');
+
+    let hmacKey = { available: false, osProtected: false, reason: 'module_unavailable' };
+    try { hmacKey = require('./auditHmacKey.cjs').getStatus(); } catch { /* keep default */ }
+
+    const immutabilityEnforced = triggers.length >= 2;
+    const problems = [];
+    if (!immutabilityEnforced) problems.push('audit_logs immutability triggers missing');
+    if (!hasHmacColumn) problems.push('record_hmac column missing (migration 16 not applied)');
+    if (!hmacKey.available) problems.push(`audit HMAC key unavailable (${hmacKey.reason})`);
+
+    // A refused test-key override means someone set TRANSTRACK_AUDIT_HMAC_KEY on
+    // a non-test system. The key was correctly ignored, but the attempt is worth
+    // surfacing rather than leaving in the log only.
+    if (hmacKey.testOverrideRejected) {
+      problems.push('TRANSTRACK_AUDIT_HMAC_KEY is set outside test and was ignored — unset it');
+    }
+    // Should be impossible outside a test run; treated as a misconfiguration.
+    if (hmacKey.testOverrideInUse) {
+      problems.push('audit HMAC key came from the test-only override');
+    }
+
+    return {
+      status: problems.length === 0 ? 'ok' : 'warn',
+      immutabilityEnforced,
+      immutabilityTriggers: triggers,
+      hmacColumnPresent: hasHmacColumn,
+      hmacKeyAvailable: hmacKey.available,
+      hmacKeyOsProtected: hmacKey.osProtected,
+      ...(hmacKey.testOverrideRejected ? { testOverrideRejected: true } : {}),
+      ...(hmacKey.testOverrideInUse ? { testOverrideInUse: true } : {}),
+      ...(problems.length ? { error: problems.join('; ') } : {}),
+    };
+  });
+}
+
 function _checkBackups() {
   return _safe(() => {
     let svc;
@@ -163,6 +237,8 @@ function getHealth() {
     logger:     _checkLogger(),
     database:   _checkDatabase(),
     encryption: _checkEncryption(),
+    integrity:  _checkIntegrity(),
+    auditTrail: _checkAuditTrail(),
     riskEngine: _checkRiskEngine(),
     backups:    _checkBackups(),
   };

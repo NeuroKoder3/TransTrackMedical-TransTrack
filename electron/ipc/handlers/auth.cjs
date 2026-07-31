@@ -15,6 +15,7 @@ const {
   getDefaultOrganization,
 } = require('../../database/init.cjs');
 const shared = require('../shared.cjs');
+const secureDelete = require('../../services/secureDelete.cjs');
 const passwordHistory = require('../../services/passwordHistory.cjs');
 const mfa = require('../../services/mfa.cjs');
 const oidcDesktop = require('../../auth/oidcDesktop.cjs');
@@ -35,28 +36,10 @@ function purgeSetupTokenFile() {
     if (!app || typeof app.getPath !== 'function') return;
     const tokenPath = path.join(app.getPath('userData'), 'INITIAL_ADMIN_PASSWORD.txt');
 
-    let fd;
-    try {
-      fd = fs.openSync(tokenPath, 'r+');
-    } catch (err) {
-      if (err && err.code === 'ENOENT') return;
-      throw err;
-    }
-
-    try {
-      const { size } = fs.fstatSync(fd);
-      const overwrite = Buffer.alloc(Math.max(size, 64), 0);
-      fs.writeSync(fd, overwrite, 0, overwrite.length, 0);
-      fs.fsyncSync(fd);
-    } catch { /* best effort overwrite */ }
-    finally {
-      try { fs.closeSync(fd); } catch { /* ignore */ }
-    }
-
-    try { fs.unlinkSync(tokenPath); }
-    catch (err) {
-      if (!err || err.code !== 'ENOENT') throw err;
-    }
+    // Multi-pass overwrite, rename, then unlink. secureDeleteFile opens by
+    // descriptor (no exists()-then-act race), treats ENOENT as success, and
+    // never throws, so this path keeps its best-effort contract.
+    secureDelete.secureDeleteFile(tokenPath);
   } catch { /* best effort — never throw from this path */ }
 }
 
@@ -484,6 +467,25 @@ function register() {
     return { success: true };
   });
 
+  /**
+   * Count the permanent compliance records that attribute actions to a user.
+   * A user referenced by any of these cannot be erased without destroying
+   * attributability, which 21 CFR Part 11.10(e) forbids.
+   */
+  function countAttributionRecords(userId) {
+    let total = 0;
+    for (const sql of [
+      'SELECT COUNT(*) AS n FROM electronic_signatures WHERE user_id = ?',
+      'SELECT COUNT(*) AS n FROM access_justification_logs WHERE user_id = ?',
+      'SELECT COUNT(*) AS n FROM audit_logs WHERE user_id = ?',
+    ]) {
+      try {
+        total += db.prepare(sql).get(userId)?.n || 0;
+      } catch { /* table absent in this schema version */ }
+    }
+    return total;
+  }
+
   ipcMain.handle('auth:deleteUser', async (event, id) => {
     const { currentUser } = shared.getSessionState();
     if (!shared.validateSession() || currentUser.role !== 'admin') {
@@ -495,10 +497,33 @@ function register() {
     const targetUser = db.prepare('SELECT id FROM users WHERE id = ? AND org_id = ?').get(id, orgId);
     if (!targetUser) throw new Error('User not found in your organization');
 
+    // Always terminate active sessions first so access stops immediately
+    // regardless of which removal path is taken below.
     db.prepare('DELETE FROM sessions WHERE user_id = ? AND user_id IN (SELECT id FROM users WHERE org_id = ?)').run(id, orgId);
+
+    // A user who has signed records, justified PHI access, or generated audit
+    // entries is retired rather than erased: hard-deleting the row would
+    // cascade into the immutable signature table and break the audit trail's
+    // attribution. The account is deactivated, which revokes all access.
+    const attributionRecords = countAttributionRecords(id);
+    if (attributionRecords > 0) {
+      db.prepare(
+        "UPDATE users SET is_active = 0, updated_at = datetime('now') WHERE id = ? AND org_id = ?"
+      ).run(id, orgId);
+      shared.logAudit(
+        'deactivate', 'User', id, null,
+        JSON.stringify({
+          message: 'User deactivated instead of deleted to preserve audit attribution',
+          attribution_records: attributionRecords,
+        }),
+        currentUser.email, currentUser.role
+      );
+      return { success: true, deactivated: true, reason: 'audit_attribution_preserved' };
+    }
+
     db.prepare('DELETE FROM users WHERE id = ? AND org_id = ?').run(id, orgId);
     shared.logAudit('delete', 'User', id, null, 'User deleted', currentUser.email, currentUser.role);
-    return { success: true };
+    return { success: true, deactivated: false };
   });
 }
 

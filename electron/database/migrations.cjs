@@ -579,6 +579,18 @@ const MIGRATIONS = [
       `);
     },
   },
+  {
+    version: 16,
+    name: 'add_audit_log_hmac',
+    description: 'Keyed HMAC column for audit rows so the chain cannot be silently recomputed',
+    rollbackSql: null, // additive column; older code simply ignores it
+    up(db) {
+      const cols = db.prepare('PRAGMA table_info(audit_logs)').all().map((c) => c.name);
+      if (!cols.includes('record_hmac')) {
+        db.exec('ALTER TABLE audit_logs ADD COLUMN record_hmac TEXT');
+      }
+    },
+  },
 ];
 
 /**

@@ -23,6 +23,7 @@ This directory holds the artifacts that make a third-party penetration test
 | [`PENTEST_VENDOR_CHECKLIST.md`](PENTEST_VENDOR_CHECKLIST.md) | Vendor selection criteria, shortlist template, and reference-check questions. | Ready to use |
 | [`PENTEST_REMEDIATION_TRACKER.md`](PENTEST_REMEDIATION_TRACKER.md) | Severity-driven remediation tracker with SLAs aligned to `SECURITY.md`. | Ready to use; fill as findings arrive |
 | [`PENETRATION_TEST_SUMMARY_TEMPLATE.md`](PENETRATION_TEST_SUMMARY_TEMPLATE.md) | The public, customer-facing summary published after each engagement. | Template — no engagement to publish |
+| [`PRODUCTION_READINESS_HARDENING.md`](PRODUCTION_READINESS_HARDENING.md) | Desktop hardening pass: controls added, Epic Connection Hub impact statement, new tests, key-management steps, residual risk. Useful as pentest pre-reading. | Current |
 
 ## How this connects to the production-readiness gate
 

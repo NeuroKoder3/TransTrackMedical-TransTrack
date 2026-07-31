@@ -28,6 +28,8 @@ let app, safeStorage;
 try { ({ app, safeStorage } = require('electron')); } catch { /* plain Node / CI */ }
 const { createSchema, createIndexes, createAuditLogTriggers, addOrgIdToExistingTables } = require('./schema.cjs');
 const { runMigrations } = require('./migrations.cjs');
+// Pure fs/crypto, no Electron dependency — safe to require from plain-Node tests.
+const secureDelete = require('../services/secureDelete.cjs');
 
 let db = null;
 let encryptionEnabled = false;
@@ -291,31 +293,22 @@ async function migrateToEncrypted(unencryptedPath, encryptedPath, encryptionKey)
     // Move new encrypted database to final location
     fs.renameSync(encryptedPath + '.new', encryptedPath);
 
-    // Securely overwrite the plaintext database: open by fd, fstat that fd,
-    // zero the contents, then unlink. Avoids TOCTOU between exists/stat and write.
-    try {
-      const fd = fs.openSync(unencryptedPath, 'r+');
-      try {
-        const stat = fs.fstatSync(fd);
-        const zeroChunk = Buffer.alloc(Math.min(stat.size, 64 * 1024), 0);
-        let remaining = stat.size;
-        let offset = 0;
-        while (remaining > 0) {
-          const toWrite = Math.min(remaining, zeroChunk.length);
-          fs.writeSync(fd, zeroChunk, 0, toWrite, offset);
-          offset += toWrite;
-          remaining -= toWrite;
-        }
-        fs.fdatasyncSync(fd);
-      } finally {
-        fs.closeSync(fd);
-      }
-      fs.unlinkSync(unencryptedPath);
-    } catch (wipeErr) {
-      // Best-effort: at minimum, unlink it
-      try { fs.unlinkSync(unencryptedPath); } catch { /* ignore */ }
-      if (process.env.NODE_ENV === 'development') {
-        console.warn('Warning: could not securely wipe plaintext DB:', wipeErr.message);
+    // Securely overwrite the plaintext database before removing it. This file
+    // holds unencrypted PHI, so a bare unlink would leave every record
+    // recoverable from free blocks.
+    //
+    // The -wal and -shm sidecars are wiped too: WAL frames hold copies of
+    // recently written pages, so removing only the main database would leave
+    // plaintext PHI behind. secureDeleteFile treats a missing file as success,
+    // so listing them unconditionally is safe.
+    for (const plaintextPath of [
+      unencryptedPath,
+      `${unencryptedPath}-wal`,
+      `${unencryptedPath}-shm`,
+    ]) {
+      const wipe = secureDelete.secureDeleteFile(plaintextPath);
+      if (!wipe.deleted && process.env.NODE_ENV === 'development') {
+        console.warn(`Warning: could not remove plaintext DB file ${plaintextPath}: ${wipe.reason}`);
       }
     }
 
@@ -328,7 +321,8 @@ async function migrateToEncrypted(unencryptedPath, encryptedPath, encryptionKey)
     // Clean up on failure
     try { unencryptedDb.close(); } catch (e) {}
     try { encryptedDb.close(); } catch (e) {}
-    try { fs.unlinkSync(encryptedPath + '.new'); } catch (e) {}
+    // A partially written database still contains PHI pages; wipe rather than unlink.
+    secureDelete.secureDeleteFile(encryptedPath + '.new');
     
     throw new Error(`Database migration failed: ${error.message}`);
   }
@@ -606,6 +600,13 @@ async function initDatabase() {
   // Enable foreign keys and WAL mode for better performance
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
+
+  // Secure deletion of PHI at the storage layer. By default SQLite only marks
+  // deleted rows as free — the original bytes stay readable in the page file
+  // until overwritten by unrelated data. secure_delete zeroes them as part of
+  // the delete, so removing a record actually destroys its content.
+  // HIPAA 164.310(d)(2)(i) - Media disposal.
+  db.pragma('secure_delete = ON');
   
   // Create schema (new multi-org schema) - tables only, no indexes yet
   createSchema(db);
@@ -1044,9 +1045,9 @@ async function backupDatabase(targetPath) {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
-  if (fs.existsSync(targetPath)) {
-    fs.unlinkSync(targetPath);
-  }
+  // An existing file at the backup path is a previous (encrypted) database
+  // copy. Wipe it rather than unlinking so its pages are not left readable.
+  secureDelete.secureDeleteFile(targetPath);
 
   try {
     db.pragma('wal_checkpoint(TRUNCATE)');
@@ -1219,8 +1220,8 @@ async function restoreDatabaseFromBackup(backupPath) {
     // Step 5: Atomic rename over live DB
     fs.renameSync(tempPath, dbPath);
   } catch (restoreErr) {
-    // Cleanup temp on failure
-    try { fs.unlinkSync(tempPath); } catch { /* ignore */ }
+    // The temp file is a full database copy; wipe it rather than unlinking.
+    secureDelete.secureDeleteFile(tempPath);
     throw new Error('Restore failed: ' + restoreErr.message);
   }
 

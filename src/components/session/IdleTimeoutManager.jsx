@@ -68,6 +68,27 @@ export default function IdleTimeoutManager() {
     }
   }, [resetTimers]);
 
+  // The OS reported a screen lock or suspend. The main process has already
+  // ended the session server-side, so this only clears PHI from the screen and
+  // returns to the login view — otherwise the last-rendered patient data would
+  // still be on display the moment the workstation is unlocked.
+  //
+  // logout is read through a ref so this subscribes exactly once: AuthContext
+  // does not memoize logout, so depending on it directly would tear down and
+  // re-register the listener on every render.
+  const logoutRef = useRef(logout);
+  logoutRef.current = logout;
+
+  useEffect(() => {
+    const subscribe = window.electronAPI?.session?.onLocked;
+    if (typeof subscribe !== 'function') return undefined;
+
+    return subscribe(() => {
+      setShowWarning(false);
+      logoutRef.current(true);
+    });
+  }, []);
+
   useEffect(() => {
     if (!isAuthenticated) {
       if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
