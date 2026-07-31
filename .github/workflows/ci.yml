@@ -42,6 +42,13 @@ jobs:
       - name: Type check
         run: npx tsc -p jsconfig.json --noEmit
 
+      # Run the compliance-critical suites as their own step so a failure here is
+      # immediately distinguishable from a functional regression in the log.
+      - name: Run security and audit control tests
+        run: |
+          node scripts/run-test-suites.cjs security
+          node scripts/run-test-suites.cjs hardening
+
       - name: Run core tests
         run: npm test
 

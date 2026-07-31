@@ -1,63 +1,142 @@
 /**
- * TransTrack — Desktop audit hash chain verification.
+ * TransTrack — Desktop audit trail integrity verification.
  *
- * Each audit_logs row contains prev_hash (the record_hash of the preceding
- * row for the same org) and record_hash = sha256(prev_hash || canonical_json(payload)).
- * The first row in each org has prev_hash = 'GENESIS'.
+ * Two independent tamper-evidence layers are checked:
  *
- * verifyAuditChain(orgId) replays the chain and returns { ok, brokenAt? }.
+ *   1. Hash chain (always present)
+ *      record_hash = sha256(prev_hash || canonical_json(payload)), with the
+ *      first row of each org chaining from 'GENESIS'. Detects any edit,
+ *      reorder, or deletion of a row.
+ *
+ *   2. Keyed HMAC (present on rows written after migration 16)
+ *      record_hmac = hmac_sha256(auditKey, prev_hash || canonical_json(payload))
+ *      where auditKey lives in OS secure storage. The hash chain alone is
+ *      unkeyed, so an attacker with write access to the database file could
+ *      recompute it; the HMAC means they would also need the OS-protected key.
+ *
+ * The canonical byte layout is owned by services/auditCanonical.cjs and shared
+ * with the writer in electron/ipc/shared.cjs.
+ *
+ * Rows predating a layer are reported as unverifiable for that layer rather
+ * than as failures, so upgrading an existing installation does not produce a
+ * spurious "tampered" verdict.
  */
 
 'use strict';
 
 const crypto = require('crypto');
 const { getDatabase } = require('../database/init.cjs');
+const auditCanonical = require('./auditCanonical.cjs');
 
 function sha256(input) {
   return crypto.createHash('sha256').update(input).digest('hex');
 }
 
+function loadHmacHelpers() {
+  try {
+    return require('./auditHmacKey.cjs');
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Verify the integrity of the audit log hash chain for a given organization.
+ * Does audit_logs carry the record_hmac column?
+ * Probed per call because the schema can change under a long-lived process.
+ */
+function selectColumns(db) {
+  let hasHmac = false;
+  try {
+    hasHmac = db.prepare('PRAGMA table_info(audit_logs)')
+      .all()
+      .some((c) => c.name === 'record_hmac');
+  } catch { /* treat as absent */ }
+  return {
+    hasHmac,
+    sql: hasHmac
+      ? `${auditCanonical.CHAIN_SELECT_COLUMNS}, record_hmac`
+      : auditCanonical.CHAIN_SELECT_COLUMNS,
+  };
+}
+
+/**
+ * Verify the integrity of the audit trail for a given organization.
+ *
  * @param {string} orgId
- * @returns {{ ok: boolean, verified: number, brokenAt?: string }}
+ * @returns {{
+ *   ok: boolean,
+ *   verified: number,
+ *   brokenAt?: string,
+ *   failure?: 'hash_chain'|'hmac',
+ *   hmac: { checked: number, unverifiable: number, available: boolean }
+ * }}
  */
 function verifyAuditChain(orgId) {
   if (!orgId) throw new Error('orgId required');
   const db = getDatabase();
 
+  const { hasHmac, sql } = selectColumns(db);
+
   const rows = db.prepare(
-    `SELECT id, org_id, action, entity_type, entity_id, patient_name,
-            details, user_id, user_email, user_role,
-            prev_hash, record_hash
+    `SELECT ${sql}
      FROM audit_logs
      WHERE org_id = ? AND record_hash IS NOT NULL
-     ORDER BY id ASC`
+     ${auditCanonical.CHAIN_ORDER_BY}`
   ).all(orgId);
 
-  let prev = 'GENESIS';
-  for (const r of rows) {
-    const payload = {
-      action: r.action,
-      details: r.details || null,
-      entity_id: r.entity_id || null,
-      entity_type: r.entity_type || null,
-      org_id: r.org_id,
-      patient_name: r.patient_name || null,
-      user_email: r.user_email || null,
-      user_id: r.user_id || null,
-      user_role: r.user_role || null,
-    };
-    const canonical = JSON.stringify(payload, Object.keys(payload).sort());
-    const expected = sha256(prev + canonical);
+  const hmacHelpers = hasHmac ? loadHmacHelpers() : null;
+  const hmacAvailable = Boolean(hmacHelpers && hmacHelpers.getStatus().available);
 
-    if (r.prev_hash !== prev || r.record_hash !== expected) {
-      return { ok: false, verified: rows.indexOf(r), brokenAt: r.id };
+  let prev = auditCanonical.GENESIS;
+  let verified = 0;
+  let hmacChecked = 0;
+  let hmacUnverifiable = 0;
+
+  for (const r of rows) {
+    const signedString = auditCanonical.buildSignedString(prev, r);
+
+    // Layer 1 — unkeyed hash chain.
+    if (r.prev_hash !== prev || r.record_hash !== sha256(signedString)) {
+      return {
+        ok: false,
+        verified,
+        brokenAt: r.id,
+        failure: 'hash_chain',
+        hmac: { checked: hmacChecked, unverifiable: hmacUnverifiable, available: hmacAvailable },
+      };
     }
+
+    // Layer 2 — keyed HMAC, when both the row and the key are present.
+    if (hasHmac && r.record_hmac) {
+      if (!hmacAvailable) {
+        hmacUnverifiable += 1;
+      } else {
+        const expectedHmac = hmacHelpers.computeAuditHmac(signedString);
+        if (!expectedHmac || !hmacHelpers.hmacMatches(expectedHmac, r.record_hmac)) {
+          return {
+            ok: false,
+            verified,
+            brokenAt: r.id,
+            failure: 'hmac',
+            hmac: { checked: hmacChecked, unverifiable: hmacUnverifiable, available: hmacAvailable },
+          };
+        }
+        hmacChecked += 1;
+      }
+    } else if (hasHmac) {
+      // Row written before the HMAC layer existed.
+      hmacUnverifiable += 1;
+    }
+
     prev = r.record_hash;
+    verified += 1;
   }
 
-  return { ok: true, verified: rows.length };
+  return {
+    ok: true,
+    verified,
+    hmac: { checked: hmacChecked, unverifiable: hmacUnverifiable, available: hmacAvailable },
+  };
 }
 
 module.exports = { verifyAuditChain };

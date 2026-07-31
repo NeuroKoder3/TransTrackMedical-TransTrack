@@ -1,10 +1,12 @@
 // Main process entry point
 
-const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu, session } = require('electron');
 const path = require('path');
 const { initDatabase, closeDatabase } = require('./database/init.cjs');
 const { setupIPCHandlers } = require('./ipc/handlers.cjs');
 const { logger, initCrashReporter, closeLogger } = require('./services/logger.cjs');
+const securityPolicy = require('./config/securityPolicy.cjs');
+const senderValidation = require('./ipc/senderValidation.cjs');
 
 // Register the custom URL protocol used as the OIDC SSO redirect target.
 // Must run BEFORE app.whenReady() on every platform. See electron/auth/oidcDesktop.cjs.
@@ -64,6 +66,25 @@ const APP_INFO = {
   certificationDisclaimer: 'Design alignment statements describe product controls only and are not certifications. SOC 2, HITRUST, and 21 CFR Part 11 validation must be performed by the deploying organization with qualified auditors.'
 };
 
+// Values forwarded into the sandboxed preload via additionalArguments.
+// A sandboxed preload cannot require() local modules, so securityPolicy.cjs
+// (the single source of truth) is serialized here instead.
+const SECURITY_POLICY_ARG = `--transtrack-security-policy=${JSON.stringify({
+  IDLE_TIMEOUT_MS: securityPolicy.IDLE_TIMEOUT_MS,
+  SESSION_ABSOLUTE_MS: securityPolicy.SESSION_ABSOLUTE_MS,
+  WARNING_BEFORE_MS: securityPolicy.WARNING_BEFORE_MS,
+})}`;
+
+// The preload resolves the remote API base URL from process.env, which is how
+// Epic/remote mode is selected. That remains the primary source; this argument
+// is a belt-and-braces fallback so the Epic Connection Hub cannot be affected
+// by any difference in how the environment reaches a sandboxed renderer.
+const API_BASE_URL_ARG = `--transtrack-api-base-url=${(
+  process.env.TRANSTRACK_API_URL
+  || process.env.VITE_TRANSTRACK_API_URL
+  || ''
+).replace(/^\uFEFF/, '').trim()}`;
+
 function createSplashWindow() {
   splashWindow = new BrowserWindow({
     width: 400,
@@ -72,8 +93,15 @@ function createSplashWindow() {
     transparent: true,
     alwaysOnTop: true,
     webPreferences: {
+      // Splash has no preload bridge and loads only a local static file, so
+      // full sandboxing costs nothing here.
       nodeIntegration: false,
-      contextIsolation: true
+      contextIsolation: true,
+      sandbox: true,
+      enableRemoteModule: false,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+      experimentalFeatures: false
     }
   });
 
@@ -93,14 +121,33 @@ function createMainWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      sandbox: false, // preload uses CommonJS require (securityPolicy); keep contextIsolation
+      // Full OS-level renderer sandbox. The preload is written to run under
+      // sandbox (no local require) and receives config via additionalArguments.
+      sandbox: true,
       enableRemoteModule: false,
+      nodeIntegrationInSubFrames: false,
       preload: path.join(__dirname, 'preload.cjs'),
+      additionalArguments: [SECURITY_POLICY_ARG, API_BASE_URL_ARG],
       // Security settings
       webSecurity: true,
       allowRunningInsecureContent: false,
       experimentalFeatures: false
     }
+  });
+
+  // Bind the IPC trust anchor to this window. Every ipcMain.handle call is
+  // checked against it, so IPC from any other WebContents or frame is refused.
+  senderValidation.registerTrustedWindow(mainWindow, { isDev });
+
+  // Security: never allow <webview> to be attached, and strip any preload or
+  // node privileges if one is somehow injected into the renderer.
+  mainWindow.webContents.on('will-attach-webview', (event, webPreferences) => {
+    delete webPreferences.preload;
+    webPreferences.nodeIntegration = false;
+    webPreferences.contextIsolation = true;
+    webPreferences.sandbox = true;
+    event.preventDefault();
+    logger.warn('Blocked webview attach attempt');
   });
 
   // Load the app
@@ -205,6 +252,35 @@ function createMainWindow() {
 
     callback({ responseHeaders: headers });
   });
+
+  hardenSession(mainWindow.webContents.session);
+}
+
+/**
+ * Deny every optional renderer capability. TransTrack is an offline records
+ * system: it never needs camera, microphone, geolocation, notifications,
+ * MIDI, USB/HID/Serial, or media access. Electron grants some of these by
+ * default for file:// origins, so they must be explicitly refused.
+ */
+function hardenSession(targetSession) {
+  if (!targetSession || targetSession.__transtrackHardened) return;
+  targetSession.__transtrackHardened = true;
+
+  targetSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+    logger.warn('Denied renderer permission request', { permission });
+    callback(false);
+  });
+
+  targetSession.setPermissionCheckHandler((_webContents, permission) => {
+    logger.warn('Denied renderer permission check', { permission });
+    return false;
+  });
+
+  // Refuse device selection outright (WebUSB / WebHID / Web Serial).
+  targetSession.setDevicePermissionHandler(() => false);
+  if (typeof targetSession.setBluetoothPairingHandler === 'function') {
+    targetSession.setBluetoothPairingHandler((_details, callback) => callback({ cancelled: true }));
+  }
 }
 
 function createMenu() {
@@ -371,8 +447,22 @@ function initAutoUpdater() {
 }
 
 // App lifecycle
+// Defense in depth: apply the same restrictions to every WebContents that is
+// ever created, including ones this file does not construct directly.
+app.on('web-contents-created', (_event, contents) => {
+  contents.on('will-attach-webview', (attachEvent) => {
+    attachEvent.preventDefault();
+    logger.warn('Blocked webview attach on new WebContents');
+  });
+  contents.setWindowOpenHandler(({ url }) => {
+    logger.warn('Blocked popup window on new WebContents', { url });
+    return { action: 'deny' };
+  });
+});
+
 app.whenReady().then(async () => {
   initCrashReporter();
+  hardenSession(session.defaultSession);
   logger.info('TransTrack starting...', {
     isDev,
     apiUrl: process.env.TRANSTRACK_API_URL || process.env.VITE_TRANSTRACK_API_URL || '(none — local IPC)',
@@ -391,6 +481,42 @@ app.whenReady().then(async () => {
 
     setupIPCHandlers();
     logger.info('IPC handlers registered');
+
+    // Detective control: report tampering with the security-critical main
+    // process files. Never fatal — see services/integrityMonitor.cjs.
+    try {
+      const integrityMonitor = require('./services/integrityMonitor.cjs');
+      const integrity = integrityMonitor.initializeIntegrityMonitor();
+      if (integrity.status === 'ok') {
+        logger.info('Application integrity verified', { checked: integrity.checked });
+      } else if (integrity.baselineCreated) {
+        logger.info('Application integrity baseline established', { checked: integrity.checked });
+      } else {
+        logger.error('Application integrity check reported drift', {
+          status: integrity.status,
+          reason: integrity.reason || null,
+          modified: integrity.modified,
+          missing: integrity.missing,
+          added: integrity.added,
+        });
+      }
+    } catch (integrityErr) {
+      logger.warn('Integrity monitor unavailable', { error: integrityErr.message });
+    }
+
+    // Treat an OS screen lock or suspend as an immediate end of session, so a
+    // live authenticated session never sits behind a workstation lock screen.
+    try {
+      const screenLock = require('./services/screenLock.cjs');
+      const lockStatus = screenLock.initializeScreenLock({ getMainWindow: () => mainWindow });
+      if (lockStatus.enabled) {
+        logger.info('Screen lock session control active', { events: lockStatus.events });
+      } else {
+        logger.warn('Screen lock session control inactive', { reason: lockStatus.reason });
+      }
+    } catch (lockErr) {
+      logger.warn('Screen lock integration unavailable', { error: lockErr.message });
+    }
 
     // Start automated backup schedule
     try {

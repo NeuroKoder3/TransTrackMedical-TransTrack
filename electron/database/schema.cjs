@@ -984,6 +984,11 @@ function addOrgIdToExistingTables(db, defaultOrgId) {
  * Enforce audit log immutability at the database level (HIPAA 164.312(b)).
  * Application-level protection exists in shared.cjs, but HIPAA requires
  * database-level enforcement to prevent bypass via direct SQL.
+ *
+ * Covers both append-only tables:
+ *   - audit_logs                 (the primary Part 11 / HIPAA audit trail)
+ *   - access_justification_logs  (break-glass PHI access justifications)
+ *   - electronic_signatures      (21 CFR Part 11 signature manifestations)
  */
 function createAuditLogTriggers(db) {
   db.exec(`
@@ -999,6 +1004,44 @@ function createAuditLogTriggers(db) {
       SELECT RAISE(ABORT, 'HIPAA Compliance: Audit logs cannot be deleted');
     END;
   `);
+
+  // access_justification_logs is documented as immutable in the schema but was
+  // previously only protected at the application layer. These triggers close
+  // that bypass. Guarded because the table may not exist in older databases
+  // until createSchema() has run.
+  try {
+    db.exec(`
+      CREATE TRIGGER IF NOT EXISTS access_justification_logs_immutable_update
+      BEFORE UPDATE ON access_justification_logs
+      BEGIN
+        SELECT RAISE(ABORT, 'HIPAA Compliance: Access justification logs are immutable');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS access_justification_logs_immutable_delete
+      BEFORE DELETE ON access_justification_logs
+      BEGIN
+        SELECT RAISE(ABORT, 'HIPAA Compliance: Access justification logs cannot be deleted');
+      END;
+    `);
+  } catch { /* table not present in this database yet */ }
+
+  // Electronic signatures are Part 11 records and must be equally permanent.
+  // Created by migration 14, so absent on databases that predate it.
+  try {
+    db.exec(`
+      CREATE TRIGGER IF NOT EXISTS electronic_signatures_immutable_update
+      BEFORE UPDATE ON electronic_signatures
+      BEGIN
+        SELECT RAISE(ABORT, '21 CFR Part 11: Electronic signatures are immutable');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS electronic_signatures_immutable_delete
+      BEFORE DELETE ON electronic_signatures
+      BEGIN
+        SELECT RAISE(ABORT, '21 CFR Part 11: Electronic signatures cannot be deleted');
+      END;
+    `);
+  } catch { /* table not present in this database yet */ }
 }
 
 module.exports = {

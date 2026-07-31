@@ -5,7 +5,19 @@
     <link rel="icon" type="image/svg+xml" href="./assets/icon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <!-- connect-src must allow the Vite API proxy (/__api) and direct :8080 fallback -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:* http: https: ws: wss:; frame-ancestors 'none'; base-uri 'self'; form-action 'self';">
+    <!--
+      object-src/worker-src are pinned here as well as in the main-process CSP
+      header so the restriction holds even if the header is not applied.
+      script-src keeps 'unsafe-inline' because the Vite dev server injects an
+      inline preamble; the production build emits no inline script and the
+      main-process header sends `script-src 'self'` when not in dev, which is
+      AND-ed with this policy and is the binding one for a packaged app.
+      connect-src stays wide here on purpose: the renderer talks to whichever
+      remote API origin TRANSTRACK_API_URL names (this is how Epic/remote mode
+      works) and a static file cannot know that origin. The main-process header
+      narrows connect-src to 'self' plus that exact origin in production.
+    -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:* http: https: ws: wss:; object-src 'none'; worker-src 'self' blob:; frame-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self';">
     <title>TransTrack - Transplant Waitlist Management</title>
   </head>
   <body>

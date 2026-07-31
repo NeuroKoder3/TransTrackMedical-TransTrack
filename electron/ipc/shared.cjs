@@ -478,14 +478,43 @@ function sanitizeForSQLite(entityData) {
 // --- audit logging with hash chain ---
 
 const crypto = require('crypto');
-
-function _computeAuditHash(prevHash, payload) {
-  const canonical = JSON.stringify(payload, Object.keys(payload).sort());
-  return crypto.createHash('sha256').update(prevHash + canonical).digest('hex');
-}
+const auditCanonical = require('../services/auditCanonical.cjs');
 
 function sha256(input) {
   return createHash('sha256').update(input).digest('hex');
+}
+
+// Whether audit_logs has the record_hmac column (migration 16). Probed once
+// per process so the common insert path never relies on a thrown exception.
+let _hmacColumnAvailable = null;
+
+function hasHmacColumn(db) {
+  if (_hmacColumnAvailable !== null) return _hmacColumnAvailable;
+  try {
+    const cols = db.prepare('PRAGMA table_info(audit_logs)').all().map((c) => c.name);
+    _hmacColumnAvailable = cols.includes('record_hmac');
+  } catch {
+    _hmacColumnAvailable = false;
+  }
+  return _hmacColumnAvailable;
+}
+
+/** Test seam: re-probe the schema after a table is recreated. */
+function _resetAuditSchemaCache() {
+  _hmacColumnAvailable = null;
+}
+
+/**
+ * Compute the keyed HMAC for an audit row, or null when no key is available.
+ * Never throws — a missing HMAC must not block writing the audit record.
+ */
+function computeHmacSafely(signedString) {
+  try {
+    const auditHmacKey = require('../services/auditHmacKey.cjs');
+    return auditHmacKey.computeAuditHmac(signedString);
+  } catch {
+    return null;
+  }
 }
 
 function logAudit(action, entityType, entityId, patientName, details, userEmail, userRole, requestId) {
@@ -495,12 +524,13 @@ function logAudit(action, entityType, entityId, patientName, details, userEmail,
   const userId = currentUser?.id || null;
   const now = new Date().toISOString();
 
-  let prevHash = 'GENESIS';
+  let prevHash = auditCanonical.GENESIS;
   let recordHash = null;
+  let recordHmac = null;
 
   try {
     const insertWithChain = db.transaction(() => {
-      prevHash = 'GENESIS';
+      prevHash = auditCanonical.GENESIS;
       try {
         const prev = db.prepare(
           'SELECT record_hash FROM audit_logs WHERE org_id = ? AND record_hash IS NOT NULL ORDER BY created_at DESC, rowid DESC LIMIT 1'
@@ -508,8 +538,9 @@ function logAudit(action, entityType, entityId, patientName, details, userEmail,
         if (prev?.record_hash) prevHash = prev.record_hash;
       } catch { /* hash columns may not exist yet */ }
 
-      // Payload shape MUST match verifyAuditChain()
-      const payload = {
+      // Canonical form is owned by services/auditCanonical.cjs so that every
+      // verifier hashes exactly the same bytes this writer does.
+      const row = {
         org_id: orgId,
         action,
         entity_type: entityType || null,
@@ -519,12 +550,20 @@ function logAudit(action, entityType, entityId, patientName, details, userEmail,
         user_email: userEmail || null,
         user_role: userRole || null,
       };
-      recordHash = sha256(prevHash + JSON.stringify(payload, Object.keys(payload).sort()));
+      const signedString = auditCanonical.buildSignedString(prevHash, row);
+      recordHash = sha256(signedString);
+      recordHmac = hasHmacColumn(db) ? computeHmacSafely(signedString) : null;
 
       try {
-        db.prepare(
-          'INSERT INTO audit_logs (id, org_id, action, entity_type, entity_id, patient_name, details, user_id, user_email, user_role, prev_hash, record_hash, request_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-        ).run(id, orgId, action, entityType, entityId, patientName, details, userId, userEmail, userRole, prevHash, recordHash, requestId || null, now);
+        if (hasHmacColumn(db)) {
+          db.prepare(
+            'INSERT INTO audit_logs (id, org_id, action, entity_type, entity_id, patient_name, details, user_id, user_email, user_role, prev_hash, record_hash, record_hmac, request_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+          ).run(id, orgId, action, entityType, entityId, patientName, details, userId, userEmail, userRole, prevHash, recordHash, recordHmac, requestId || null, now);
+        } else {
+          db.prepare(
+            'INSERT INTO audit_logs (id, org_id, action, entity_type, entity_id, patient_name, details, user_id, user_email, user_role, prev_hash, record_hash, request_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+          ).run(id, orgId, action, entityType, entityId, patientName, details, userId, userEmail, userRole, prevHash, recordHash, requestId || null, now);
+        }
       } catch {
         db.prepare(
           'INSERT INTO audit_logs (id, org_id, action, entity_type, entity_id, patient_name, details, user_email, user_role, prev_hash, record_hash, request_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
@@ -555,38 +594,14 @@ function logAudit(action, entityType, entityId, patientName, details, userEmail,
 /**
  * Verify the integrity of the audit log hash chain for an org.
  * Returns { ok: true } or { ok: false, brokenAt: <row id> }.
+ *
+ * Delegates to services/auditChain.cjs so the desktop has exactly one chain
+ * verification implementation. Retained here for the existing callers that
+ * import it from shared.
  */
 function verifyAuditChain(orgId) {
-  const db = getDatabase();
-  const rows = db.prepare(
-    `SELECT id, org_id, action, entity_type, entity_id, patient_name, details,
-            user_email, user_role, prev_hash, record_hash
-     FROM audit_logs
-     WHERE org_id = ?
-     ORDER BY created_at ASC, rowid ASC`
-  ).all(orgId || currentUser?.org_id || 'SYSTEM');
-
-  let prev = 'GENESIS';
-  for (const r of rows) {
-    if (!r.record_hash) continue; // pre-migration rows lack hashes
-    const payload = {
-      org_id: r.org_id,
-      action: r.action,
-      entity_type: r.entity_type,
-      entity_id: r.entity_id,
-      patient_name: r.patient_name,
-      details: r.details,
-      user_email: r.user_email,
-      user_role: r.user_role,
-    };
-    const canonical = JSON.stringify(payload, Object.keys(payload).sort());
-    const expected = sha256(prev + canonical);
-    if (r.prev_hash !== prev || r.record_hash !== expected) {
-      return { ok: false, brokenAt: r.id };
-    }
-    prev = r.record_hash;
-  }
-  return { ok: true };
+  const { verifyAuditChain: verify } = require('../services/auditChain.cjs');
+  return verify(orgId || currentUser?.org_id || 'SYSTEM');
 }
 
 module.exports = {

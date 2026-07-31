@@ -148,11 +148,29 @@ const JUSTIFICATION_REASONS = [
 ];
 
 /**
+ * Resolve a role definition from untrusted input.
+ *
+ * Uses an own-property lookup so values inherited from Object.prototype
+ * ('constructor', 'toString', '__proto__', ...) cannot resolve to a truthy
+ * pseudo-role, and validates the shape so a malformed entry fails closed
+ * instead of throwing out of a permission check.
+ */
+function resolveRole(userRole) {
+  if (typeof userRole !== 'string' || userRole.length === 0) return null;
+  if (!Object.prototype.hasOwnProperty.call(ROLES, userRole)) return null;
+
+  const role = ROLES[userRole];
+  if (!role || !Array.isArray(role.permissions)) return null;
+  return role;
+}
+
+/**
  * Check if user has permission
  */
 function hasPermission(userRole, permission) {
-  const role = ROLES[userRole];
+  const role = resolveRole(userRole);
   if (!role) return false;
+  if (typeof permission !== 'string' || permission.length === 0) return false;
   return role.permissions.includes(permission);
 }
 
@@ -234,7 +252,7 @@ function validateAccessRequest(userRole, permission, justification = null) {
  * Get role permissions
  */
 function getRolePermissions(role) {
-  return ROLES[role] || null;
+  return resolveRole(role);
 }
 
 /**

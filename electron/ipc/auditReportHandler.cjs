@@ -14,8 +14,21 @@ const { ipcMain } = require('electron');
 const { getDatabase, getDefaultOrganization } = require('../database/init.cjs');
 const { createLogger } = require('./errorLogger.cjs');
 const shared = require('./shared.cjs');
+const auditExport = require('../services/auditExport.cjs');
 
 const log = createLogger('auditReport');
+
+/** Only these roles may read or export the audit trail. */
+const AUDIT_READER_ROLES = ['admin', 'regulator'];
+
+function requireAuditReader(purpose) {
+  if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
+  const { currentUser } = shared.getSessionState();
+  if (!currentUser || !AUDIT_READER_ROLES.includes(currentUser.role)) {
+    throw new Error(`Admin or regulator access required for ${purpose}`);
+  }
+  return currentUser;
+}
 
 function register() {
   ipcMain.handle('compliance:verify-audit-chain', async () => {
@@ -32,12 +45,79 @@ function register() {
   });
 
   ipcMain.handle('compliance:generate-audit-report', async (_event, options = {}) => {
-    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
-    const { currentUser } = shared.getSessionState();
-    if (!currentUser || !['admin', 'regulator'].includes(currentUser.role)) {
-      throw new Error('Admin or regulator access required for audit reports');
+    const currentUser = requireAuditReader('audit reports');
+    return buildAuditReport(currentUser, options);
+  });
+
+  /**
+   * Produce the same audit trail in human-readable form (21 CFR 11.10(b)).
+   *
+   * `format` selects the representation:
+   *   'json' — electronic form, identical to compliance:generate-audit-report
+   *   'csv'  — spreadsheet review copy
+   *   'html' — self-contained printable document
+   *   'all'  — every representation plus a suggested filename base
+   *
+   * The chain verification result is embedded so a reviewer can see that the
+   * exported rows were integrity-checked at the moment of export.
+   */
+  ipcMain.handle('compliance:export-audit-report', async (_event, options = {}) => {
+    const currentUser = requireAuditReader('audit trail export');
+    const orgId = shared.getSessionOrgId();
+
+    const format = String(options.format || 'all').toLowerCase();
+    if (!['json', 'csv', 'html', 'all'].includes(format)) {
+      throw new Error(`Unsupported audit export format: ${format}`);
+    }
+    const includePatientName = options.includePatientName !== false;
+
+    const report = buildAuditReport(currentUser, options);
+
+    let chainVerification = null;
+    try {
+      chainVerification = shared.verifyAuditChain(orgId);
+    } catch (err) {
+      log.warn('Audit chain verification unavailable during export', { reason: err.message });
     }
 
+    const exportOptions = { includePatientName, chainVerification };
+
+    // Exporting the audit trail is itself an auditable event. Record what was
+    // exported (scope and row count) — never the exported content.
+    shared.logAudit(
+      'export', 'AuditTrail', orgId, null,
+      JSON.stringify({
+        message: 'Audit trail exported for inspection',
+        format,
+        include_patient_name: includePatientName,
+        period_start: report.period.start,
+        period_end: report.period.end,
+        record_count: report.summary.total_entries,
+        chain_ok: chainVerification ? chainVerification.ok : null,
+      }),
+      currentUser.email, currentUser.role
+    );
+
+    const result = {
+      format,
+      generated_at: report.generated_at,
+      record_count: report.summary.total_entries,
+      chain_verification: chainVerification,
+      filename_base: `transtrack-audit-${orgId}-${report.generated_at.replace(/[:.]/g, '-')}`,
+    };
+
+    if (format === 'json') return { ...result, json: report };
+    if (format === 'csv') return { ...result, csv: auditExport.toCsv(report, exportOptions) };
+    if (format === 'html') return { ...result, html: auditExport.toHtml(report, exportOptions) };
+    return { ...result, ...auditExport.buildInspectionPackage(report, exportOptions) };
+  });
+}
+
+/**
+ * Query the audit trail and assemble the report object shared by the JSON and
+ * human-readable exports.
+ */
+function buildAuditReport(currentUser, options = {}) {
     const db = getDatabase();
     const orgId = shared.getSessionOrgId();
 
@@ -135,7 +215,6 @@ function register() {
     });
 
     return report;
-  });
 }
 
-module.exports = { register };
+module.exports = { register, buildAuditReport, AUDIT_READER_ROLES };

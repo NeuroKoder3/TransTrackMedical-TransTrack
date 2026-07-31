@@ -12,7 +12,6 @@
 'use strict';
 
 const assert = require('assert');
-const crypto = require('crypto');
 const Database = require('better-sqlite3-multiple-ciphers');
 
 const db = new Database(':memory:');
@@ -90,6 +89,7 @@ require.cache[siemPath] = {
 };
 
 const auditChain = require('../electron/services/auditChain.cjs');
+const auditCanonical = require('../electron/services/auditCanonical.cjs');
 
 let pass = 0;
 let fail = 0;
@@ -100,28 +100,22 @@ function test(name, fn) {
 
 console.log('auditChain — insert + verify + tamper detection');
 
-// Helper: compute hash the same way verifyAuditChain does.
-function computeHash(prevHash, payload) {
-  const canonical = JSON.stringify(payload, Object.keys(payload).sort());
-  return crypto.createHash('sha256').update(prevHash + canonical).digest('hex');
-}
-
 const ORG = 'ORG_CHAIN_TEST';
 
-// Insert rows with sequential IDs so id ASC matches insertion order.
+// Build rows through the canonical serializer that logAudit itself uses, so
+// this test pins the real writer/verifier contract rather than a copy of it.
 function insertAuditRow(id, action, entityType, entityId, prevHash) {
-  const payload = {
-    action,
-    details: null,
-    entity_id: entityId || null,
-    entity_type: entityType || null,
+  const row = {
     org_id: ORG,
+    action,
+    entity_type: entityType || null,
+    entity_id: entityId || null,
     patient_name: null,
+    details: null,
     user_email: 'admin@test',
-    user_id: 'u1',
     user_role: 'admin',
   };
-  const recordHash = computeHash(prevHash, payload);
+  const recordHash = auditCanonical.computeRecordHash(prevHash, row);
   db.prepare(`
     INSERT INTO audit_logs (id, org_id, action, entity_type, entity_id,
       patient_name, details, user_id, user_email, user_role, prev_hash, record_hash, created_at)
@@ -221,6 +215,33 @@ test('logAudit chains consecutive rows', () => {
     otherHashes.includes(latestRow.prev_hash) || latestRow.prev_hash === 'GENESIS',
     'Latest row must chain from a previous row or GENESIS'
   );
+});
+
+// Regression guard: the writer (shared.logAudit) and the verifier
+// (services/auditChain) must agree on the canonical payload and on row
+// ordering. They previously disagreed — auditChain included user_id and
+// ordered by the random UUID primary key — so verification reported false
+// tampering on every real database.
+test('rows written by logAudit verify against auditChain', () => {
+  const result = auditChain.verifyAuditChain(LOG_ORG);
+  assert.strictEqual(result.ok, true, `logAudit rows must verify (brokenAt=${result.brokenAt})`);
+  assert.strictEqual(result.verified, 2, 'Must verify both logAudit rows');
+});
+
+test('tampering with a logAudit row is detected', () => {
+  const target = db.prepare(
+    'SELECT id FROM audit_logs WHERE org_id = ? ORDER BY created_at ASC, rowid ASC LIMIT 1'
+  ).get(LOG_ORG);
+  const original = db.prepare('SELECT details FROM audit_logs WHERE id = ?').get(target.id).details;
+
+  db.prepare('UPDATE audit_logs SET details = ? WHERE id = ?').run('tampered', target.id);
+  const result = auditChain.verifyAuditChain(LOG_ORG);
+  assert.strictEqual(result.ok, false, 'Must detect the tampered details field');
+  assert.strictEqual(result.brokenAt, target.id);
+  assert.strictEqual(result.failure, 'hash_chain');
+
+  db.prepare('UPDATE audit_logs SET details = ? WHERE id = ?').run(original, target.id);
+  assert.strictEqual(auditChain.verifyAuditChain(LOG_ORG).ok, true, 'Must verify again after restore');
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

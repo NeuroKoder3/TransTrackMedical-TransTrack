@@ -12,6 +12,7 @@ const { app } = require('electron');
 const { getDatabase, getDatabasePath, getDatabaseEncryptionKey, restoreDatabaseFromBackup } = require('../database/init.cjs');
 const { v4: uuidv4 } = require('uuid');
 const { logger } = require('./logger.cjs');
+const secureDelete = require('./secureDelete.cjs');
 
 // Recovery configuration
 const RECOVERY_CONFIG = {
@@ -70,7 +71,9 @@ async function createBackup(options = {}) {
   try {
     db.pragma('wal_checkpoint(TRUNCATE)');
   } catch { /* best-effort */ }
-  if (fs.existsSync(backupPath)) fs.unlinkSync(backupPath);
+  // A pre-existing file at this path is an older encrypted database copy; wipe
+  // rather than unlink so its pages are not left readable in free blocks.
+  secureDelete.secureDeleteFile(backupPath);
   fs.copyFileSync(dbPath, backupPath);
   for (const suffix of ['-wal', '-shm']) {
     const side = dbPath + suffix;
@@ -329,9 +332,19 @@ async function cleanupOldBackups() {
       try {
         const backupPath = path.join(backupDir, backup.fileName);
         const metadataPath = path.join(backupDir, `${backup.fileName}.meta.json`);
-        
-        if (fs.existsSync(backupPath)) fs.unlinkSync(backupPath);
-        if (fs.existsSync(metadataPath)) fs.unlinkSync(metadataPath);
+
+        // The -wal/-shm sidecars are copied alongside the backup when present,
+        // so they must be removed with it. Leaving them behind both accumulated
+        // orphans and left database pages on disk after the backup was rotated
+        // out. secureDeleteFile treats a missing file as success.
+        for (const target of [
+          backupPath,
+          `${backupPath}-wal`,
+          `${backupPath}-shm`,
+          metadataPath,
+        ]) {
+          secureDelete.secureDeleteFile(target);
+        }
       } catch (e) {
         logger.error('Error deleting old backup', { fileName: backup.fileName, error: e.message });
       }
