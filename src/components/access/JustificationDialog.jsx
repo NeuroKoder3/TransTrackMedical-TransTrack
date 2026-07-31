@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   AlertDialog,
   AlertDialogContent,
@@ -24,14 +24,37 @@ export default function JustificationDialog({ open, onConfirm, onCancel, entityT
     'Emergency access',
   ];
 
+  // Radix closes the dialog itself when either footer button is pressed, so the
+  // resulting onOpenChange(false) cannot be read as "the user cancelled" — that
+  // fired onCancel on the confirm path too, cancelling the access request that
+  // was still in flight. This records which button caused the close.
+  const confirmedRef = useRef(false);
+
   const handleSubmit = () => {
     if (!justification.trim()) return;
+    confirmedRef.current = true;
     onConfirm(justification.trim());
     setJustification('');
   };
 
+  // Single cancel path: every close that was not a confirm routes through here,
+  // whether it came from the Cancel button, Escape, or the overlay. The Cancel
+  // button deliberately carries no onClick of its own, so cancelling fires
+  // exactly one onCancel rather than two.
+  const handleOpenChange = (isOpen) => {
+    if (isOpen) {
+      confirmedRef.current = false;
+      return;
+    }
+    if (confirmedRef.current) {
+      confirmedRef.current = false;
+      return;
+    }
+    onCancel();
+  };
+
   return (
-    <AlertDialog open={open} onOpenChange={(isOpen) => { if (!isOpen) onCancel(); }}>
+    <AlertDialog open={open} onOpenChange={handleOpenChange}>
       <AlertDialogContent className="max-w-md">
         <AlertDialogHeader>
           <AlertDialogTitle className="flex items-center gap-2">
@@ -72,7 +95,7 @@ export default function JustificationDialog({ open, onConfirm, onCancel, entityT
         </div>
 
         <AlertDialogFooter>
-          <AlertDialogCancel onClick={onCancel}>Cancel</AlertDialogCancel>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
           <AlertDialogAction onClick={handleSubmit} disabled={!justification.trim()}>
             Confirm Access
           </AlertDialogAction>

@@ -27,6 +27,7 @@ export default function PatientDetails() {
   const queryClient = useQueryClient();
   const { requireJustification, dialogOpen, handleConfirm, handleCancel, pendingAction } = useJustifiedAccess();
   const [accessGranted, setAccessGranted] = useState(false);
+  const [accessDenied, setAccessDenied] = useState(null);
 
   useEffect(() => {
     if (patientId && !accessGranted) {
@@ -39,6 +40,11 @@ export default function PatientDetails() {
               stack: `Patient ID: ${patientId}`,
             }).catch(() => {});
           }
+        } else if (!result.cancelled) {
+          // Denied rather than cancelled (permission, justification too short,
+          // an IPC failure). Surface why instead of leaving the page waiting on
+          // a dialog that has already closed.
+          setAccessDenied(result.reason || 'Access to this record was denied.');
         }
       });
     }
@@ -77,7 +83,18 @@ export default function PatientDetails() {
           action="view"
         />
         <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6 flex items-center justify-center">
-          <div className="text-slate-600">Awaiting access justification...</div>
+          {accessDenied ? (
+            <div className="text-center space-y-4">
+              <div className="text-slate-800 font-medium">Access not granted</div>
+              <div className="text-slate-600 text-sm max-w-md">{accessDenied}</div>
+              <Button variant="outline" onClick={() => window.history.back()}>
+                <ArrowLeft className="w-4 h-4 mr-2" />
+                Go Back
+              </Button>
+            </div>
+          ) : (
+            <div className="text-slate-600">Awaiting access justification...</div>
+          )}
         </div>
       </>
     );
