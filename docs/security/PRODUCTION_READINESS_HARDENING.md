@@ -131,7 +131,36 @@ believed had aged out of the retention window was still on disk.
 **Fix:** rotation now removes the sidecars with the backup, and does so through
 the secure-deletion service. Pinned by `tests/secureDelete.test.cjs`.
 
-### 2.6 Plaintext database wipe missed its WAL sidecar (medium)
+### 2.6 Audit key file handling was open to a TOCTOU race (high)
+
+Found by CodeQL (`js/file-system-race`, CWE-367) on the PR for this work — three
+alerts, all in the new key loader.
+
+The loader branched on `fs.existsSync(keyPath)` and then read or wrote that
+*path*. Between the check and the operation the path could be swapped for a
+symlink or an attacker-chosen key file. For an audit HMAC key that is the whole
+ballgame: substituting the key lets an attacker re-HMAC a forged chain.
+
+**Fix:** all key file I/O now goes through descriptors. The read opens `'r'` and
+treats `ENOENT` as the "no key yet" signal instead of checking first; creation
+uses `'wx'` (`O_CREAT|O_EXCL`) with the mode applied by the open, so it cannot
+clobber a key another process just wrote and needs no separate `chmod`. A
+concurrent creation losing the `O_EXCL` race adopts the winner's key rather than
+overwriting it, which would have orphaned the rows that process had already
+written.
+
+Two further defects surfaced while fixing this:
+
+- The first attempt re-sealed the legacy key by truncating in place. A crash
+  between the truncate and the write would have left an empty file and **lost
+  the audit key permanently**, making every existing row HMAC-unverifiable. The
+  re-seal now writes a temp file and `rename()`s it over the target, which is
+  atomic.
+- The re-seal also had to happen *after* the read descriptor is closed: Windows
+  refuses to rename over a file with an open handle, so the upgrade would have
+  silently failed on the primary deployment platform.
+
+### 2.7 Plaintext database wipe missed its WAL sidecar (medium)
 
 The encryption migration overwrote the **unencrypted** database with zeros
 before unlinking it, but only the main file. WAL frames hold copies of recently
@@ -334,7 +363,7 @@ manifest invalidates the seal.
 
 ## 4. New tests and how to run them
 
-259 new plain-Node assertions across 11 suites, plus 25 Playwright assertions
+262 new plain-Node assertions across 11 suites, plus 25 Playwright assertions
 against the running application.
 
 ```bash
@@ -358,7 +387,7 @@ its control. Use `--bail` for the old fail-fast behaviour.
 | `tests/ipcArgValidation.test.cjs` | 27 | prototype pollution, depth/size limits, non-serializable types, **and that Epic FHIR bundles / HL7 batches pass unchanged** |
 | `tests/rbacMatrix.test.cjs` | 30 | the exact role × permission matrix (privilege-creep tripwire), admin-only permissions, read-only roles, separation of duties, fail-closed unknown roles, justification rules |
 | `tests/auditHmac.test.cjs` | 14 | key management, full re-chaining attack caught by HMAC, forged HMAC rejected, pre-migration backward compatibility |
-| `tests/auditKeyGating.test.cjs` | 36 | the test-key override is refused outside `NODE_ENV=test` and in packaged builds, warnings are emitted, unprotected key files are refused where the keyring is required, unrecognised `NODE_ENV` fails closed, and the keyring path still mints/reloads/upgrades correctly |
+| `tests/auditKeyGating.test.cjs` | 39 | the test-key override is refused outside `NODE_ENV=test` and in packaged builds, warnings are emitted, unprotected key files are refused where the keyring is required, unrecognised `NODE_ENV` fails closed, the keyring path still mints/reloads/upgrades correctly, and key file I/O is race-safe (no `existsSync` branch, atomic `O_EXCL` create, no temp left after a re-seal) |
 | `tests/auditImmutability.test.cjs` | 19 | database-enforced immutability of all three tables, append-only inserts still work, cascade-delete laundering blocked, transaction rollback |
 | `tests/auditExport.test.cjs` | 27 | completeness, before/after rendering, CSV injection, HTML escaping, de-identification, integrity statement |
 | `tests/secureDelete.test.cjs` | 21 | content overwritten before unlink, rename before unlink, temp wipe on throw, directory recursion, **and that every sensitive call site actually calls the service** rather than a bare unlink |

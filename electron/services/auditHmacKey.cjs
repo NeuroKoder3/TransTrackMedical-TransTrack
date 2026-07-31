@@ -52,6 +52,10 @@ try { ({ app, safeStorage } = require('electron')); } catch { /* plain Node / CI
 const KEY_FILENAME = '.transtrack-audit-hmac';
 const KEY_BYTES = 32;
 const TEST_KEY_ENV = 'TRANSTRACK_AUDIT_HMAC_KEY';
+const HEX_KEY = /^[a-fA-F0-9]{64}$/;
+
+/** Distinguishes "no key file on disk" from "a key file that yielded no key". */
+const NO_KEY_FILE = Symbol('no_key_file');
 
 /**
  * NODE_ENV values in which an audit key may live somewhere other than the OS
@@ -169,60 +173,18 @@ function getKey() {
   }
 
   try {
-    if (fs.existsSync(keyPath)) {
-      const raw = fs.readFileSync(keyPath);
-      let decryptFailed = false;
+    const existing = loadExistingKey(keyPath);
+    if (existing !== NO_KEY_FILE) return existing;
 
-      if (isSafeStorageAvailable()) {
-        try {
-          const decrypted = safeStorage.decryptString(raw);
-          if (/^[a-fA-F0-9]{64}$/.test(decrypted)) {
-            cachedKey = Buffer.from(decrypted, 'hex');
-            return cachedKey;
-          }
-        } catch {
-          // Not sealed by this keyring. It may be a legacy plaintext key from a
-          // machine that had none, so fall through and try to adopt and re-seal
-          // it rather than abandoning the key (which would leave every existing
-          // audit row permanently HMAC-unverifiable).
-          decryptFailed = true;
-        }
-      }
-      // Legacy / no-keyring fallback: 0600 hex file.
-      const asText = raw.toString('utf8').trim();
-      if (/^[a-fA-F0-9]{64}$/.test(asText)) {
-        // An unprotected key file must never be honoured where the keyring is
-        // the required store, otherwise copying that one file defeats the HMAC.
-        if (!isUnprotectedKeyFileAllowed()) {
-          cachedFailureReason = 'unprotected_key_file_refused';
-          warn(
-            'An unprotected audit HMAC key file was found but refused because this ' +
-            'environment requires OS secure storage. Delete it and let the app mint ' +
-            'a keyring-backed key.',
-            { nodeEnv: process.env.NODE_ENV || '(unset)', packaged: isPackagedBuild() }
-          );
-          return null;
-        }
-        cachedKey = Buffer.from(asText, 'hex');
-        // Upgrade to OS-protected storage now that a keyring is present.
-        if (isSafeStorageAvailable()) {
-          try {
-            fs.writeFileSync(keyPath, safeStorage.encryptString(asText), { mode: 0o600 });
-          } catch { /* keep the working plaintext key */ }
-        }
-        return cachedKey;
-      }
-      cachedFailureReason = decryptFailed ? 'key_decrypt_failed' : 'key_file_unrecognized';
-      return null;
-    }
-
-    // First run — mint a new key.
+    // No key file yet — mint one.
     const newKey = crypto.randomBytes(KEY_BYTES);
     const hex = newKey.toString('hex');
+
+    let payload;
     if (isSafeStorageAvailable()) {
-      fs.writeFileSync(keyPath, safeStorage.encryptString(hex), { mode: 0o600 });
+      payload = safeStorage.encryptString(hex);
     } else if (isUnprotectedKeyFileAllowed()) {
-      fs.writeFileSync(keyPath, hex, { mode: 0o600 });
+      payload = Buffer.from(hex, 'utf8');
     } else {
       // No keyring and no permission to persist unprotected: fail closed rather
       // than write an audit key that anyone who can read the file can forge with.
@@ -235,11 +197,151 @@ function getKey() {
       );
       return null;
     }
+
+    try {
+      writeNewKeyFile(keyPath, payload);
+    } catch (err) {
+      if (err.code === 'EEXIST') {
+        // Another starter created the key between our open and this write. Its
+        // key is authoritative — adopting it keeps both processes computing the
+        // same HMACs, where overwriting would orphan the rows it already wrote.
+        const raced = loadExistingKey(keyPath);
+        return raced === NO_KEY_FILE ? null : raced;
+      }
+      throw err;
+    }
+
     cachedKey = newKey;
     return cachedKey;
   } catch (err) {
     cachedFailureReason = `key_io_error:${err.code || 'unknown'}`;
     return null;
+  }
+}
+
+/**
+ * Read and validate the on-disk key, upgrading a legacy plaintext one.
+ *
+ * The file is opened once and read through that descriptor; there is
+ * deliberately no exists()-then-open sequence, because ENOENT from the open
+ * *is* the "no key yet" signal. That removes the window in which the checked
+ * path could be swapped for a symlink or an attacker-chosen key before being
+ * read (CWE-367, the pattern CodeQL reports as js/file-system-race).
+ *
+ * @returns {Buffer|null|Symbol} the key, null on a refusal/failure (with
+ *   cachedFailureReason set), or NO_KEY_FILE when nothing is on disk yet.
+ */
+function loadExistingKey(keyPath) {
+  const raw = readKeyBytes(keyPath);
+  if (raw === null) return NO_KEY_FILE;
+
+  let decryptFailed = false;
+
+  if (isSafeStorageAvailable()) {
+    try {
+      const decrypted = safeStorage.decryptString(raw);
+      if (HEX_KEY.test(decrypted)) {
+        cachedKey = Buffer.from(decrypted, 'hex');
+        return cachedKey;
+      }
+    } catch {
+      // Not sealed by this keyring. It may be a legacy plaintext key from a
+      // machine that had none, so fall through and try to adopt and re-seal
+      // it rather than abandoning the key (which would leave every existing
+      // audit row permanently HMAC-unverifiable).
+      decryptFailed = true;
+    }
+  }
+
+  // Legacy / no-keyring fallback: 0600 hex file.
+  const asText = raw.toString('utf8').trim();
+  if (HEX_KEY.test(asText)) {
+    // An unprotected key file must never be honoured where the keyring is
+    // the required store, otherwise copying that one file defeats the HMAC.
+    if (!isUnprotectedKeyFileAllowed()) {
+      cachedFailureReason = 'unprotected_key_file_refused';
+      warn(
+        'An unprotected audit HMAC key file was found but refused because this ' +
+        'environment requires OS secure storage. Delete it and let the app mint ' +
+        'a keyring-backed key.',
+        { nodeEnv: process.env.NODE_ENV || '(unset)', packaged: isPackagedBuild() }
+      );
+      return null;
+    }
+    cachedKey = Buffer.from(asText, 'hex');
+    // Upgrade to OS-protected storage now that a keyring is present. The key
+    // in hand is already valid, so a failed upgrade is not an error.
+    if (isSafeStorageAvailable()) {
+      try {
+        resealKeyFile(keyPath, safeStorage.encryptString(asText));
+      } catch { /* keep the working plaintext key */ }
+    }
+    return cachedKey;
+  }
+
+  cachedFailureReason = decryptFailed ? 'key_decrypt_failed' : 'key_file_unrecognized';
+  return null;
+}
+
+/**
+ * Read the key file's bytes, or null when it does not exist.
+ *
+ * The descriptor is closed before returning: Windows refuses to rename over a
+ * file that still has an open handle, which would silently defeat the re-seal
+ * upgrade in loadExistingKey().
+ *
+ * Read-only access, because the production path never rewrites this file and
+ * requesting write would fail needlessly on a key an operator has hardened.
+ */
+function readKeyBytes(keyPath) {
+  let fd;
+  try {
+    fd = fs.openSync(keyPath, 'r');
+  } catch (err) {
+    if (err.code === 'ENOENT') return null;
+    throw err;
+  }
+  try {
+    return fs.readFileSync(fd);
+  } finally {
+    try { fs.closeSync(fd); } catch { /* ignore */ }
+  }
+}
+
+/**
+ * Create the key file atomically.
+ *
+ * 'wx' is O_CREAT|O_EXCL|O_WRONLY, so the create fails with EEXIST rather than
+ * truncating a key another process just wrote, and the 0600 mode is applied by
+ * the open itself rather than in a separate chmod window.
+ */
+function writeNewKeyFile(keyPath, payload) {
+  const fd = fs.openSync(keyPath, 'wx', 0o600);
+  try {
+    fs.writeSync(fd, payload, 0, payload.length, 0);
+    fs.fsyncSync(fd);
+  } finally {
+    try { fs.closeSync(fd); } catch { /* ignore */ }
+  }
+}
+
+/**
+ * Replace the key file's contents with `payload`.
+ *
+ * Writes a fresh 0600 temp file and renames it over the target. Truncating the
+ * real file in place would be faster but a crash between the truncate and the
+ * write would leave an empty file and lose the key permanently, making every
+ * existing audit row HMAC-unverifiable. rename() is atomic, so the file is
+ * either the old key or the new one and never a partial write.
+ */
+function resealKeyFile(keyPath, payload) {
+  const tempPath = `${keyPath}.reseal-${crypto.randomBytes(8).toString('hex')}`;
+  try {
+    writeNewKeyFile(tempPath, payload);
+    fs.renameSync(tempPath, keyPath);
+  } catch (err) {
+    try { fs.unlinkSync(tempPath); } catch { /* nothing to clean up */ }
+    throw err;
   }
 }
 

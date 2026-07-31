@@ -21,6 +21,7 @@
 'use strict';
 
 const assert = require('assert');
+const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -367,6 +368,78 @@ test('an unprotected dev key is upgraded once a keyring appears', () => {
 
     const onDisk = fs.readFileSync(keyPath, 'utf8');
     assert.ok(onDisk.startsWith(ENCRYPTION_PREFIX), 'the key must be upgraded to encrypted storage');
+  } finally {
+    if (saved === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = saved;
+    safeStorageAvailable = false;
+    auditHmacKey._resetForTests();
+    try { fs.rmSync(keyDir, { recursive: true, force: true }); } catch { /* best effort */ }
+  }
+});
+
+console.log('\n=== Key file I/O is race-safe (CWE-367) ===');
+
+test('the key is read without an exists()-then-open sequence', () => {
+  // Structural: a check-then-use on a path lets an attacker swap the file (or
+  // substitute a symlink) between the check and the read. CodeQL reports this
+  // as js/file-system-race. The source must open by descriptor and treat
+  // ENOENT as "no key yet" instead.
+  const source = fs.readFileSync(
+    path.join(__dirname, '..', 'electron', 'services', 'auditHmacKey.cjs'),
+    'utf8'
+  );
+  assert.ok(
+    !/fs\.existsSync/.test(source),
+    'key handling must not branch on fs.existsSync'
+  );
+  assert.ok(
+    /openSync\(keyPath, 'r'\)/.test(source),
+    'the key must be read through a descriptor'
+  );
+  assert.ok(
+    /openSync\(keyPath, 'wx', 0o600\)/.test(source),
+    "creation must use 'wx' (O_CREAT|O_EXCL) so it cannot clobber a concurrent writer"
+  );
+});
+
+test('a concurrently created key is adopted, not overwritten', () => {
+  // Two processes starting at once must converge on one key. Overwriting the
+  // loser's key would leave the rows it already wrote HMAC-unverifiable.
+  withEnv({ nodeEnv: 'production', keyring: true }, ({ keyPath }) => {
+    // Seed the file as if another process had just created it.
+    fs.writeFileSync(keyPath, mockSafeStorage.encryptString(VALID_KEY), { mode: 0o600 });
+    auditHmacKey._resetForTests();
+
+    const status = auditHmacKey.getStatus();
+    assert.strictEqual(status.available, true, JSON.stringify(status));
+
+    // The adopted key must be the one on disk, not a freshly minted one.
+    const expected = crypto
+      .createHmac('sha256', Buffer.from(VALID_KEY, 'hex'))
+      .update('canonical')
+      .digest('hex');
+    assert.strictEqual(auditHmacKey.computeAuditHmac('canonical'), expected);
+  });
+});
+
+test('re-sealing leaves no temp file behind', () => {
+  // The upgrade writes a temp file and renames it over the target so a crash
+  // cannot leave an empty key file. The temp must not survive.
+  const saved = process.env.NODE_ENV;
+  keyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'transtrack-keygate-'));
+  const keyPath = path.join(keyDir, KEY_FILENAME);
+
+  try {
+    process.env.NODE_ENV = 'development';
+    safeStorageAvailable = false;
+    auditHmacKey._resetForTests();
+    fs.writeFileSync(keyPath, VALID_KEY, { mode: 0o600 });
+
+    safeStorageAvailable = true;
+    auditHmacKey._resetForTests();
+    assert.strictEqual(auditHmacKey.getStatus().available, true);
+
+    const strays = fs.readdirSync(keyDir).filter((f) => f.includes('reseal'));
+    assert.deepStrictEqual(strays, [], `temp files left behind: ${strays.join(', ')}`);
   } finally {
     if (saved === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = saved;
     safeStorageAvailable = false;
