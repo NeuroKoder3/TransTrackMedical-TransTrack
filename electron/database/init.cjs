@@ -28,6 +28,7 @@ let app, safeStorage;
 try { ({ app, safeStorage } = require('electron')); } catch { /* plain Node / CI */ }
 const { createSchema, createIndexes, createAuditLogTriggers, addOrgIdToExistingTables } = require('./schema.cjs');
 const { runMigrations } = require('./migrations.cjs');
+const { runMigrationsSafely } = require('./migrationSafety.cjs');
 // Pure fs/crypto, no Electron dependency — safe to require from plain-Node tests.
 const secureDelete = require('../services/secureDelete.cjs');
 
@@ -48,6 +49,19 @@ function getUnencryptedDatabasePath() {
 
 function getKeyPath() {
   return path.join(app.getPath('userData'), '.transtrack-key');
+}
+
+/**
+ * Where pre-migration safety copies are written.
+ *
+ * Deliberately the same directory the disaster-recovery service uses, honouring
+ * TRANSTRACK_BACKUP_DIR, so a site that redirects backups to a managed volume
+ * gets its upgrade restore points there too rather than on the local disk it was
+ * trying to avoid. Resolved here rather than by requiring disasterRecovery.cjs,
+ * which pulls in the full Electron service graph.
+ */
+function getBackupDirForMigrations() {
+  return process.env.TRANSTRACK_BACKUP_DIR || path.join(app.getPath('userData'), 'backups');
 }
 
 function getKeyBackupPath() {
@@ -628,10 +642,23 @@ async function initDatabase() {
   // Now create indexes AFTER migration ensures org_id columns exist
   createIndexes(db);
 
-  // Run versioned schema migrations (adds columns, indexes, etc.)
-  const migrationResult = runMigrations(db);
+  // Run versioned schema migrations (adds columns, indexes, etc.).
+  //
+  // Routed through runMigrationsSafely so that an upgrade which has pending
+  // migrations takes a verified restore point first. Migrations commit one per
+  // transaction and mostly cannot be rolled back, so without this a failure
+  // part-way through the sequence would leave the site on an intermediate schema
+  // version with no copy taken at the moment of the change. See
+  // electron/database/migrationSafety.cjs.
+  const migrationResult = runMigrationsSafely(db, {
+    dbPath: getDatabasePath(),
+    backupDir: getBackupDirForMigrations(),
+  });
   if (migrationResult.applied > 0 && process.env.NODE_ENV === 'development') {
     console.log(`Applied ${migrationResult.applied} migration(s): ${migrationResult.migrations.join(', ')}`);
+    if (migrationResult.backup) {
+      console.log(`Pre-migration backup: ${migrationResult.backup.backupPath}`);
+    }
   }
 
   // Enforce audit log immutability at the database layer (HIPAA 164.312(b))
