@@ -12,6 +12,7 @@ const outcomesHandlers = require('./handlers/outcomes.cjs');
 const predictionsHandlers = require('./handlers/predictions.cjs');
 const inactivationRiskHandlers = require('./handlers/inactivationRisk.cjs');
 const inactivationActionQueueHandlers = require('./handlers/inactivationActionQueue.cjs');
+const iotaHandlers = require('./handlers/iota.cjs');
 const tasksHandlers = require('./handlers/tasks.cjs');
 const srtrHandlers = require('./handlers/srtr.cjs');
 const calculatorsHandlers = require('./handlers/calculators.cjs');
@@ -214,6 +215,7 @@ function setupIPCHandlers() {
   predictionsHandlers.register();
   inactivationRiskHandlers.register();
   inactivationActionQueueHandlers.register();
+  iotaHandlers.register();
   tasksHandlers.register();
   srtrHandlers.register();
   calculatorsHandlers.register();

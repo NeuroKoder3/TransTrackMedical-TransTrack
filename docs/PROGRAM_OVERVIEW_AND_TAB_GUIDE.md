@@ -27,7 +27,8 @@ The left sidebar groups tabs into Overview, Clinical, Operations, Administration
 - Administrators, coordinators, and physicians can see Organ Offers, Post-Transplant, Living Donors, Tasks, Prevention Queue, Risk Intel, and Predictive.
 - Outcomes is available to administrators.
 - HL7 Inbox is available to administrators and coordinators.
-- CMS / SRTR, EHR Integration, Priority Config, Recovery, License, and Settings are administrator-only.
+- IOTA Notices is available to administrators, coordinators, physicians, and regulators. Changing its configuration is administrator-only.
+- CMS / SRTR, EHR Integration, Priority Config, Recovery, System Health, License, and Settings are administrator-only.
 - Compliance is available to administrators and regulators.
 - The notification bell and Log Out control appear in the top bar.
 
@@ -223,6 +224,31 @@ Primary functions:
 - Saves a point-in-time metrics snapshot.
 - Refreshes live metrics.
 - Compares current results with prior snapshots.
+
+### IOTA Notices
+
+Tracks the patient notification duty created by CMS IOTA Model
+§ 512.442(d): when a waitlist status change stops organ offers reaching a
+patient, the hospital must notify that patient within 10 days, copy the
+dialysis facility or referring provider, and file the notice in the chart.
+
+Primary functions:
+
+- Shows overdue notices, notices due within three days, and obligations for
+  which no notice has been generated at all.
+- Records delivery with its channel, distinguishing on-time from late.
+- Records the copy sent to the dialysis facility or referring provider, and
+  flags patients for whom no such recipient is on file.
+- Displays the notice as it was issued, with a hash check that reveals any
+  alteration after filing.
+- Holds the centre's own notice template. Wording is authored by the
+  hospital, not supplied by TransTrack, and a template missing a required
+  element is rejected when it is saved. The statement that a patient cannot
+  receive an organ offer while inactive is system-supplied and cannot be
+  edited away.
+
+Notices are never sent automatically. TransTrack produces and tracks them;
+a person decides when one goes out and records that it did.
 
 ### HL7 Inbox
 
