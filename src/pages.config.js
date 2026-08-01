@@ -21,6 +21,8 @@ import LivingDonors from './pages/LivingDonors';
 import Hl7Inbox from './pages/Hl7Inbox';
 import License from './pages/License';
 import PreventionQueue from './pages/PreventionQueue';
+import SystemHealth from './pages/SystemHealth';
+import IotaCompliance from './pages/IotaCompliance';
 import __Layout from './Layout.jsx';
 
 
@@ -48,6 +50,8 @@ export const PAGES = {
     "Hl7Inbox": Hl7Inbox,
     "License": License,
     "PreventionQueue": PreventionQueue,
+    "SystemHealth": SystemHealth,
+    "IotaCompliance": IotaCompliance,
 }
 
 export const pagesConfig = {
