@@ -699,6 +699,110 @@ function createSchema(db) {
     )
   `);
 
+  // --- waitlist_status_transitions ---
+  // Append-only record of every change to patients.waitlist_status. The
+  // patients row carries only the current value, which is enough to score
+  // churn but not enough to evidence a notification obligation: CMS IOTA
+  // § 512.442(d) requires proof of what changed, when it took effect, why,
+  // and that the patient was notified within 10 days. That proof needs the
+  // transition itself as a first-class immutable row.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS waitlist_status_transitions (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      patient_id TEXT NOT NULL,
+      from_status TEXT,
+      to_status TEXT NOT NULL,
+      reason_code TEXT,
+      reason_note TEXT,
+      effective_at TEXT NOT NULL,
+      offer_eligibility_impact TEXT NOT NULL DEFAULT 'unknown' CHECK(offer_eligibility_impact IN (
+        'blocks_offers',
+        'restores_offers',
+        'none',
+        'unknown'
+      )),
+      source TEXT NOT NULL DEFAULT 'manual' CHECK(source IN (
+        'manual',
+        'hl7',
+        'fhir_import',
+        'system'
+      )),
+      recorded_at TEXT DEFAULT (datetime('now')),
+      changed_by TEXT,
+      changed_by_email TEXT,
+      changed_by_role TEXT,
+      FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE,
+      FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE
+    )
+  `);
+
+  // --- iota_notifications ---
+  // One row per notification obligation created by a transition. Unlike the
+  // transitions table this row has a lifecycle (generated -> delivered ->
+  // filed to chart), so UPDATE is permitted, but the fields that establish
+  // the obligation and the content identity are frozen by trigger and the
+  // row can never be deleted.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS iota_notifications (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      transition_id TEXT NOT NULL,
+      patient_id TEXT NOT NULL,
+      notice_kind TEXT NOT NULL DEFAULT 'status_change' CHECK(notice_kind IN (
+        'status_change',
+        'annual_inactive',
+        'offer_criteria_review'
+      )),
+      generator_version TEXT NOT NULL,
+      content_sha256 TEXT NOT NULL,
+      content_format TEXT NOT NULL DEFAULT 'pdf',
+      due_at TEXT NOT NULL,
+      generated_at TEXT DEFAULT (datetime('now')),
+      generated_by TEXT,
+      channel TEXT CHECK(channel IS NULL OR channel IN ('electronic', 'mail')),
+      delivered_at TEXT,
+      patient_declined INTEGER DEFAULT 0,
+      next_annual_due_at TEXT,
+      secondary_recipient_type TEXT CHECK(secondary_recipient_type IS NULL OR secondary_recipient_type IN (
+        'dialysis_facility',
+        'referring_provider',
+        'none'
+      )),
+      secondary_recipient_name TEXT,
+      secondary_notified_at TEXT,
+      chart_write_status TEXT NOT NULL DEFAULT 'not_attempted' CHECK(chart_write_status IN (
+        'not_attempted',
+        'dry_run',
+        'pending',
+        'filed',
+        'failed',
+        'duplicate'
+      )),
+      chart_write_channel TEXT CHECK(chart_write_channel IS NULL OR chart_write_channel IN (
+        'fhir_documentreference',
+        'hl7_mdm_t02',
+        'manual'
+      )),
+      chart_write_attempted_at TEXT,
+      chart_write_error TEXT,
+      epic_document_reference_id TEXT,
+      signature_id TEXT,
+      -- The rendered notice. content_sha256 above is frozen by trigger and
+      -- remains the authoritative identity: a body that no longer hashes to it
+      -- has been altered after the fact. Stored so a notice can be reprinted
+      -- for a patient or produced for a surveyor even after the centre edits
+      -- its template. template_sha256 records which template produced it.
+      content TEXT,
+      template_sha256 TEXT,
+      idempotency_key TEXT NOT NULL,
+      FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE,
+      FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE,
+      FOREIGN KEY (transition_id) REFERENCES waitlist_status_transitions(id) ON DELETE CASCADE,
+      UNIQUE(org_id, idempotency_key)
+    )
+  `);
+
   // tasks
   // Auto-generated and manual tasks with escalation tracking.
   db.exec(`
@@ -826,6 +930,18 @@ function createIndexes(db) {
     CREATE INDEX IF NOT EXISTS idx_patients_organ_needed ON patients(org_id, organ_needed);
     CREATE INDEX IF NOT EXISTS idx_patients_waitlist_status ON patients(org_id, waitlist_status);
     CREATE INDEX IF NOT EXISTS idx_patients_priority_score ON patients(org_id, priority_score DESC);
+
+    -- Waitlist status transition indexes (org-scoped)
+    CREATE INDEX IF NOT EXISTS idx_wst_org_patient ON waitlist_status_transitions(org_id, patient_id, effective_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_wst_org_effective ON waitlist_status_transitions(org_id, effective_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_wst_org_impact ON waitlist_status_transitions(org_id, offer_eligibility_impact);
+
+    -- IOTA notification indexes (org-scoped)
+    CREATE INDEX IF NOT EXISTS idx_iota_notif_transition ON iota_notifications(transition_id);
+    CREATE INDEX IF NOT EXISTS idx_iota_notif_org_patient ON iota_notifications(org_id, patient_id);
+    CREATE INDEX IF NOT EXISTS idx_iota_notif_org_due ON iota_notifications(org_id, due_at);
+    CREATE INDEX IF NOT EXISTS idx_iota_notif_org_annual ON iota_notifications(org_id, next_annual_due_at);
+    CREATE INDEX IF NOT EXISTS idx_iota_notif_org_chart_write ON iota_notifications(org_id, chart_write_status);
     
     -- Donor organ indexes (org-scoped)
     CREATE INDEX IF NOT EXISTS idx_donor_organs_org_id ON donor_organs(org_id);
@@ -1042,12 +1158,70 @@ function createAuditLogTriggers(db) {
       END;
     `);
   } catch { /* table not present in this database yet */ }
+
+  createWaitlistTransitionTriggers(db);
+}
+
+/**
+ * Protect the CMS IOTA evidence chain at the database level.
+ *
+ * waitlist_status_transitions is fully append-only: it is the record that
+ * establishes when a notification obligation began, so a mutable row would
+ * make the 10-day timeliness claim unverifiable.
+ *
+ * iota_notifications has a legitimate lifecycle (generated -> delivered ->
+ * filed to chart), so UPDATE is allowed, but the columns that establish the
+ * obligation and the content identity are frozen, and no row may be removed.
+ *
+ * Created by migration 17, so absent on databases that predate it.
+ */
+function createWaitlistTransitionTriggers(db) {
+  try {
+    db.exec(`
+      CREATE TRIGGER IF NOT EXISTS wst_immutable_update
+      BEFORE UPDATE ON waitlist_status_transitions
+      BEGIN
+        SELECT RAISE(ABORT, 'CMS IOTA: Waitlist status transitions are immutable');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS wst_immutable_delete
+      BEFORE DELETE ON waitlist_status_transitions
+      BEGIN
+        SELECT RAISE(ABORT, 'CMS IOTA: Waitlist status transitions cannot be deleted');
+      END;
+    `);
+  } catch { /* table not present in this database yet */ }
+
+  try {
+    db.exec(`
+      CREATE TRIGGER IF NOT EXISTS iota_notifications_frozen_fields
+      BEFORE UPDATE ON iota_notifications
+      WHEN OLD.transition_id       IS NOT NEW.transition_id
+        OR OLD.patient_id          IS NOT NEW.patient_id
+        OR OLD.notice_kind         IS NOT NEW.notice_kind
+        OR OLD.content_sha256      IS NOT NEW.content_sha256
+        OR OLD.generator_version   IS NOT NEW.generator_version
+        OR OLD.due_at              IS NOT NEW.due_at
+        OR OLD.generated_at        IS NOT NEW.generated_at
+        OR OLD.idempotency_key     IS NOT NEW.idempotency_key
+      BEGIN
+        SELECT RAISE(ABORT, 'CMS IOTA: Notification obligation and content fields are immutable');
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS iota_notifications_immutable_delete
+      BEFORE DELETE ON iota_notifications
+      BEGIN
+        SELECT RAISE(ABORT, 'CMS IOTA: Notification records cannot be deleted');
+      END;
+    `);
+  } catch { /* table not present in this database yet */ }
 }
 
 module.exports = {
   createSchema,
   createIndexes,
   createAuditLogTriggers,
+  createWaitlistTransitionTriggers,
   migrateToOrgSchema,
   addOrgIdToExistingTables,
 };

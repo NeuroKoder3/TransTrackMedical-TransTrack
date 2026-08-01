@@ -12,6 +12,31 @@
 
 'use strict';
 
+/**
+ * Widen a table by one column, but only if the table exists on this database
+ * and does not already have the column.
+ *
+ * `PRAGMA table_info(missing_table)` returns an empty result rather than
+ * raising, so the intuitive `!cols.includes(col)` guard passes on a database
+ * where the table is absent entirely and the following `ALTER TABLE` then
+ * fails, aborting the whole migration run. Every migration that widens a table
+ * has to check for the table before the column.
+ *
+ * Returns true when a column was actually added.
+ */
+function addColumn(db, table, column, definition) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+  if (cols.length === 0) return false;      // table not present on this database
+  if (cols.includes(column)) return false;  // already widened
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  return true;
+}
+
+/** True when the named table exists on this database. */
+function tableExists(db, table) {
+  return db.prepare(`PRAGMA table_info(${table})`).all().length > 0;
+}
+
 const MIGRATIONS = [
   {
     version: 1,
@@ -19,9 +44,7 @@ const MIGRATIONS = [
     description: 'Add request_id column for end-to-end tracing',
     rollbackSql: 'DROP INDEX IF EXISTS idx_audit_logs_request_id',
     up(db) {
-      const cols = db.prepare("PRAGMA table_info(audit_logs)").all().map(c => c.name);
-      if (!cols.includes('request_id')) {
-        db.exec(`ALTER TABLE audit_logs ADD COLUMN request_id TEXT`);
+      if (addColumn(db, 'audit_logs', 'request_id', 'TEXT')) {
         db.exec(`CREATE INDEX IF NOT EXISTS idx_audit_logs_request_id ON audit_logs(request_id)`);
       }
     },
@@ -32,10 +55,7 @@ const MIGRATIONS = [
     description: 'Add request_id to access justification logs',
     rollbackSql: null, // SQLite cannot DROP COLUMN in older versions; safe to leave
     up(db) {
-      const cols = db.prepare("PRAGMA table_info(access_justification_logs)").all().map(c => c.name);
-      if (!cols.includes('request_id')) {
-        db.exec(`ALTER TABLE access_justification_logs ADD COLUMN request_id TEXT`);
-      }
+      addColumn(db, 'access_justification_logs', 'request_id', 'TEXT');
     },
   },
   {
@@ -44,12 +64,7 @@ const MIGRATIONS = [
     description: 'Add EHR integration, sync log, and import columns for FHIR interoperability',
     rollbackSql: null,
     up(db) {
-      const addCol = (table, col, type) => {
-        const cols = db.prepare(`PRAGMA table_info(${table})`).all().map(c => c.name);
-        if (!cols.includes(col)) {
-          db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${type}`);
-        }
-      };
+      const addCol = (table, col, type) => addColumn(db, table, col, type);
 
       addCol('ehr_integrations', 'integration_name', 'TEXT');
       addCol('ehr_integrations', 'ehr_system_type', 'TEXT');
@@ -138,13 +153,8 @@ const MIGRATIONS = [
         );
         CREATE INDEX IF NOT EXISTS idx_pwhist_user_time ON user_password_history(user_id, changed_at DESC);
       `);
-      const cols = db.prepare("PRAGMA table_info(users)").all().map(c => c.name);
-      if (!cols.includes('password_changed_at')) {
-        db.exec(`ALTER TABLE users ADD COLUMN password_changed_at TEXT`);
-      }
-      if (!cols.includes('mfa_required')) {
-        db.exec(`ALTER TABLE users ADD COLUMN mfa_required INTEGER DEFAULT 0`);
-      }
+      addColumn(db, 'users', 'password_changed_at', 'TEXT');
+      addColumn(db, 'users', 'mfa_required', 'INTEGER DEFAULT 0');
     },
   },
   {
@@ -418,13 +428,8 @@ const MIGRATIONS = [
     description: 'Per-user SSO opt-in flag, OIDC subject correlation, and a generic app_settings k/v table for SSO configuration',
     rollbackSql: null,
     up(db) {
-      const userCols = db.prepare("PRAGMA table_info(users)").all().map(c => c.name);
-      if (!userCols.includes('sso_enabled')) {
-        db.exec("ALTER TABLE users ADD COLUMN sso_enabled INTEGER NOT NULL DEFAULT 0");
-      }
-      if (!userCols.includes('sso_subject')) {
-        db.exec("ALTER TABLE users ADD COLUMN sso_subject TEXT");
-      }
+      addColumn(db, 'users', 'sso_enabled', 'INTEGER NOT NULL DEFAULT 0');
+      addColumn(db, 'users', 'sso_subject', 'TEXT');
       db.exec(`
         CREATE TABLE IF NOT EXISTS app_settings (
           key TEXT PRIMARY KEY,
@@ -432,8 +437,12 @@ const MIGRATIONS = [
           updated_at TEXT NOT NULL DEFAULT (datetime('now')),
           updated_by TEXT
         );
-        CREATE INDEX IF NOT EXISTS idx_users_sso_subject ON users(sso_subject) WHERE sso_subject IS NOT NULL;
       `);
+      if (tableExists(db, 'users')) {
+        db.exec(
+          'CREATE INDEX IF NOT EXISTS idx_users_sso_subject ON users(sso_subject) WHERE sso_subject IS NOT NULL',
+        );
+      }
     },
   },
   {
@@ -442,13 +451,8 @@ const MIGRATIONS = [
     description: 'Add prev_hash/record_hash columns for tamper-evident hash chaining (HIPAA 164.312(b))',
     rollbackSql: null,
     up(db) {
-      const cols = db.prepare("PRAGMA table_info(audit_logs)").all().map(c => c.name);
-      if (!cols.includes('prev_hash')) {
-        db.exec('ALTER TABLE audit_logs ADD COLUMN prev_hash TEXT');
-      }
-      if (!cols.includes('record_hash')) {
-        db.exec('ALTER TABLE audit_logs ADD COLUMN record_hash TEXT');
-      }
+      addColumn(db, 'audit_logs', 'prev_hash', 'TEXT');
+      addColumn(db, 'audit_logs', 'record_hash', 'TEXT');
     },
   },
   {
@@ -492,12 +496,7 @@ const MIGRATIONS = [
     description: 'Ensure EHR interoperability columns exist on databases upgraded from earlier releases',
     rollbackSql: null,
     up(db) {
-      const addCol = (table, col, type) => {
-        const cols = db.prepare(`PRAGMA table_info(${table})`).all().map(c => c.name);
-        if (!cols.includes(col)) {
-          db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${type}`);
-        }
-      };
+      const addCol = (table, col, type) => addColumn(db, table, col, type);
 
       addCol('ehr_integrations', 'integration_name', 'TEXT');
       addCol('ehr_integrations', 'ehr_system_type', 'TEXT');
@@ -536,17 +535,12 @@ const MIGRATIONS = [
     description: 'Add user_id to audit_logs and ensure hash-chain columns exist',
     rollbackSql: null,
     up(db) {
-      const cols = db.prepare("PRAGMA table_info(audit_logs)").all().map(c => c.name);
-      if (!cols.includes('prev_hash')) {
-        db.exec('ALTER TABLE audit_logs ADD COLUMN prev_hash TEXT');
+      addColumn(db, 'audit_logs', 'prev_hash', 'TEXT');
+      addColumn(db, 'audit_logs', 'record_hash', 'TEXT');
+      addColumn(db, 'audit_logs', 'user_id', 'TEXT');
+      if (tableExists(db, 'audit_logs')) {
+        db.exec('CREATE INDEX IF NOT EXISTS idx_audit_logs_hash_chain ON audit_logs(org_id, id)');
       }
-      if (!cols.includes('record_hash')) {
-        db.exec('ALTER TABLE audit_logs ADD COLUMN record_hash TEXT');
-      }
-      if (!cols.includes('user_id')) {
-        db.exec('ALTER TABLE audit_logs ADD COLUMN user_id TEXT');
-      }
-      db.exec('CREATE INDEX IF NOT EXISTS idx_audit_logs_hash_chain ON audit_logs(org_id, id)');
     },
   },
   {
@@ -585,10 +579,157 @@ const MIGRATIONS = [
     description: 'Keyed HMAC column for audit rows so the chain cannot be silently recomputed',
     rollbackSql: null, // additive column; older code simply ignores it
     up(db) {
-      const cols = db.prepare('PRAGMA table_info(audit_logs)').all().map((c) => c.name);
-      if (!cols.includes('record_hmac')) {
-        db.exec('ALTER TABLE audit_logs ADD COLUMN record_hmac TEXT');
-      }
+      addColumn(db, 'audit_logs', 'record_hmac', 'TEXT');
+    },
+  },
+  {
+    version: 17,
+    name: 'add_waitlist_transitions_and_iota_notifications',
+    description:
+      'Append-only waitlist status transition history and IOTA § 512.442(d) notification records',
+    // SQL is inlined rather than delegated to schema.cjs so the migration stays
+    // pinned to the shape that shipped with this version.
+    rollbackSql: [
+      'DROP TRIGGER IF EXISTS iota_notifications_immutable_delete',
+      'DROP TRIGGER IF EXISTS iota_notifications_frozen_fields',
+      'DROP TRIGGER IF EXISTS wst_immutable_delete',
+      'DROP TRIGGER IF EXISTS wst_immutable_update',
+      'DROP TABLE IF EXISTS iota_notifications',
+      'DROP TABLE IF EXISTS waitlist_status_transitions',
+    ].join('; '),
+    up(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS waitlist_status_transitions (
+          id TEXT PRIMARY KEY,
+          org_id TEXT NOT NULL,
+          patient_id TEXT NOT NULL,
+          from_status TEXT,
+          to_status TEXT NOT NULL,
+          reason_code TEXT,
+          reason_note TEXT,
+          effective_at TEXT NOT NULL,
+          offer_eligibility_impact TEXT NOT NULL DEFAULT 'unknown' CHECK(offer_eligibility_impact IN (
+            'blocks_offers', 'restores_offers', 'none', 'unknown'
+          )),
+          source TEXT NOT NULL DEFAULT 'manual' CHECK(source IN (
+            'manual', 'hl7', 'fhir_import', 'system'
+          )),
+          recorded_at TEXT DEFAULT (datetime('now')),
+          changed_by TEXT,
+          changed_by_email TEXT,
+          changed_by_role TEXT,
+          FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE,
+          FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE
+        )
+      `);
+
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS iota_notifications (
+          id TEXT PRIMARY KEY,
+          org_id TEXT NOT NULL,
+          transition_id TEXT NOT NULL,
+          patient_id TEXT NOT NULL,
+          notice_kind TEXT NOT NULL DEFAULT 'status_change' CHECK(notice_kind IN (
+            'status_change', 'annual_inactive', 'offer_criteria_review'
+          )),
+          generator_version TEXT NOT NULL,
+          content_sha256 TEXT NOT NULL,
+          content_format TEXT NOT NULL DEFAULT 'pdf',
+          due_at TEXT NOT NULL,
+          generated_at TEXT DEFAULT (datetime('now')),
+          generated_by TEXT,
+          channel TEXT CHECK(channel IS NULL OR channel IN ('electronic', 'mail')),
+          delivered_at TEXT,
+          patient_declined INTEGER DEFAULT 0,
+          next_annual_due_at TEXT,
+          secondary_recipient_type TEXT CHECK(secondary_recipient_type IS NULL OR secondary_recipient_type IN (
+            'dialysis_facility', 'referring_provider', 'none'
+          )),
+          secondary_recipient_name TEXT,
+          secondary_notified_at TEXT,
+          chart_write_status TEXT NOT NULL DEFAULT 'not_attempted' CHECK(chart_write_status IN (
+            'not_attempted', 'dry_run', 'pending', 'filed', 'failed', 'duplicate'
+          )),
+          chart_write_channel TEXT CHECK(chart_write_channel IS NULL OR chart_write_channel IN (
+            'fhir_documentreference', 'hl7_mdm_t02', 'manual'
+          )),
+          chart_write_attempted_at TEXT,
+          chart_write_error TEXT,
+          epic_document_reference_id TEXT,
+          signature_id TEXT,
+          idempotency_key TEXT NOT NULL,
+          FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE,
+          FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE,
+          FOREIGN KEY (transition_id) REFERENCES waitlist_status_transitions(id) ON DELETE CASCADE,
+          UNIQUE(org_id, idempotency_key)
+        )
+      `);
+
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_wst_org_patient ON waitlist_status_transitions(org_id, patient_id, effective_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_wst_org_effective ON waitlist_status_transitions(org_id, effective_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_wst_org_impact ON waitlist_status_transitions(org_id, offer_eligibility_impact);
+        CREATE INDEX IF NOT EXISTS idx_iota_notif_transition ON iota_notifications(transition_id);
+        CREATE INDEX IF NOT EXISTS idx_iota_notif_org_patient ON iota_notifications(org_id, patient_id);
+        CREATE INDEX IF NOT EXISTS idx_iota_notif_org_due ON iota_notifications(org_id, due_at);
+        CREATE INDEX IF NOT EXISTS idx_iota_notif_org_annual ON iota_notifications(org_id, next_annual_due_at);
+        CREATE INDEX IF NOT EXISTS idx_iota_notif_org_chart_write ON iota_notifications(org_id, chart_write_status);
+      `);
+
+      db.exec(`
+        CREATE TRIGGER IF NOT EXISTS wst_immutable_update
+        BEFORE UPDATE ON waitlist_status_transitions
+        BEGIN
+          SELECT RAISE(ABORT, 'CMS IOTA: Waitlist status transitions are immutable');
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS wst_immutable_delete
+        BEFORE DELETE ON waitlist_status_transitions
+        BEGIN
+          SELECT RAISE(ABORT, 'CMS IOTA: Waitlist status transitions cannot be deleted');
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS iota_notifications_frozen_fields
+        BEFORE UPDATE ON iota_notifications
+        WHEN OLD.transition_id     IS NOT NEW.transition_id
+          OR OLD.patient_id        IS NOT NEW.patient_id
+          OR OLD.notice_kind       IS NOT NEW.notice_kind
+          OR OLD.content_sha256    IS NOT NEW.content_sha256
+          OR OLD.generator_version IS NOT NEW.generator_version
+          OR OLD.due_at            IS NOT NEW.due_at
+          OR OLD.generated_at      IS NOT NEW.generated_at
+          OR OLD.idempotency_key   IS NOT NEW.idempotency_key
+        BEGIN
+          SELECT RAISE(ABORT, 'CMS IOTA: Notification obligation and content fields are immutable');
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS iota_notifications_immutable_delete
+        BEFORE DELETE ON iota_notifications
+        BEGIN
+          SELECT RAISE(ABORT, 'CMS IOTA: Notification records cannot be deleted');
+        END;
+      `);
+    },
+  },
+  {
+    version: 18,
+    name: 'add_iota_notice_body',
+    description:
+      'Persist the rendered IOTA notice so it can be reprinted and audited',
+    // Migration 17 stored only content_sha256, on the theory that a
+    // deterministic generator makes the body reproducible. That holds only
+    // while the template is unchanged — and a centre editing its template is
+    // expected, not exceptional. Without the body, a notice filed last quarter
+    // could not be reprinted for the patient who asks for a copy, nor produced
+    // for a surveyor. The hash stays authoritative: it is frozen by trigger,
+    // so a body that no longer hashes to it is detectably altered.
+    rollbackSql: [
+      // SQLite cannot drop columns before 3.35; these are additive and safe to
+      // leave in place on rollback.
+    ].join('; '),
+    up(db) {
+      addColumn(db, 'iota_notifications', 'content', 'TEXT');
+      addColumn(db, 'iota_notifications', 'template_sha256', 'TEXT');
     },
   },
 ];
@@ -730,5 +871,9 @@ module.exports = {
   rollbackLastMigration,
   getMigrationStatus,
   getCurrentVersion,
+  // Exported so migrationSafety.cjs can follow the same precondition every
+  // public function here observes: the tracking table must exist before the
+  // current version can be read. On a fresh database it does not yet.
+  ensureMigrationsTable,
   MIGRATIONS,
 };
