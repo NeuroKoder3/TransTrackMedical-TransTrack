@@ -165,6 +165,43 @@ Security-critical dependencies:
 
 Run `npm run security:check` to audit dependencies for known vulnerabilities.
 
+### Vulnerability management and documented exceptions
+
+`npm run audit` runs `scripts/audit-with-exceptions.mjs`, which performs a
+production-dependency `npm audit` and then subtracts only those findings that
+carry a reviewed, unexpired exception in
+[`security/vulnerability-exceptions.json`](security/vulnerability-exceptions.json).
+The same gate runs inside `npm run release:check`, so a release cannot be cut
+with an undocumented finding.
+
+This exists because a blanket pass/fail audit leaves only two options when a
+finding is real but unreachable in this product: suppress genuine findings by
+lowering the severity threshold, or take on an unrelated major upgrade under
+release pressure. Neither is defensible. The gate is **stricter** than a bare
+`npm audit` in four ways:
+
+- An exception covers exactly one advisory on one package. A new advisory
+  against the same package is not covered.
+- If a finding's severity rises above what was assessed, the exception stops
+  applying and the build fails.
+- Every exception carries a `reviewBy` date. Once it passes, the build fails, so
+  a decision cannot be silently inherited by a later release.
+- An exception that no longer matches any finding fails as stale, so the file
+  cannot accumulate entries granting more latitude than was reviewed.
+
+Accepted findings are printed on every run and are intended to be shown to a
+customer security reviewer. Each entry records the reachability analysis, the
+remediation plan, who assessed it and when. Adding an exception without a
+substantive analysis, an owner and a review date is rejected by
+`tests/auditExceptions.test.mjs`.
+
+To review the current position:
+
+```bash
+npm run audit          # human-readable, shows every accepted finding
+npm run audit:raw      # unfiltered npm audit, for comparison
+```
+
 ---
 
-*Last updated: 2026-03-21*
+*Last updated: 2026-08-01*
