@@ -76,8 +76,10 @@ For each pilot workstation:
 3. Vendor representative confirms the org_id record was created and
    the first admin user can log in.
 4. Vendor representative runs the in-app health check
-   (`Settings → System → Diagnostics`) and screenshots the result for
-   the customer's records.
+   (`Administration → System Health`, admin role required) and
+   screenshots the result for the customer's records. A newly installed
+   system may show a warning against the backup component until the
+   first scheduled backup has run; that is expected.
 
 ### 2.2 Roles and users
 
@@ -135,8 +137,15 @@ integration, schedule it as a Phase 3 add-on (see below).
 
 - Vendor support meets the programme manager weekly to review the
   Prevention Digest and any incidents.
-- Vendor monitors `Health → System` health-check output (provided
+- Vendor monitors the `Administration → System Health` output (provided
   by the customer's IT contact) for any unexpected component status.
+  Where more detail is needed, the customer's IT contact uses
+  **Export support bundle** on that page and attaches the file to the
+  ticket. The bundle contains health status, schema version, record
+  counts, backup history and recent log activity, and withholds free
+  text so it carries no PHI. If a diagnosis needs full log message
+  text, support asks for it explicitly; the resulting bundle is
+  labelled as PHI and must be transferred accordingly.
 - Any defect is logged as a GitHub issue against the customer's
   pilot issue label (e.g., `pilot:hospital-x`). Severity SLAs per the
   signed SOW.

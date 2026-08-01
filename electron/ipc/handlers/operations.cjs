@@ -10,6 +10,7 @@ const accessControl = require('../../services/accessControl.cjs');
 const disasterRecovery = require('../../services/disasterRecovery.cjs');
 const complianceView = require('../../services/complianceView.cjs');
 const offlineReconciliation = require('../../services/offlineReconciliation.cjs');
+const supportBundle = require('../../services/supportBundle.cjs');
 const shared = require('../shared.cjs');
 
 function register() {
@@ -79,6 +80,64 @@ function register() {
   ipcMain.handle('recovery:getStatus', async () => {
     if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
     return disasterRecovery.getRecoveryStatus();
+  });
+
+  // --- support diagnostics ---
+  //
+  // Admin-only. A support bundle is a diagnostic export that leaves the machine,
+  // so it is gated like a backup rather than like a read.
+
+  ipcMain.handle('support:previewBundle', async (event, options) => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
+    const { currentUser } = shared.getSessionState();
+    if (!currentUser || currentUser.role !== 'admin') {
+      throw new Error('Admin access required for support diagnostics');
+    }
+    // Returned to the renderer so an administrator can see exactly what would
+    // leave the machine before choosing to save it.
+    return supportBundle.collectBundle({
+      includeFreeText: options?.includeFreeText === true,
+      maxLogLines: 200,
+    });
+  });
+
+  ipcMain.handle('support:exportBundle', async (event, options) => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
+    const { currentUser } = shared.getSessionState();
+    if (!currentUser || currentUser.role !== 'admin') {
+      throw new Error('Admin access required for support diagnostics');
+    }
+
+    const suggested = supportBundle.suggestFileName();
+    const { canceled, filePath } = await dialog.showSaveDialog({
+      title: 'Export support bundle',
+      defaultPath: suggested,
+      filters: [{ name: 'Support bundle', extensions: ['json'] }],
+    });
+    if (canceled || !filePath) return { canceled: true };
+
+    const includeFreeText = options?.includeFreeText === true;
+    const result = supportBundle.writeBundle(filePath, { includeFreeText });
+
+    // A diagnostics export is a disclosure of system information and, in
+    // full-text mode, potentially of PHI. Both cases are auditable events.
+    try {
+      shared.logAudit(
+        'support_bundle_exported',
+        'System',
+        result.checksum.slice(0, 16),
+        null, // patientName — a support bundle is never scoped to a patient
+        JSON.stringify({
+          includeFreeText,
+          sizeBytes: result.sizeBytes,
+          handleAsPhi: includeFreeText,
+        }),
+        currentUser.email,
+        currentUser.role,
+      );
+    } catch { /* never fail the export because the audit write failed */ }
+
+    return { canceled: false, ...result, includeFreeText };
   });
 
   // Compliance view
