@@ -4,7 +4,7 @@ import { createPageUrl } from '@/utils';
 import {
   Activity, Users, FileText, Settings, Shield, Heart, Database,
   AlertTriangle, HardDrive, BarChart3, Brain, ListTodo, ClipboardCheck,
-  Stethoscope, Inbox, KeyRound, UserPlus, X, Key, ListChecks,
+  Stethoscope, Inbox, KeyRound, UserPlus, X, Key, ListChecks, ShieldAlert,
 } from 'lucide-react';
 
 /**
@@ -66,6 +66,9 @@ export default function Sidebar({ user, isOpen = true, onClose }) {
         { name: 'Predictive', page: 'PredictiveRisk', icon: Brain, show: isClinicalStaff },
         { name: 'Outcomes', page: 'OutcomesDashboard', icon: BarChart3, show: isAdmin },
         { name: 'HL7 Inbox', page: 'Hl7Inbox', icon: Inbox, show: isAdmin || isCoordinator },
+        // Coordinators own this workflow day to day; regulators need to read it.
+        { name: 'IOTA Notices', page: 'IotaCompliance', icon: ShieldAlert,
+          show: isClinicalStaff || isAdmin || isRegulator },
       ],
     },
     {
@@ -77,6 +80,7 @@ export default function Sidebar({ user, isOpen = true, onClose }) {
         { name: 'Priority Config', page: 'PrioritySettings', icon: Settings, show: isAdmin },
         { name: 'Compliance', page: 'ComplianceCenter', icon: Shield, show: isAdmin || isRegulator },
         { name: 'Recovery', page: 'DisasterRecovery', icon: HardDrive, show: isAdmin },
+        { name: 'System Health', page: 'SystemHealth', icon: Activity, show: isAdmin },
         { name: 'License', page: 'License', icon: Key, show: isAdmin },
         { name: 'Settings', page: 'Settings', icon: Settings, show: isAdmin },
       ],

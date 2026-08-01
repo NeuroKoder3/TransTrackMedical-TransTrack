@@ -43,6 +43,22 @@ const DEFAULT_SCOPES = [
   'system/Procedure.read',
 ].join(' ');
 
+/**
+ * Write scope required to file a document into a patient's chart.
+ *
+ * Deliberately NOT part of DEFAULT_SCOPES. Requesting a write scope changes
+ * what a customer's Epic administrator is approving, and an app that asks for
+ * write access it does not use will fail security review. A caller that
+ * intends to file documents must opt in explicitly:
+ *
+ *   createEpicClient({ ..., scope: `${DEFAULT_SCOPES} ${DOCUMENT_WRITE_SCOPE}` })
+ *
+ * Epic additionally gates DocumentReference.Create per customer: the scope
+ * being granted in the sandbox does not mean a production organisation has
+ * enabled it. See ./README.md for the enablement conversation.
+ */
+const DOCUMENT_WRITE_SCOPE = 'system/DocumentReference.write';
+
 function b64url(buf) {
   return Buffer.from(buf)
     .toString('base64')
@@ -243,6 +259,75 @@ function createEpicClient(opts) {
   }
 
   /**
+   * POST a FHIR resource.
+   *
+   * Two behaviours differ deliberately from fhirGet:
+   *
+   *   • No automatic retry. fetchWithRetry replays 5xx and 429 responses, which
+   *     is correct for an idempotent read and dangerous for a create: Epic may
+   *     have persisted the resource before the response failed, so a replay can
+   *     file a second copy of a clinical document. Callers that need
+   *     at-most-once semantics must supply an idempotency guard of their own.
+   *   • The Location / resource id is returned, because a caller filing a
+   *     document needs the identifier to record what it created.
+   */
+  async function fhirPost(resourcePath, resource, { headers = {} } = {}) {
+    const tok = await getAccessToken();
+    const url = resourcePath.startsWith('http')
+      ? resourcePath
+      : `${fhirBase}/${resourcePath.replace(/^\/+/, '')}`;
+
+    const res = await fetchWithTimeout(url, {
+      method: 'POST',
+      headers: {
+        authorization: `${tok.tokenType} ${tok.accessToken}`,
+        'content-type': 'application/fhir+json',
+        accept: 'application/fhir+json',
+        ...headers,
+      },
+      body: JSON.stringify(resource),
+    });
+
+    const text = await res.text();
+    if (!res.ok) {
+      if (logger) logger.error({ status: res.status, path: resourcePath }, 'Epic FHIR POST failed');
+      // OperationOutcome carries the reason Epic rejected the write; surfacing
+      // it verbatim is what makes a per-site enablement problem diagnosable
+      // rather than an opaque 400.
+      const err = new Error(`Epic FHIR create failed (${res.status})`);
+      err.status = res.status;
+      try { err.operationOutcome = JSON.parse(text); } catch { err.body = text; }
+      throw err;
+    }
+
+    const location = res.headers?.get?.('location') || res.headers?.get?.('content-location') || null;
+    let body = null;
+    try { body = text ? JSON.parse(text) : null; } catch { /* Epic may return an empty 201 */ }
+
+    return {
+      status: res.status,
+      location,
+      id: body?.id || (location ? location.split('/').filter(Boolean).slice(-3, -2)[0] : null),
+      resource: body,
+    };
+  }
+
+  /**
+   * File a document into a patient's chart.
+   *
+   * The DocumentReference is supplied fully formed by the caller rather than
+   * assembled here, because the document type coding is negotiated per
+   * customer with their Epic team — there is no correct default, and guessing
+   * one produces documents that land in the wrong place in the chart.
+   */
+  async function createDocumentReference(documentReference) {
+    if (!documentReference || documentReference.resourceType !== 'DocumentReference') {
+      throw new Error('createDocumentReference: a DocumentReference resource is required');
+    }
+    return fhirPost('DocumentReference', documentReference);
+  }
+
+  /**
    * Paginate a FHIR search by following Bundle.link[relation=next] until
    * exhausted or maxPages reached.
    */
@@ -297,6 +382,8 @@ function createEpicClient(opts) {
   return {
     getAccessToken,
     fhirGet,
+    fhirPost,
+    createDocumentReference,
     fhirSearchAll,
     fetchPatientBundle,
     config: { tokenUrl, fhirBase, clientId, kid, scope },
@@ -319,6 +406,7 @@ module.exports = {
   DEFAULT_TOKEN_URL,
   DEFAULT_FHIR_BASE,
   DEFAULT_SCOPES,
+  DOCUMENT_WRITE_SCOPE,
   buildAssertion,
   createEpicClient,
   createEpicClientFromKeyFile,

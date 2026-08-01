@@ -320,6 +320,37 @@ const mockClient = {
     }),
     buildDigest: async () => null,
   },
+  // CMS IOTA notifications are compliance records. The browser-mode mock
+  // reports an unconfigured, empty centre and refuses every write, so a
+  // developer can render the page without ever producing a record that looks
+  // like a discharged regulatory obligation.
+  iota: {
+    getConfig: async () => ({
+      template: null, templateSha256: null, templateValid: false,
+      templateProblems: { missingTokens: [], unknownTokens: [] },
+      reactivationSteps: null, coordinatorName: null, coordinatorPhone: null,
+      centerContact: null, ready: false,
+      missing: ['notice template', 'reactivation instructions'],
+      exampleTemplate: '', requiredTokens: [], optionalTokens: [],
+    }),
+    saveConfig: async () => { throw new Error('IOTA configuration is only available in the desktop app.'); },
+    previewTemplate: async () => ({ ok: false, tokens: [], unknown: [], missing: [] }),
+    recordTransition: async () => { throw new Error('Recording a status change is only available in the desktop app.'); },
+    listTransitions: async () => [],
+    generateNotice: async () => { throw new Error('Notice generation is only available in the desktop app.'); },
+    listNotifications: async () => [],
+    getNotification: async () => null,
+    markDelivered: async () => { throw new Error('Recording delivery is only available in the desktop app.'); },
+    markSecondaryNotified: async () => { throw new Error('Recording notification is only available in the desktop app.'); },
+    fileToChart: async () => { throw new Error('Chart filing is only available in the desktop app.'); },
+    getSummary: async () => ({
+      config: { ready: false, missing: ['notice template'], templateValid: false },
+      obligatingTransitions: 0, withoutNotice: 0, total: 0, pending: 0, overdue: 0,
+      dueWithin3Days: 0, secondaryRecipientUnknown: 0, delivered: 0,
+      deliveredOnTime: 0, deliveredLate: 0, onTimeRate: null, noticeDueDays: 10,
+      notFiledToChart: 0, chartFilingFailed: 0,
+    }),
+  },
   outcomes: {
     getDashboard: async () => ({ outcomes: [] }),
     saveSnapshot: async () => ({ success: true }),
@@ -348,6 +379,37 @@ const mockClient = {
   recovery: {
     getStatus: async () => ({ healthy: true }),
     listBackups: async () => [],
+    // Deliberately reject rather than resolve. A mock that reported a
+    // successful backup would tell a developer their data was protected when
+    // nothing was written, which is a worse failure than an obvious error.
+    createBackup: async () => {
+      throw new Error('Backups require the Electron desktop runtime (dev mock cannot write a backup).');
+    },
+    verifyBackup: async () => {
+      throw new Error('Backup verification requires the Electron desktop runtime.');
+    },
+    restoreBackup: async () => {
+      throw new Error('Restore requires the Electron desktop runtime.');
+    },
+  },
+  system: {
+    // Shaped like the real health envelope so the diagnostics screen renders in
+    // browser dev, but labelled so nobody mistakes it for a real check.
+    getHealth: async () => ({
+      status: 'warn',
+      checkedAt: new Date().toISOString(),
+      components: {
+        process: { status: 'ok', note: 'Dev placeholder — not available outside Electron.' },
+        database: { status: 'warn', error: 'no desktop runtime in browser dev' },
+      },
+    }),
+    getMigrationStatus: async () => ({ currentVersion: null, pending: [] }),
+  },
+  support: {
+    previewBundle: async () => ({ bundleVersion: 'dev', redactionPolicy: { containsPhi: false } }),
+    exportBundle: async () => {
+      throw new Error('Support bundle export requires the Electron desktop runtime.');
+    },
   },
   // Mock Transplant Clock client for development
   // The Transplant Clock provides real-time operational awareness
@@ -713,6 +775,22 @@ const createElectronClient = () => {
       buildDigest: async (params) =>
         await window.electronAPI.actionQueue.buildDigest(params),
     },
+    // CMS IOTA Model § 512.442(d) waitlist status notifications
+    iota: {
+      getConfig: async () => await window.electronAPI.iota.getConfig(),
+      saveConfig: async (config) => await window.electronAPI.iota.saveConfig(config),
+      previewTemplate: async (t) => await window.electronAPI.iota.previewTemplate(t),
+      recordTransition: async (input) => await window.electronAPI.iota.recordTransition(input),
+      listTransitions: async (opts) => await window.electronAPI.iota.listTransitions(opts),
+      generateNotice: async (opts) => await window.electronAPI.iota.generateNotice(opts),
+      listNotifications: async (opts) => await window.electronAPI.iota.listNotifications(opts),
+      getNotification: async (id) => await window.electronAPI.iota.getNotification(id),
+      markDelivered: async (params) => await window.electronAPI.iota.markDelivered(params),
+      markSecondaryNotified: async (params) =>
+        await window.electronAPI.iota.markSecondaryNotified(params),
+      fileToChart: async (params) => await window.electronAPI.iota.fileToChart(params),
+      getSummary: async () => await window.electronAPI.iota.getSummary(),
+    },
     // Outcomes Dashboard
     outcomes: {
       getDashboard: async () => await window.electronAPI.outcomes.getDashboard(),
@@ -747,6 +825,18 @@ const createElectronClient = () => {
     recovery: {
       getStatus: async () => await window.electronAPI.recovery.getStatus(),
       listBackups: async () => await window.electronAPI.recovery.listBackups(),
+      createBackup: async (options) => await window.electronAPI.recovery.createBackup(options),
+      verifyBackup: async (backupId) => await window.electronAPI.recovery.verifyBackup(backupId),
+      restoreBackup: async (backupId) => await window.electronAPI.recovery.restoreBackup(backupId),
+    },
+    // System health and support diagnostics
+    system: {
+      getHealth: async () => await window.electronAPI.system.getHealth(),
+      getMigrationStatus: async () => await window.electronAPI.system.getMigrationStatus(),
+    },
+    support: {
+      previewBundle: async (options) => await window.electronAPI.support.previewBundle(options),
+      exportBundle: async (options) => await window.electronAPI.support.exportBundle(options),
     },
     // aHHQ (extends mock's ahhq with direct calls)
     ahhq: {

@@ -436,6 +436,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getInterventionEffectiveness: (params) => ipcRenderer.invoke('actionQueue:getInterventionEffectiveness', params),
     buildDigest: (params) => ipcRenderer.invoke('actionQueue:buildDigest', params),
   },
+
+  // CMS IOTA Model § 512.442(d) waitlist status notifications.
+  iota: {
+    getConfig: () => ipcRenderer.invoke('iota:getConfig'),
+    saveConfig: (config) => ipcRenderer.invoke('iota:saveConfig', config),
+    previewTemplate: (template) => ipcRenderer.invoke('iota:previewTemplate', template),
+    recordTransition: (input) => ipcRenderer.invoke('iota:recordTransition', input),
+    listTransitions: (opts) => ipcRenderer.invoke('iota:listTransitions', opts),
+    generateNotice: (opts) => ipcRenderer.invoke('iota:generateNotice', opts),
+    listNotifications: (opts) => ipcRenderer.invoke('iota:listNotifications', opts),
+    getNotification: (id) => ipcRenderer.invoke('iota:getNotification', id),
+    markDelivered: (params) => ipcRenderer.invoke('iota:markDelivered', params),
+    markSecondaryNotified: (params) => ipcRenderer.invoke('iota:markSecondaryNotified', params),
+    fileToChart: (params) => ipcRenderer.invoke('iota:fileToChart', params),
+    getSummary: () => ipcRenderer.invoke('iota:getSummary'),
+  },
+
   
   // Readiness Barriers (Non-Clinical Operational Tracking)
   // NOTE: This feature is strictly NON-CLINICAL, NON-ALLOCATIVE, and designed for
@@ -624,6 +641,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Audit chain verification
   auditChain: {
     verify: () => ipcRenderer.invoke('audit:verifyChain'),
+  },
+
+  // Support diagnostics (admin only). `previewBundle` returns exactly what
+  // `exportBundle` would write, so an administrator can inspect a diagnostics
+  // export before it leaves the machine.
+  support: {
+    previewBundle: (options) => ipcRenderer.invoke('support:previewBundle', options),
+    exportBundle: (options) => ipcRenderer.invoke('support:exportBundle', options),
   },
 
   // Platform info

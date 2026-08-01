@@ -58,6 +58,10 @@ const HARDENING_SUITES = [
   'auditHmac.test.cjs',
   'auditKeyGating.test.cjs',
   'auditImmutability.test.cjs',
+  'iotaNotifications.test.cjs',
+  'iotaNoticeGenerator.test.cjs',
+  'iotaNoticeService.test.cjs',
+  'chartFiling.test.cjs',
   'auditExport.test.cjs',
   'secureDelete.test.cjs',
   'integrityMonitor.test.cjs',
@@ -68,6 +72,7 @@ const HARDENING_SUITES = [
 const FUNCTIONAL_SUITES = [
   'business-logic.test.cjs',
   'compliance.test.cjs',
+  'ehrMigration.test.cjs',
   'calculators.test.cjs',
   'mfa.test.cjs',
   'hl7v2.test.cjs',
@@ -85,6 +90,13 @@ const FUNCTIONAL_SUITES = [
   'preventionDigest.test.cjs',
   'healthCheck.test.cjs',
   'signWin.test.cjs',
+  // Wiring/packaging integrity: these cross layer seams that individually-correct
+  // unit tests cannot see (renderer↔preload bridge, Vite source entry).
+  'rendererBridgeCoverage.test.mjs',
+  'buildEntryIntegrity.test.mjs',
+  'auditExceptions.test.mjs',
+  'migrationSafety.test.cjs',
+  'supportBundle.test.cjs',
 ];
 
 const GROUPS = {

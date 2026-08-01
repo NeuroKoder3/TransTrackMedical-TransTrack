@@ -38,6 +38,13 @@ const os = require('os');
 let app;
 let window;
 
+/**
+ * Password used to seed the first-run administrator in the launched test app
+ * and to log in from Step 1. Single source of truth so the two cannot drift.
+ */
+const E2E_ADMIN_PASSWORD =
+  process.env.TRANSTRACK_INITIAL_ADMIN_PASSWORD || 'E2E_ONLY_DoNotUseInProd!';
+
 test.beforeAll(async () => {
   const userDataPath = path.join(
     os.tmpdir(),
@@ -53,6 +60,14 @@ test.beforeAll(async () => {
       ELECTRON_DEV: '0',
       TRANSTRACK_E2E: '1',
       TRANSTRACK_USERDATA_DIR: userDataPath,
+      // Seed the first-run administrator with the password Step 1 logs in with.
+      // Previously this was only set at the CI workflow level, so the launched
+      // app generated a random setup token instead and every step below failed
+      // on any developer machine — the suite was effectively CI-only, which is
+      // how a broken build reached the repository unnoticed. Defaulting here
+      // makes local and CI runs identical. The value only ever seeds a throwaway
+      // database in a temporary directory.
+      TRANSTRACK_INITIAL_ADMIN_PASSWORD: E2E_ADMIN_PASSWORD,
     },
     timeout: 45000,
   });
@@ -118,8 +133,7 @@ test.describe('TransTrack — Critical Path (login → patient → audit → bac
     );
 
     const { totpCode } = require('../../electron/services/mfa.cjs');
-    const e2ePassword =
-      process.env.TRANSTRACK_INITIAL_ADMIN_PASSWORD || 'E2E_ONLY_DoNotUseInProd!';
+    const e2ePassword = E2E_ADMIN_PASSWORD;
     const nextPassword = `${e2ePassword}_Rotated1!`;
 
     const result = await window.evaluate(async ({ password, next }) => {
