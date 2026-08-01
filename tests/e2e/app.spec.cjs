@@ -21,6 +21,16 @@ const os = require('os');
 let app;
 let window;
 
+/**
+ * Password used to seed the first-run administrator in the launched test app
+ * and to log in with below. Passed explicitly into the app's environment so the
+ * suite behaves identically on a developer machine and in CI; previously it was
+ * only set at the CI workflow level, so locally the app generated a random setup
+ * token and the login step could not succeed.
+ */
+const E2E_ADMIN_PASSWORD =
+  process.env.TRANSTRACK_INITIAL_ADMIN_PASSWORD || 'E2E_ONLY_DoNotUseInProd!';
+
 test.beforeAll(async () => {
   const userDataPath = path.join(
     os.tmpdir(),
@@ -38,6 +48,7 @@ test.beforeAll(async () => {
       ELECTRON_DEV: '0',
       TRANSTRACK_E2E: '1',
       TRANSTRACK_USERDATA_DIR: userDataPath,
+      TRANSTRACK_INITIAL_ADMIN_PASSWORD: E2E_ADMIN_PASSWORD,
     },
     timeout: 45000,
   });
@@ -80,11 +91,10 @@ test.describe('TransTrack E2E', () => {
     await window.waitForTimeout(2000);
 
     // The seed code (electron/database/init.cjs) consumes
-    // process.env.TRANSTRACK_INITIAL_ADMIN_PASSWORD when present and falls
-    // back to a random setup token written to userData otherwise. The E2E
-    // job sets this env var to a known value so the login step is
-    // deterministic without relying on the random token.
-    const e2ePassword = process.env.TRANSTRACK_INITIAL_ADMIN_PASSWORD || 'E2E_ONLY_DoNotUseInProd!';
+    // TRANSTRACK_INITIAL_ADMIN_PASSWORD when present and falls back to a random
+    // setup token otherwise. beforeAll passes this exact value into the app, so
+    // the login step is deterministic rather than depending on the environment.
+    const e2ePassword = E2E_ADMIN_PASSWORD;
 
     const emailInput = window.locator('input[type="email"], input[name="email"], input[placeholder*="email" i]');
     const passwordInput = window.locator('input[type="password"]');
