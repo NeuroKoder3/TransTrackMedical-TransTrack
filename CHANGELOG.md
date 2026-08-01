@@ -5,6 +5,123 @@ All notable changes to TransTrack are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2026-08-01
+
+Pilot-readiness release. Apart from the IOTA notification pipeline below,
+every item is a defect fix or a safety control; there are no breaking
+changes.
+
+### Added — CMS IOTA § 512.442(d) notification pipeline
+
+The notice generator shipped previously but nothing could reach it. It is
+now a working obligation tracker, end to end.
+
+- **`electron/services/iotaNoticeService.cjs`** — recording a waitlist
+  status transition whose impact blocks organ offers creates the
+  notification obligation in the same operation, so a duty cannot exist
+  without a tracked deadline. Where the centre's template is not yet
+  configured the transition is still recorded and the obligation is
+  reported as unmet: the transition is what proves when the statutory
+  clock started, and discarding it would be far worse than a missing
+  notice.
+- **Delivery tracking** that distinguishes a notice delivered *late* from
+  one delivered on time, and from one still open. A surveyor asks
+  different questions about each, so they are counted separately rather
+  than collapsed into a single "done".
+- **Incomplete-address detection** — where a copy is owed to a dialysis
+  facility or referring provider but none is on file for the patient, the
+  obligation is flagged rather than presented as discharged.
+- **Migration 18** retains the rendered notice body. Migration 17 stored
+  only the content hash on the theory that a deterministic generator makes
+  the body reproducible, which holds only until a centre edits its
+  template — leaving no way to reprint a filed notice for the patient who
+  asks for a copy. The hash remains authoritative and frozen, so an
+  altered body is still detectable.
+- **`electron/ipc/handlers/iota.cjs`** — eleven org-scoped channels.
+  Configuration is administrator-only, obligation and delivery writes are
+  administrator or coordinator, physicians and regulators may read. Every
+  write is audit-logged.
+- **`src/pages/IotaCompliance.jsx`** — leads with what is wrong (overdue,
+  obligations with no notice, unnamed recipients) rather than a reassuring
+  total, because the failure mode that matters is a deadline quietly
+  passing.
+
+### Added — Epic chart filing (DocumentReference)
+
+- **`electron/services/chartFiling.cjs`** builds the FHIR R4
+  `DocumentReference` that records a notice in the patient's chart, in three
+  modes: `dry_run` (build and validate, transmit nothing), `manual` (filed
+  by another route), and `fhir_documentreference` (a real create).
+- **Outbound transmission requires an injected transport.** No configuration
+  value alone can cause this offline-first application to reach an external
+  endpoint; a security reviewer can establish that by reading the module.
+- **A body that no longer matches its frozen hash is refused**, so an altered
+  document cannot be written into a chart under the authority of a record
+  saying it was not altered.
+- **`fhirPost` / `createDocumentReference`** added to the Epic client
+  (`server/src/integrations/epic/client.js`). Unlike `fhirGet` it does not
+  retry: Epic may persist a resource before a response fails, so replaying a
+  create can file a second copy of a clinical document. The notification
+  idempotency key travels in `DocumentReference.identifier` so a site can
+  reconcile what was filed.
+- `system/DocumentReference.write` is **excluded from the default scopes**.
+  Requesting write access an application does not use fails customer security
+  review; callers opt in explicitly. `server/src/integrations/epic/README.md`
+  documents the four steps a pilot site's Epic team must complete, and the
+  HL7 `MDM^T02` alternative that avoids write scopes altogether.
+
+### Fixed — release blockers
+
+- **Renderer production build restored.** The source `index.html` had been
+  overwritten by a build artifact and referenced a hashed bundle that no
+  longer existed, so the application could not be packaged for
+  distribution at all. Guarded by `tests/buildEntryIntegrity.test.mjs`.
+- **Disaster Recovery reconnected.** The UI called `createBackup`,
+  `verifyBackup` and `restoreBackup`, but the Electron client exposed only
+  `getStatus` and `listBackups`, leaving those controls inert in packaged
+  builds. Now wired end to end and exercised by a live backup/restore
+  round trip in the e2e critical path.
+- **Migrations no longer crash on partial databases.** `PRAGMA
+  table_info()` returns an empty result for a missing table, so eight
+  migrations passed their column guard and then failed on the follow-on
+  `ALTER TABLE`. Fixed systemically with `addColumn()`/`tableExists()`
+  helpers rather than patching the single migration that surfaced it.
+- **Application version is read, not hardcoded.** `app:getInfo` and
+  `app:getVersion` returned a literal `'1.2.0'`, which would drift from
+  `package.json` on any release bump and disagree with the integrity
+  monitor's `app.getVersion()` upgrade check.
+
+### Added — operational safety
+
+- **Pre-migration backup** (`electron/database/migrationSafety.cjs`) — a
+  verified copy of the database is taken before any pending migration
+  runs, and startup fails closed if that copy cannot be made. Previously a
+  migration failing midway left the database partially upgraded with no
+  restore point.
+- **System Health page** (`src/pages/SystemHealth.jsx`) with per-component
+  status, migration state, and support-bundle export — surfaces the
+  diagnostics the pilot runbook already documented but which had no UI.
+- **PHI-safe support bundles** (`electron/services/supportBundle.cjs`,
+  `electron/services/phiRedaction.cjs`) — free-text fields are withheld by
+  default rather than pattern-scrubbed, because name redaction in prose is
+  not reliable. An explicit `includeFreeText` opt-in exists and labels the
+  bundle as potentially containing PHI.
+- **Auditable vulnerability exceptions**
+  (`scripts/audit-with-exceptions.mjs`, `security/vulnerability-exceptions.json`)
+  — findings may be waived only with a written justification and an expiry
+  date; the gate fails on undocumented, expired, stale, or newly escalated
+  advisories.
+
+### Added — regression guards
+
+- `tests/rendererBridgeCoverage.test.mjs` checks every `api.<ns>.<method>()`
+  call in the renderer against the real preload surface, closing the class
+  of defect that made Disaster Recovery unreachable.
+- The Playwright suites now pass the initial administrator password into
+  the app they launch. Previously it was set only at the CI workflow
+  level, so the e2e tests could not run on a developer machine — which is
+  how the broken build reached the repository unnoticed.
+
 ## [1.2.0] - 2026-04-29
 
 ### Added — inactivation prevention

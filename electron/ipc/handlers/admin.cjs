@@ -15,6 +15,26 @@ const {
 } = require('../../database/init.cjs');
 const shared = require('../shared.cjs');
 
+/**
+ * The single source of truth for the running version is Electron's own
+ * app.getVersion(), which reads package.json at build time. This was previously
+ * a hardcoded literal in two places, which meant the About dialog and the
+ * integrity monitor — the latter reads app.getVersion() to decide whether an
+ * upgrade should re-baseline — could disagree after a release bump. Falling back
+ * to package.json keeps plain-Node test runs working, where `electron` is absent.
+ */
+function getAppVersion() {
+  try {
+    const { app } = require('electron');
+    if (app && typeof app.getVersion === 'function') return app.getVersion();
+  } catch { /* plain node */ }
+  try {
+    return require('../../../package.json').version;
+  } catch {
+    return 'unknown';
+  }
+}
+
 function register() {
   const db = getDatabase();
 
@@ -26,7 +46,7 @@ function register() {
     } catch { /* plain node */ }
     return {
       name: 'TransTrack',
-      version: '1.2.0',
+      version: getAppVersion(),
       isPackaged,
       designAlignment: ['HIPAA Security Rule', '21 CFR Part 11', 'AATB Standards'],
       certificationDisclaimer: 'Design alignment statements describe product controls only and are not certifications.',
@@ -34,7 +54,7 @@ function register() {
     };
   });
 
-  ipcMain.handle('app:getVersion', () => '1.2.0');
+  ipcMain.handle('app:getVersion', () => getAppVersion());
 
   // Encryption status
   ipcMain.handle('encryption:getStatus', async () => getEncryptionStatus());

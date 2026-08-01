@@ -112,9 +112,21 @@ await runStep('TypeScript check (tsc --noEmit)', 'mandatory', () => {
 });
 
 // --- 3. Dependency hygiene ---------------------------------------------------
-await runStep('npm audit (production, moderate+)', 'mandatory', () => {
-  runShell('npm', ['audit', '--omit=dev', '--audit-level=moderate']);
-  return '0 vulnerabilities';
+// Runs npm audit and then subtracts only those findings that carry a reviewed,
+// unexpired exception in security/vulnerability-exceptions.json. Stricter than a
+// bare `npm audit`: an expired or stale exception, or a severity increase since
+// the assessment, fails the gate. See scripts/audit-with-exceptions.mjs.
+await runStep('npm audit (production, moderate+, documented exceptions)', 'mandatory', () => {
+  const out = runShell('node', ['scripts/audit-with-exceptions.mjs', '--json']);
+  const summary = JSON.parse(out);
+  if (!summary.ok) {
+    throw new Error(
+      `${summary.unresolved} unresolved, ${summary.expired} expired, ${summary.stale} stale`,
+    );
+  }
+  return summary.accepted > 0
+    ? `0 unresolved (${summary.accepted} documented exception(s))`
+    : '0 vulnerabilities';
 });
 
 await runStep('Dependency lockfile committed', 'mandatory', () => {
@@ -262,8 +274,6 @@ await runStep('Alert Rules engine — catalog completeness', 'mandatory', async 
 await runStep('Code-signed Windows installer present (release/enterprise)', signingSeverity, () => {
   const dir = resolve(repoRoot, 'release', 'enterprise');
   if (!existsSync(dir)) throw new Error('release/enterprise/ not built');
-  // Find any version of the installer; we don't pin to a specific version
-  // here so the gate keeps working across version bumps.
   const files = readdirSync(dir).filter(
     (f) => /^TransTrack-Enterprise-\d+\.\d+\.\d+-x64\.exe$/.test(f),
   );
@@ -271,6 +281,21 @@ await runStep('Code-signed Windows installer present (release/enterprise)', sign
   const newest = files
     .map((f) => ({ f, mtime: statSync(resolve(dir, f)).mtimeMs }))
     .sort((a, b) => b.mtime - a.mtime)[0];
+
+  // The installer must correspond to the source being gated. Previously any
+  // version satisfied this check, so a green gate could sit next to a binary
+  // built several releases earlier — the artifact a customer actually installs
+  // would then not be the artifact that was tested here.
+  const built = newest.f.match(/-(\d+\.\d+\.\d+)-x64\.exe$/)[1];
+  const sourceVersion = JSON.parse(
+    readFileSync(resolve(repoRoot, 'package.json'), 'utf8'),
+  ).version;
+  if (built !== sourceVersion) {
+    throw new Error(
+      `installer is v${built} but package.json is v${sourceVersion} — ` +
+      'rebuild before release so the signed artifact matches the tested source',
+    );
+  }
   return `${newest.f} (${(statSync(resolve(dir, newest.f)).size / 1024 / 1024).toFixed(1)} MB)`;
 });
 
