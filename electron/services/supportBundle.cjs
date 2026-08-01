@@ -147,13 +147,28 @@ function skeletonLogLine(line) {
  * machine.
  */
 function readLogTail(filePath, maxLines = DEFAULT_LOG_LINES, maxBytes = 2 * 1024 * 1024) {
-  if (!filePath || !fs.existsSync(filePath)) return [];
-  const { size } = fs.statSync(filePath);
-  const readBytes = Math.min(size, maxBytes);
-  const start = size - readBytes;
+  if (!filePath) return [];
 
-  const fd = fs.openSync(filePath, 'r');
+  // Open first, then measure the descriptor. The previous shape checked
+  // existence and size by path and then opened it, which is a genuine race
+  // here rather than a theoretical one: logger.cjs rotates these very files, so
+  // the log could be renamed away between the check and the open. Reading
+  // through a single descriptor guarantees the size and the bytes come from the
+  // same file. 'r' never creates.
+  let fd;
   try {
+    fd = fs.openSync(filePath, 'r');
+  } catch {
+    // Absent, rotated mid-collection, or unreadable. A diagnostics export must
+    // degrade rather than fail — the rest of the bundle is still worth having.
+    return [];
+  }
+
+  try {
+    const { size } = fs.fstatSync(fd);
+    const readBytes = Math.min(size, maxBytes);
+    const start = size - readBytes;
+
     const buf = Buffer.alloc(readBytes);
     fs.readSync(fd, buf, 0, readBytes, start);
     const lines = buf.toString('utf8').split(/\r?\n/).filter((l) => l.trim() !== '');

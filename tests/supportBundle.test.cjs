@@ -26,6 +26,31 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
+// Stand in for the `electron` module before anything requires it.
+//
+// logger.cjs destructures `app` and `crashReporter` at load time, and CI
+// installs dependencies with the Electron binary download skipped — so
+// require('electron') throws there while succeeding on a developer machine
+// that has the binary. Injecting the stub keeps this suite a pure Node unit
+// test, matching how healthCheck.test.cjs and screenLock.test.cjs isolate the
+// same dependency.
+// A private directory per run. Deriving these paths from a predictable
+// os.tmpdir() name would be both a real hazard on a shared CI runner and a
+// taint source that makes static analysis flag every file open downstream.
+const SANDBOX = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-support-'));
+
+require.cache[require.resolve('electron')] = {
+  id: 'electron', filename: 'electron', loaded: true,
+  exports: {
+    app: {
+      getPath: (k) => path.join(SANDBOX, String(k)),
+      isPackaged: false,
+      getVersion: () => '1.2.1-test',
+    },
+    crashReporter: { start: () => {} },
+  },
+};
+
 const bundleSvc = require('../electron/services/supportBundle.cjs');
 const redaction = require('../electron/services/phiRedaction.cjs');
 
@@ -283,7 +308,7 @@ test('logger.redactPhi now redacts nested objects', () => {
 console.log('\nLog tail reading');
 
 test('reads only the last N lines', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-logtail-'));
+  const dir = fs.mkdtempSync(path.join(SANDBOX, 'logtail-'));
   const file = path.join(dir, 'transtrack.log');
   const lines = Array.from({ length: 1000 }, (_, i) => JSON.stringify({ n: i }));
   fs.writeFileSync(file, `${lines.join('\n')}\n`);
@@ -295,8 +320,18 @@ test('reads only the last N lines', () => {
 });
 
 test('a missing log file yields no lines rather than throwing', () => {
-  assert.deepStrictEqual(bundleSvc.readLogTail(path.join(os.tmpdir(), 'definitely-absent.log')), []);
+  assert.deepStrictEqual(bundleSvc.readLogTail(path.join(SANDBOX, 'definitely-absent.log')), []);
   assert.deepStrictEqual(bundleSvc.readLogTail(null), []);
+});
+
+test('a log rotated away mid-read yields no lines rather than throwing', () => {
+  // The race the previous check-then-open shape could lose: logger.cjs rotates
+  // these files, so the path can stop resolving between collection steps.
+  const dir = fs.mkdtempSync(path.join(SANDBOX, 'rotate-'));
+  const file = path.join(dir, 'transtrack.log');
+  fs.writeFileSync(file, 'one\ntwo\n');
+  fs.rmSync(file);
+  assert.deepStrictEqual(bundleSvc.readLogTail(file), []);
 });
 
 console.log('\nAssembly contract');
