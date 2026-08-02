@@ -97,24 +97,67 @@ function requireRole(...allowed) {
 }
 
 /**
- * Enforce a SMART scope for FHIR routes. op is one of c/r/u/d/s.
+ * Roles permitted to perform each FHIR operation with a native TransTrack JWT.
+ *
+ * M-9: native JWTs previously bypassed FHIR authorisation entirely, so a
+ * `viewer` had full CRUD. Native tokens carry no SMART scopes, so role is the
+ * only available authority and it is now enforced. `admin` is accepted for
+ * every operation.
+ */
+const NATIVE_FHIR_ROLES = Object.freeze({
+  r: ['viewer', 'coordinator', 'physician', 'auditor'],
+  s: ['viewer', 'coordinator', 'physician', 'auditor'],
+  c: ['coordinator', 'physician'],
+  u: ['coordinator', 'physician'],
+  d: [],
+});
+
+const OP_NAMES = Object.freeze({
+  c: 'create', r: 'read', u: 'update', d: 'delete', s: 'search',
+});
+
+/**
+ * Enforce authorisation for a FHIR route. `op` is one of c/r/u/d/s.
+ *
+ * For SMART tokens this evaluates the granted scopes and, when the grant is
+ * patient-level, pins `req.auth.compartment.patient` to the launch-context
+ * patient. Storage then refuses to read or write anything outside that
+ * compartment (C-1). The scope check alone never releases data.
+ *
+ * For native JWTs this enforces the role matrix above (M-9).
  */
 function requireSmartScope(resource, op) {
   return async function (req) {
     if (!req.auth) throw errors.unauthorized();
-    // Native JWTs do not require SMART scopes — they are the API's own users.
-    if (req.auth.tokenType !== 'smart') return;
-    const ok = smartScopes.isAllowed(
+
+    if (req.auth.tokenType !== 'smart') {
+      const allowed = NATIVE_FHIR_ROLES[op] || [];
+      if (req.auth.role !== 'admin' && !allowed.includes(req.auth.role)) {
+        throw errors.forbidden(
+          `Role '${req.auth.role}' may not ${OP_NAMES[op] || op} ${resource}`
+        );
+      }
+      return;
+    }
+
+    const launchPatient = req.auth.smart.launchContext?.patient || null;
+    const { allowed, level } = smartScopes.resolveAccess(
       req.auth.smart.parsedScopes,
       resource,
       op,
       {
-        launchPatient: req.auth.smart.launchContext?.patient,
+        launchPatient,
         subject: req.body?.subject?.reference || req.query?.patient,
       }
     );
-    if (!ok) throw errors.forbidden(`SMART scope does not permit ${op} on ${resource}`);
+    if (!allowed) throw errors.forbidden(`SMART scope does not permit ${op} on ${resource}`);
+
+    // Patient-level grants are confined to the launch patient's compartment.
+    // Recorded on req.auth so the storage layer enforces it unconditionally.
+    if (level === 'patient') {
+      req.auth.compartment = { patient: launchPatient };
+    }
   };
 }
 
-module.exports = { makeAuthHook, requireRole, requireSmartScope };
+module.exports = { makeAuthHook, requireRole, requireSmartScope, NATIVE_FHIR_ROLES };

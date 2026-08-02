@@ -22,6 +22,7 @@
  */
 
 const { withTransaction } = require('../db/pool');
+const compartment = require('./compartment');
 
 async function kickoff(ctx, { exportType, types, since, groupId }) {
   return withTransaction(ctx, async (client) => {
@@ -106,9 +107,15 @@ async function runJob(ctx, jobId) {
         ? job.types_requested
         : await defaultTypes(client, ctx);
 
-      // Patients-of-interest determination
+      // Patients-of-interest determination.
+      // C-1: a SMART patient-level grant may only ever export its own launch
+      // patient. This is resolved before the job's own selection rules so no
+      // export_type can widen it.
+      const compartmentPatient = ctx?.compartment?.patient || null;
       let patientIds = null;
-      if (job.export_type === 'patient') {
+      if (compartmentPatient) {
+        patientIds = [compartmentPatient];
+      } else if (job.export_type === 'patient') {
         const r = await client.query(
           `SELECT resource_id FROM fhir_resources
            WHERE org_id = $1 AND resource_type = 'Patient' AND deleted = FALSE
@@ -173,13 +180,18 @@ async function exportType(client, ctx, jobId, resourceType, { since, patientIds 
     where += ` AND last_updated >= $${params.length}::timestamptz`;
   }
   if (patientIds && resourceType !== 'Patient') {
-    // Best-effort scope: filter by subject/patient reference matching one of the patient ids
-    const refs = patientIds.map(id => `Patient/${id}`);
-    params.push(refs);
-    where += ` AND (
-      body->'subject'->>'reference' = ANY($${params.length}::text[])
-      OR body->'patient'->>'reference' = ANY($${params.length}::text[])
-    )`;
+    // Compartment-accurate scoping: every FHIR R4 patient-compartment path for
+    // this resource type, not just subject/patient. Types outside the patient
+    // compartment yield no rows rather than the whole org (C-1).
+    const clauses = [];
+    for (const pid of patientIds) {
+      const pred = compartment.searchPredicate(resourceType, pid, params.length + 1);
+      if (!pred) continue;
+      params.push(...pred.values);
+      clauses.push(pred.sql);
+    }
+    if (clauses.length === 0) return;
+    where += ` AND (${clauses.join(' OR ')})`;
   }
   if (patientIds && resourceType === 'Patient') {
     params.push(patientIds);
