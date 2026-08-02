@@ -352,3 +352,40 @@ point: a stub would drift and re-open the gap it exists to close.
 `tests/buildEntryIntegrity.test.mjs` asserts that the source `index.html` still
 loads `/src/main.jsx` and carries no hashed build-output references, guarding
 against a build artifact overwriting the source entry point.
+
+## 17. Release artifact authenticity
+
+A receiving site's only means of confirming that an installer came from the
+vendor and arrived unmodified is its code signature. Two controls protect that
+property.
+
+**Fail closed on a designated release.** `scripts/sign-win.cjs` and
+`scripts/notarize.cjs` both distinguish a developer build, where a missing
+certificate is a warning, from a distribution build, where it is a build
+failure. The distinction is drawn from `TRANSTRACK_RELEASE_CHANNEL=public` or
+the explicit `TRANSTRACK_REQUIRE_SIGNING` / `TRANSTRACK_REQUIRE_NOTARIZATION`
+flags; `.github/workflows/release.yml` sets the former on both build jobs. A
+mode named explicitly whose credentials are incomplete is also an error rather
+than a fall-through to `skip`, and the error names the missing variable.
+
+The previous fail-open behaviour was the more dangerous configuration precisely
+because it was quiet: the build went green, and the operator's belief that the
+artifact was signed was never contradicted until a customer's machine refused
+it.
+
+**Verify the artifact, not the intent.** `scripts/verify-artifact-signature.mjs`
+inspects the produced installer. On Windows it takes the operating system's
+verdict via `Get-AuthenticodeSignature` and requires `Valid`. On other platforms
+— the release gate runs on Linux — it parses the PE Attribute Certificate Table
+directly, which establishes that a signature is embedded but not that it chains
+to a trusted root; the result records that reduced assurance explicitly rather
+than overstating what was checked.
+
+A catalog-only signature is rejected even when Windows reports it valid. Catalog
+signatures reside in a system-wide store rather than in the file, so they do not
+travel with a downloaded installer and cannot serve as evidence of authenticity
+at the receiving site.
+
+`scripts/release-readiness-check.mjs` calls the verifier, so the gate's
+"code-signed installer present" item now reflects the artifact's actual contents
+rather than its filename.

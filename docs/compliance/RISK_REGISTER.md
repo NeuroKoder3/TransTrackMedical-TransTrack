@@ -12,7 +12,7 @@
 | Ver | Change | Rationale |
 |---|---|---|
 | 1.0 | Baseline. | Initial issue. |
-| 1.1 | Added R-020 to R-027. Revised the mitigation for R-013. | New hazards arising from the IOTA notification pipeline, chart filing, and diagnostics export added in software version 1.2.1. R-013 was revised because its original mitigation — transactional rollback — does not cover a multi-migration sequence that fails partway, which is now addressed by a verified pre-migration copy. |
+| 1.1 | Added R-020 to R-028. Revised the mitigation for R-013. | New hazards arising from the IOTA notification pipeline, chart filing, and diagnostics export added in software version 1.2.1. R-013 was revised because its original mitigation — transactional rollback — does not cover a multi-migration sequence that fails partway, which is now addressed by a verified pre-migration copy. |
 
 ## Severity scale
 
@@ -76,3 +76,4 @@ Mitigations move risk to **Acceptable** when residual risk is **Low** or
 | R-025 | Hospital-authored notice template omits a content element required by § 512.442(d) | 2 | B | Templates are validated at configuration time against all five required elements and rejected if any is missing or an unrecognised placeholder is used. The organ-offer-eligibility statement is system-supplied and not editable through template configuration. | D | Low | Engineering |
 | R-026 | A documented dependency-vulnerability exception becomes a permanent, unreviewed suppression | 2 | C | Exceptions carry a `reviewBy` date and the release gate fails once it passes; the gate also fails on an undocumented finding, on a severity increase beyond what the exception assessed, and on an exception that no longer matches any real finding. | D | Med (Acceptable) | Engineering |
 | R-027 | A feature works in development but is unwired in the packaged build, failing first in front of a clinician | 3 | B | Every `api.<namespace>.<method>()` call in the renderer is checked against the real preload surface by automated test; the source entry point is guarded against being overwritten by a build artifact; the release gate verifies the installer version matches the source version. | D | Low | Engineering |
+| R-028 | An unsigned or tampered installer is distributed and accepted at a site as authentic vendor software | 2 | C | A build designated for distribution fails rather than emitting an unsigned artifact, and names the missing credential; the release gate inspects the produced installer for an embedded Authenticode signature instead of trusting the build configuration; catalog-only signatures are rejected because they cannot travel with a download; each CI build job verifies its own artifact before upload. | E | Low | Engineering |

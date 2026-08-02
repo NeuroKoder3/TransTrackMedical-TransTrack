@@ -93,6 +93,8 @@ every Mandatory requirement, and resolvable SDS, OQ and risk references.
 | TT-R143 | §2 | `electron/main.cjs` About menu | OQ-143 |
 | TT-R144 | §15 | `scripts/audit-with-exceptions.mjs`, `security/vulnerability-exceptions.json` | `tests/auditExceptions.test.mjs`; OQ-144 |
 | TT-R145 | §16 | `tests/rendererBridgeCoverage.test.mjs`, `tests/buildEntryIntegrity.test.mjs`, `scripts/release-readiness-check.mjs` (installer version check) | `tests/rendererBridgeCoverage.test.mjs`, `tests/buildEntryIntegrity.test.mjs`; OQ-145 |
+| TT-R146 | §17 | `scripts/sign-win.cjs`, `scripts/notarize.cjs`, `.github/workflows/release.yml` | `tests/signWin.test.cjs`, `tests/notarize.test.cjs`; OQ-146 |
+| TT-R147 | §17 | `scripts/verify-artifact-signature.mjs`, `scripts/release-readiness-check.mjs` | `tests/artifactSignature.test.mjs`; OQ-147 |
 
 ## Risk linkage
 
@@ -110,3 +112,4 @@ Requirement groups added in software version 1.2.1:
 | R-025 Template omits a statutory element | TT-R077, TT-R078, TT-R131 |
 | R-026 Vulnerability exception becomes permanent | TT-R144 |
 | R-027 Feature unwired in packaged build | TT-R145 |
+| R-028 Unsigned build distributed as authentic | TT-R146, TT-R147 |

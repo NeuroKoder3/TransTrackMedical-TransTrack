@@ -84,15 +84,28 @@ the four required GitHub Actions secrets.
 
 ### Vendor list
 
-| Cert                                      | Vendor                                     | Cost            | Mode                   |
-| ----------------------------------------- | ------------------------------------------ | --------------- | ---------------------- |
-| Windows EV Code Signing (Authenticode)    | SSL.com eSigner (cloud HSM)                | ~$300/yr        | `TRANSTRACK_SIGN_MODE=ssl_esigner` |
-| Windows EV Code Signing (USB token)       | DigiCert / Sectigo / SSL.com (hardware token) | ~$300–$700/yr | `TRANSTRACK_SIGN_MODE=pfx` |
-| Apple Developer Program                   | Apple                                      | $99/yr          | `APPLE_*` secrets       |
+| Cert                                   | Vendor                                        | Cost          | Mode                               |
+| -------------------------------------- | --------------------------------------------- | ------------- | ---------------------------------- |
+| Windows — Azure Artifact Signing       | Microsoft                                     | ~$10/mo       | *not yet implemented in the signer* |
+| Windows OV Code Signing (cloud HSM)    | SSL.com eSigner / DigiCert KeyLocker          | ~$150–300/yr  | `TRANSTRACK_SIGN_MODE=ssl_esigner` |
+| Windows OV/EV Code Signing (USB token) | DigiCert / Sectigo / SSL.com (hardware token) | ~$300–$700/yr | `TRANSTRACK_SIGN_MODE=pfx`         |
+| Apple Developer Program (Organization) | Apple                                         | $99/yr        | `APPLE_*` secrets                  |
 
-**Recommendation:** SSL.com eSigner. It's cloud-HSM-backed, eliminates
-the lost-USB-token nightmare, and works out of the box with the existing
-CI workflow.
+**On EV:** older guidance said EV was required to avoid SmartScreen warnings.
+Microsoft has since removed that behaviour — EV and OV now give the same
+first-download experience, and reputation accrues per file hash either way. Buy
+EV only if a customer's procurement process names it.
+
+**Recommendation:** Azure Artifact Signing is the cheapest and least
+operationally painful route, but needs a new mode in `scripts/sign-win.cjs`
+(small, self-contained). To ship with what exists today, buy an OV certificate
+with cloud-HSM signing — `ssl_esigner` mode works out of the box with the
+existing CI workflow and avoids the lost-USB-token failure mode.
+
+Note that since June 2023 the CA/Browser Forum requires *all* code signing
+private keys, OV included, to live in hardware. A copyable `.pfx` is no longer
+issuable, so `pfx` mode is for certificates you already hold and for test
+signing.
 
 ### GitHub Actions secrets to set (settings → secrets and variables → actions)
 
@@ -101,9 +114,11 @@ ESIGNER_USERNAME
 ESIGNER_PASSWORD
 ESIGNER_CREDENTIAL_ID
 ESIGNER_TOTP_SECRET
+ESIGNER_TOOL_URL         (download URL for CodeSignTool, from the SSL.com dashboard)
 
 APPLE_ID
-APPLE_APP_PASSWORD       (app-specific password from appleid.apple.com)
+APPLE_APP_PASSWORD       (app-specific password from appleid.apple.com —
+                          note the name: not APPLE_APP_SPECIFIC_PASSWORD)
 APPLE_TEAM_ID
 APPLE_CERT_BASE64        (base64 of your Developer ID Application .p12)
 APPLE_CERT_PASSWORD
@@ -116,9 +131,12 @@ git tag v1.3.0-rc1
 git push origin v1.3.0-rc1
 ```
 
-If credentials are missing, the `preflight` job will fail with a clear
-error message. If credentials are present, you'll get signed installers
-in the GitHub Releases artifact set within ~25 minutes.
+Release builds set `TRANSTRACK_RELEASE_CHANNEL=public`, which makes signing and
+notarization mandatory. A missing credential now fails the build and names the
+variable, and each job independently verifies its own artifact before upload —
+so a green release means a genuinely signed installer, not just a hook that
+chose to skip. With credentials present you'll get signed installers in the
+GitHub Releases artifact set within ~25 minutes.
 
 ---
 
@@ -334,7 +352,7 @@ mark every line:
 - [ ] **C-2-d** Vendor domain owned (e.g., transtrack.health)
 - [ ] **C-2-e** Workspace email live for sales@, support@, security@
 - [ ] **C-2-f** Privacy Policy + ToS published at the vendor domain
-- [ ] **C-3-a** EV Code Signing certificate purchased and provisioned
+- [ ] **C-3-a** Windows code signing certificate purchased and provisioned (OV is sufficient — see "On EV" above)
 - [ ] **C-3-b** Apple Developer Program enrolled, notarization creds in env
 - [ ] **C-3-c** GitHub Actions secrets set for both platforms
 - [ ] **C-3-d** Test release tag (`v1.3.0-rc1`) successfully signed in CI
