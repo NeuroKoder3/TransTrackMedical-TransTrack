@@ -5,6 +5,14 @@ import { readFileSync } from 'fs'
 
 const pkg = JSON.parse(readFileSync(path.resolve(__dirname, 'package.json'), 'utf8'));
 
+// The coverage floors live in one file so that a local `npx vitest run
+// --coverage` enforces exactly what CI enforces (finding H-8). CI additionally
+// runs scripts/coverage-gate.mjs, which reads the same file for the ratchet and
+// the job summary. See that script's header for how the numbers were chosen.
+const coverageFloor = JSON.parse(
+  readFileSync(path.resolve(__dirname, 'scripts/coverage-floor.json'), 'utf8'),
+);
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
@@ -90,17 +98,14 @@ export default defineConfig({
         'src/components/ui/**',
         'src/main.jsx',
       ],
-      // Per-file coverage gates for PHI-touching screens. These five
-      // components ingest patient, donor, lab, AHHQ, or barrier data
-      // and therefore are the most regression-sensitive UI paths.
-      // The 60% lines threshold is the production-readiness bar
-      // captured in the project evaluation report (see commit log).
+      // Global floors plus per-file floors for the PHI-handling screens and the
+      // data-access layer, all from scripts/coverage-floor.json. A global floor
+      // on its own can be satisfied by covering whatever is easiest; the
+      // per-file entries are what keep the screens that ingest patient, donor,
+      // lab, AHHQ, offer, HL7 and security data honest.
       thresholds: {
-        'src/components/patients/PatientForm.jsx':       { lines: 60, statements: 60, branches: 60, functions: 35 },
-        'src/components/donor/DonorForm.jsx':            { lines: 60, statements: 60, branches: 60, functions: 50 },
-        'src/components/barriers/ReadinessBarrierForm.jsx': { lines: 60, statements: 60, branches: 60, functions: 60 },
-        'src/components/labs/LabForm.jsx':               { lines: 60, statements: 60, branches: 60, functions: 60 },
-        'src/components/ahhq/AHHQForm.jsx':              { lines: 60, statements: 60, branches: 60, functions: 60 },
+        ...coverageFloor.global,
+        ...coverageFloor.perFile,
       },
     },
   },

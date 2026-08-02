@@ -13,6 +13,7 @@ permissions:
 
 jobs:
   build:
+    name: Desktop Build & Tests
     runs-on: ubuntu-latest
     env:
       ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
@@ -30,11 +31,20 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
+      # Everything from here to the Electron rebuild below runs against the
+      # Node ABI. The suites are invoked through the runner script rather than
+      # `npm test` on purpose: the pretest/posttest hooks rebuild the native
+      # module for Node and then for Electron, so `npm test` would leave the
+      # wrong ABI in place for every step that follows it.
       - name: Rebuild native modules for CI Node version
         run: npm rebuild better-sqlite3-multiple-ciphers
 
+      # scripts/audit-with-exceptions.mjs is the single vulnerability allowlist
+      # (finding M-19): it enforces the reviewBy expiry, rejects stale
+      # exceptions and rejects a severity increase, none of which the
+      # now-removed scripts/production-audit.mjs did.
       - name: Security audit (production dependencies)
-        run: node scripts/production-audit.mjs
+        run: node scripts/audit-with-exceptions.mjs
 
       - name: Lint
         run: npm run lint
@@ -42,53 +52,45 @@ jobs:
       - name: Type check
         run: npx tsc -p jsconfig.json --noEmit
 
-      # Run the compliance-critical suites as their own step so a failure here is
-      # immediately distinguishable from a functional regression in the log.
+      # The compliance-critical suites run first and as their own step so that a
+      # control failure is immediately distinguishable in the log from a
+      # functional regression. They also run again inside the `all` group below;
+      # they are fast, and the ordering is worth the repetition.
       - name: Run security and audit control tests
         run: |
           node scripts/run-test-suites.cjs security
           node scripts/run-test-suites.cjs hardening
 
-      - name: Run core tests
-        run: npm test
-
-      - name: Rebuild native modules for Node.js
-        run: npm rebuild better-sqlite3-multiple-ciphers
-
-      - name: Run service tests
-        run: npm run test:services
-
-      - name: Run IPC tests
-        run: npm run test:ipc
-
-      - name: Run load tests
-        run: npm run test:load
+      # Every tests/*.test.* file belongs to a group and the runner fails when
+      # one belongs to none, so this single step cannot silently stop covering a
+      # suite. `all` = security + hardening + functional + performance, which
+      # includes the suites that used to be reachable only through bespoke npm
+      # scripts (services, ipc-integration, license, secretEncryption,
+      # oidcDesktop) and the load test (finding H-8).
+      - name: Run all Node test suites
+        run: node scripts/run-test-suites.cjs all
 
       - name: Run component tests with coverage
         run: npx vitest run --coverage
 
-      - name: Check coverage threshold
-        run: |
-          node -e "
-            const fs = require('fs');
-            const summary = JSON.parse(fs.readFileSync('coverage/coverage-summary.json', 'utf8'));
-            const total = summary.total;
-            const hardMin = 19;
-            const target = 60;
-            const lines = total.lines.pct;
-            const branches = total.branches.pct;
-            console.log('Coverage - Lines: ' + lines + '%, Branches: ' + branches + '%');
-            console.log('Hard minimum: ' + hardMin + '%, Target: ' + target + '%');
-            if (lines < hardMin || branches < hardMin) {
-              console.error('Coverage below hard minimum of ' + hardMin + '%');
-              process.exit(1);
-            }
-            if (lines < target || branches < target) {
-              console.log('::warning::Coverage below target of ' + target + '% — increase test coverage');
-            } else {
-              console.log('Coverage target met (' + target + '%)');
-            }
-          "
+      # Vitest has already enforced the global and per-file floors from
+      # scripts/coverage-floor.json at this point. This step re-checks them
+      # independently, enforces the ratchet, and writes the job summary. It
+      # replaces the inline `hardMin = 19` check with a `::warning::` at 60%
+      # that could not fail a build (finding H-8).
+      - name: Coverage gate
+        run: node scripts/coverage-gate.mjs
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: renderer-coverage
+          path: |
+            coverage/coverage-summary.json
+            coverage/lcov.info
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Rebuild for Electron
         run: npx @electron/rebuild -f
@@ -149,14 +151,22 @@ jobs:
         run: npm run lint
         working-directory: server
 
+      # Was `npm audit --production --audit-level=high || true`, a step that
+      # could not fail (finding M-18). The server workspace has its own
+      # lockfile, so it is audited under its own scope with its own exception
+      # records (finding M-19).
       - name: Security audit (server)
-        run: npm audit --production --audit-level=high || true
-        working-directory: server
+        run: node scripts/audit-with-exceptions.mjs --scope=server
 
       - name: Run database migrations
         run: node src/db/migrate.js up
         working-directory: server
 
+      # These two commands are the blocking coverage for the server-side
+      # authorization paths in finding M-28: SMART patient-compartment denial
+      # and FHIR transaction bundle scope enforcement
+      # (test/unit/patientCompartment.test.mjs) and dead-letter cross-tenant
+      # replay (test/unit/hl7Tenancy.test.mjs).
       - name: Run server unit tests
         run: npm test
         working-directory: server
@@ -249,8 +259,8 @@ jobs:
       - name: Build renderer
         run: npm run build
 
-      - name: Run core tests
-        run: npm test
+      - name: Run Node test suites
+        run: node scripts/run-test-suites.cjs core
 
       - name: Build Windows installer
         # Verification only — never publish a GitHub Release from CI (needs GH_TOKEN).
@@ -258,6 +268,39 @@ jobs:
         env:
           ELECTRON_BUILDER_PUBLISH: never
 
+      # No continue-on-error (finding M-18). This loads the packaged
+      # better-sqlite3 binary under the Electron ABI; if it fails, the installer
+      # this job just built would crash on first launch at the point where it
+      # opens the encrypted database. `npm run build:win` also runs it as its
+      # last step, so a build that reached here has already proved the check can
+      # execute in this environment — the only thing continue-on-error bought
+      # was hiding a genuine failure.
       - name: Verify packaged native module
         run: npm run verify:packaged-native
-        continue-on-error: true
+
+  # Aggregate gate. Every job above must succeed; this is the single check to
+  # require in branch protection. Without it, adding a job to this workflow does
+  # not block a merge until somebody remembers to add it to the protection rule,
+  # which is how an unenforced gate happens in the first place.
+  ci-required:
+    name: CI required checks
+    runs-on: ubuntu-latest
+    needs: [build, server, e2e, build-windows]
+    if: always()
+    steps:
+      - name: Assert every required job succeeded
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          node -e '
+            const results = JSON.parse(process.env.RESULTS);
+            for (const [name, job] of Object.entries(results).sort()) {
+              console.log(job.result.padStart(12) + "  " + name);
+            }
+            const failed = Object.entries(results).filter(([, job]) => job.result !== "success");
+            if (failed.length > 0) {
+              console.error("::error::Required CI jobs did not succeed: " + failed.map(([n]) => n).sort().join(", "));
+              process.exit(1);
+            }
+            console.log("All required CI jobs succeeded.");
+          '
