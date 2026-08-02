@@ -7,12 +7,24 @@
  * know within ~3 minutes whether the working tree is releasable.
  *
  * Usage:
- *   npm run release:check
- *   node scripts/release-readiness-check.mjs --strict   # exit 1 on any soft-fail
+ *   npm run release:check                                  # full release gate
+ *   node scripts/release-readiness-check.mjs --allow-unsigned   # developer run
+ *   node scripts/release-readiness-check.mjs --strict      # exit 1 on any soft-fail
  *
- * Output is a single table; the process exit code is non-zero if any
- * MANDATORY gate fails. Optional gates (e.g. signed installer present)
- * print yellow and only fail the gate when --strict is passed.
+ * Output is a single table; the process exit code is non-zero if any MANDATORY
+ * gate fails.
+ *
+ * SIGNING IS MANDATORY BY DEFAULT (finding M-20). The signing, notarization and
+ * installer gates used to be `optional` unless --for-sale or
+ * TRANSTRACK_RELEASE_CHANNEL=public was set, so the ordinary invocation printed
+ * "RELEASE GATE: PASSED — build is releasable" and exited 0 for a working tree
+ * with no signed artifact at all. A build a customer cannot be given must not
+ * report itself releasable.
+ *
+ * A developer who only wants the non-release gates passes --allow-unsigned (or
+ * sets TRANSTRACK_ALLOW_UNSIGNED=1). That waives the signing gates explicitly
+ * and the verdict is reported as NOT RELEASABLE rather than PASSED, so the
+ * distinction is never lost in a log. --for-sale refuses the waiver outright.
  */
 
 import { spawnSync } from 'node:child_process';
@@ -25,13 +37,26 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, '..');
 const isStrict = process.argv.includes('--strict');
 
-// --for-sale promotes the signing / notarization / installer gates from
-// `optional` to `mandatory`. This is the gate that prevents shipping a
-// commercial build without code-signing credentials. CI is expected to
-// pass this flag for the public release pipeline.
+// --for-sale marks a public commercial release. Signing is mandatory either
+// way; what this flag now adds is that the --allow-unsigned waiver is refused,
+// so a release pipeline cannot be handed a developer escape hatch by accident.
 const isCommercialRelease = process.argv.includes('--for-sale') ||
   process.env.TRANSTRACK_RELEASE_CHANNEL === 'public';
-const signingSeverity = isCommercialRelease ? 'mandatory' : 'optional';
+
+const allowUnsigned = process.argv.includes('--allow-unsigned') ||
+  process.env.TRANSTRACK_ALLOW_UNSIGNED === '1';
+
+if (allowUnsigned && isCommercialRelease) {
+  console.error(
+    '\nrelease-readiness-check: --allow-unsigned cannot be combined with --for-sale / ' +
+    'TRANSTRACK_RELEASE_CHANNEL=public. A commercial release must be signed.\n',
+  );
+  process.exit(2);
+}
+
+// `waived` gates are still run and still reported; they just do not block. The
+// verdict below refuses to say PASSED while any of them is failing.
+const signingSeverity = allowUnsigned ? 'waived' : 'mandatory';
 
 // -----------------------------------------------------------------------------
 // Tiny ANSI helpers — no chalk dependency, ASCII-safe on Windows PowerShell.
@@ -85,8 +110,11 @@ async function main() {
 console.log(c.b('\nTransTrack — Release Readiness Check'));
 console.log(`  repo:     ${repoRoot}`);
 console.log(`  strict:   ${isStrict}`);
-console.log(`  for-sale: ${isCommercialRelease}` +
-  (isCommercialRelease ? c.y('  (signing gates promoted to MANDATORY)') : '') + '\n');
+console.log(`  for-sale: ${isCommercialRelease}`);
+console.log(`  signing:  ${signingSeverity.toUpperCase()}` +
+  (allowUnsigned
+    ? c.y('  (--allow-unsigned: developer run, the result is NOT a release verdict)')
+    : '') + '\n');
 
 // --- 1. Working tree state ---------------------------------------------------
 await runStep('Git working tree clean', 'optional', () => {
@@ -392,15 +420,31 @@ for (const r of results) {
 }
 
 const mandatoryFails = results.filter(r => r.severity === 'mandatory' && r.status !== 'PASS');
+const waivedFails    = results.filter(r => r.severity === 'waived'    && r.status !== 'PASS');
 const optionalFails  = results.filter(r => r.severity === 'optional'  && r.status !== 'PASS');
 
 console.log('');
 console.log(`  mandatory failures: ${mandatoryFails.length}`);
+if (allowUnsigned) console.log(`  waived    failures: ${waivedFails.length}  (--allow-unsigned)`);
 console.log(`  optional  failures: ${optionalFails.length}`);
 
 if (mandatoryFails.length > 0) {
-  console.log(c.r('\nRELEASE GATE: BLOCKED — mandatory failures present.\n'));
+  console.log(c.r('\nRELEASE GATE: BLOCKED — mandatory failures present.'));
+  console.log(c.r('  ' + mandatoryFails.map(r => r.name).join('\n  ')) + '\n');
   process.exit(1);
+}
+
+// A waived signing gate is a developer convenience, not a release outcome. The
+// script must never describe this state as releasable — that was finding M-20.
+if (waivedFails.length > 0) {
+  console.log(c.y('\nRELEASE GATE: NOT RELEASABLE — signing gates waived by --allow-unsigned.'));
+  console.log(c.y('  Unmet release requirements:'));
+  console.log(c.y('  ' + waivedFails.map(r => `${r.name} — ${r.detail}`).join('\n  ')));
+  console.log(c.g('\n  All other gates passed: this tree is fit to develop on, not to ship.'));
+  console.log('  Re-run without --allow-unsigned once a signed installer has been built.\n');
+  // Deliberately non-zero: nothing downstream should be able to treat an
+  // unsigned tree as a green release gate just because it did not exit 1.
+  process.exit(3);
 }
 
 if (isStrict && optionalFails.length > 0) {
@@ -408,9 +452,10 @@ if (isStrict && optionalFails.length > 0) {
   process.exit(2);
 }
 
-console.log(c.g('\nRELEASE GATE: PASSED — build is releasable for first-customer pilot.'));
+console.log(c.g('\nRELEASE GATE: PASSED — signed, verified build is releasable.'));
 if (optionalFails.length > 0) {
-  console.log(c.y('  (close the optional items before broad commercial release: code-sign + notarize.)'));
+  console.log(c.y(`  (${optionalFails.length} optional item(s) still open: ` +
+    optionalFails.map(r => r.name).join(', ') + ')'));
 }
 console.log('');
 process.exit(0);
