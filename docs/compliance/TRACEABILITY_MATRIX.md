@@ -10,39 +10,53 @@ that the gap is visible rather than inferred from an absence.
 requirement ids, a matrix row for every requirement, a verification artifact for
 every Mandatory requirement, and resolvable SDS, OQ and risk references.
 
+> **Every path in the Implementation and Verification columns was checked
+> against the filesystem on 2026-08-02.** Validation finding I-7 recorded that
+> the consistency gate does not verify that the test files this matrix cites
+> actually exist, and the audit found four citations that named no file:
+> `tests/auth.test.cjs`, `tests/passwordPolicy.test.cjs`, `tests/siem.test.cjs`
+> and `tests/livingDonor.test.cjs`. Four implementation paths were also stale:
+> `electron/services/passwordPolicy.cjs`, `electron/services/priorityWeighting.cjs`,
+> `electron/services/livingDonor.cjs` and `electron/ipc/handlers/livingDonor.cjs`.
+> All eight have been corrected to the modules and suites that exist and that
+> actually cover the requirement. A matrix that cites a test file which does
+> not exist is not a weaker trace than one that cites a real file — it is no
+> trace at all, and it reads identically on the page. The gate itself should
+> check this; that change belongs to `scripts/`, which this matrix does not own.
+
 | Req ID | Design § | Implementation | Verification |
 |---|---|---|---|
-| TT-R001 | §2, §9 | `electron/ipc/handlers/auth.cjs` | `tests/auth.test.cjs` |
-| TT-R002 | §9 | `electron/services/passwordPolicy.cjs` | `tests/passwordPolicy.test.cjs` |
-| TT-R003 | §9 | `electron/ipc/handlers/auth.cjs` (login_attempts) | `tests/auth.test.cjs` |
+| TT-R001 | §2, §9 | `electron/ipc/handlers/auth.cjs`, `electron/ipc/shared.cjs` (session issue and validation) | `tests/ipc-integration.test.cjs` (login, logout, session validation, inactive user, bcrypt cost); `tests/sessionFailClosed.test.cjs`; OQ-01 |
+| TT-R002 | §9 | `electron/ipc/shared.cjs` (`PASSWORD_REQUIREMENTS`, `validatePasswordStrength`) | `tests/business-logic.test.cjs` (§6 password validation); `tests/compliance.test.cjs` (NIST minimums enforced in the shipped policy); OQ-02 |
+| TT-R003 | §9 | `electron/ipc/shared.cjs` (`MAX_LOGIN_ATTEMPTS`, `LOCKOUT_DURATION_MS`, `checkAccountLockout`), `electron/database/schema.cjs` (`login_attempts`) | `tests/compliance.test.cjs` (lockout threshold, duration and check present); OQ-03 |
 | TT-R004 | §9 | `electron/services/mfa.cjs`, `electron/ipc/handlers/mfa.cjs` | `tests/mfa.test.cjs` |
 | TT-R005 | §9 | `electron/services/mfa.cjs` (backup codes) | `tests/mfa.test.cjs` |
-| TT-R006 | §9 | `electron/services/passwordPolicy.cjs` | `tests/passwordPolicy.test.cjs` |
-| TT-R007 | §9 | `electron/services/passwordPolicy.cjs` | `tests/passwordPolicy.test.cjs` |
-| TT-R008 | §2 | `src/components/session/IdleTimeoutManager.jsx` | OQ-08 |
-| TT-R009 | §2, §4 | `electron/database/schema.cjs` (users.role) | OQ-09 |
-| TT-R010 | §3 | Not implemented — deferred beyond 1.2.1. The customer IdP is trusted for primary authentication only where SSO is deployed; TOTP remains the TransTrack-issued factor. | Deferred; no verification artifact in this version. |
+| TT-R006 | §9 | `electron/services/passwordHistory.cjs` (`recordPassword`, `hasReusedPassword`) | `tests/passwordHistory.test.cjs`; OQ-06 |
+| TT-R007 | §9 | `electron/services/passwordHistory.cjs` (`isPasswordExpired`) | `tests/passwordHistory.test.cjs`; OQ-07 |
+| TT-R008 | §2 | `src/components/session/IdleTimeoutManager.jsx`, `electron/services/screenLock.cjs` | `tests/screenLock.test.cjs`; `tests/sessionFailClosed.test.cjs`; OQ-08 |
+| TT-R009 | §2, §4 | `electron/database/schema.cjs` (users.role), `electron/ipc/shared.cjs` (`requireRole`) | `tests/rbacMatrix.test.cjs`; OQ-09 |
+| TT-R010 | §3 | **Partially implemented.** OIDC desktop SSO is implemented: `electron/auth/oidcDesktop.cjs` (authorization-code flow with mandatory PKCE S256, state bound to the pending flow, HTTPS-only token endpoint, local user must carry `sso_enabled=1`) and `electron/ipc/handlers/auth.cjs` (`auth:ssoStatus`, `auth:ssoStart`). **SAML 2.0 is not implemented on the desktop**; SAML exists only in the server tier (`server/src/auth/saml.js`, `server/src/routes/auth.js`), which is early access. The customer IdP is trusted for primary authentication where OIDC SSO is deployed; TOTP remains the TransTrack-issued factor. | `tests/oidcDesktop.test.cjs`. No verification artifact for desktop SAML, which is not implemented. |
 | TT-R020 | §7 | `electron/ipc/shared.cjs` (logAudit) | `tests/services.test.cjs` |
 | TT-R021 | §7 | `electron/ipc/shared.cjs` | `tests/services.test.cjs` |
 | TT-R022 | §7 | `electron/database/schema.cjs` (triggers) | `tests/auditImmutability.test.cjs` |
-| TT-R023 | §7 | `electron/ipc/handlers/auth.cjs` | `tests/auth.test.cjs` |
+| TT-R023 | §7 | `electron/ipc/handlers/auth.cjs`, `electron/ipc/shared.cjs` (logAudit on the authentication paths) | `tests/ipc-integration.test.cjs` (accepted and rejected login paths); `tests/compliance.test.cjs` (audit trail carries actor, action and timestamp); OQ-01, OQ-03 |
 | TT-R024 | §7 | `electron/ipc/handlers/operations.cjs` | OQ-24 |
 | TT-R025 | §7 | `electron/ipc/handlers/auth.cjs`, `electron/ipc/handlers/mfa.cjs` | `tests/mfa.test.cjs` |
-| TT-R026 | §8 | `electron/services/siemForwarder.cjs`, `electron/ipc/handlers/siem.cjs` | `tests/siem.test.cjs` |
+| TT-R026 | §8 | `electron/services/siemForwarder.cjs`, `electron/ipc/handlers/siem.cjs` | `tests/siemForwarder.test.cjs` (CEF / RFC 5424 / JSON formatters, destination management); `tests/siemRedaction.test.cjs` (no PHI in emitted events); OQ-26 |
 | TT-R040 | §2 | `electron/database/init.cjs`, `electron/services/encryptionKeyManagement.cjs` | OQ-40 (visual inspection of cipher) |
 | TT-R041 | §2 | `electron/services/encryptionKeyManagement.cjs` | OQ-41 |
 | TT-R042 | §2 | `electron/services/encryptionKeyManagement.cjs` | OQ-42 |
 | TT-R043 | §2 | `electron/database/init.cjs` (integrity check) | OQ-43 |
 | TT-R044 | §2 | `electron/ipc/handlers/operations.cjs` | OQ-44 |
 | TT-R060 | §4 | `electron/database/schema.cjs` (patients) | OQ-60 |
-| TT-R061 | §5 | `electron/services/calculators/*.cjs` | `tests/calculators.test.cjs` |
-| TT-R062 | §5 | `electron/services/priorityWeighting.cjs` | OQ-62 |
+| TT-R061 | §5 | `electron/services/calculators/*.cjs`, `electron/services/calculators/reference/*.json` | `tests/calculators.test.cjs`; `tests/calculatorReferenceVectors.test.cjs` (constants asserted against the controlled sources in `CLINICAL_SOURCES.md`); OQ-61. PELD produces no score pending OPTN Table 9-1 — see `RESIDUAL_RISK.md` RR-01. The lung instrument is the TransTrack Lung Triage Index, not the OPTN LAS — see RR-07. |
+| TT-R062 | §5 | `electron/functions/index.cjs` (`calculatePriorityAdvanced`), `electron/ipc/handlers/clinical.cjs` | `tests/business-logic.test.cjs` (priority scoring); OQ-62 |
 | TT-R063 | §4 | `electron/services/readinessBarriers.cjs` | `tests/services.test.cjs` |
 | TT-R064 | §4 | `electron/services/ahhqService.cjs` | `tests/services.test.cjs` |
 | TT-R065 | §4 | `electron/services/labsService.cjs` | `tests/services.test.cjs` |
 | TT-R066 | §6 | `electron/services/organOffers.cjs`, `electron/ipc/handlers/organOffers.cjs` | `tests/organOffers.test.cjs` |
 | TT-R067 | §4 | `electron/services/postTransplant.cjs`, `electron/ipc/handlers/postTransplant.cjs` | `tests/postTransplant.test.cjs` |
-| TT-R068 | §4 | `electron/services/livingDonor.cjs`, `electron/ipc/handlers/livingDonor.cjs` | `tests/livingDonor.test.cjs` |
+| TT-R068 | §4 | `electron/services/livingDonors.cjs`, `electron/ipc/handlers/livingDonors.cjs` | `tests/livingDonors.test.cjs`; OQ-68 |
 | TT-R069 | §4 | `electron/services/hl7v2.cjs` | `tests/hl7v2.test.cjs` |
 | TT-R070 | §4 | `electron/services/optnExport.cjs` | `tests/optnExport.test.cjs` |
 | TT-R071 | §4, §13 | `electron/database/schema.cjs` (waitlist_status_transitions) | `tests/iotaNotifications.test.cjs`; OQ-71 |
