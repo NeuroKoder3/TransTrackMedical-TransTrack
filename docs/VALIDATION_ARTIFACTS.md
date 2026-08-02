@@ -1,315 +1,73 @@
-# TransTrack Formal Validation Artifacts
+# WITHDRAWN — TransTrack Formal Validation Artifacts
 
-## Document Control
-
-| Field | Value |
-|-------|-------|
 | Document ID | TT-VAL-001 |
-| Version | 1.0.1 |
-| Status | Vendor-approved template — site execution (IQ/OQ/PQ sign-off) pending |
-| Effective Date | 2026-01-24 |
-| Author | TransTrack Development Team |
-| Approved By | Vendor internal QA (customer/site countersignature pending) |
+| --- | --- |
+| Version | 2.0 (withdrawal notice) |
+| Status | **Withdrawn and superseded** |
+| Withdrawn on | 2026-08-02 |
+| Superseded by | [`docs/compliance/`](compliance/) — see the index below |
+| Owner | Quality Assurance Officer |
 
----
+## This document no longer contains a validation package
 
-## 1. Introduction
+Every clause of TT-VAL-001 v1.0.1 is withdrawn. Nothing in the prior content
+may be cited as evidence of validation, and the content has been removed
+rather than left in place with a banner, so that it cannot be quoted out of
+context.
 
-### 1.1 Purpose
-This document provides formal validation artifacts for TransTrack, demonstrating compliance with FDA 21 CFR Part 11, HIPAA, and AATB requirements.
+## Why it was withdrawn
 
-### 1.2 Scope
-Covers all software validation activities for TransTrack v1.0.0.
+The document described itself as "formal validation artifacts" for TransTrack
+v1.0.0. It contained a 19-case IQ/OQ/PQ/SEC protocol whose entire results
+column was blank, a test execution summary table with no numbers in it, a
+conclusion reading "[To be completed after validation execution]", and an
+unsigned approval block. It also asserted compliance with AATB Standards for
+Tissue Banking, for which no control mapping has ever existed in this
+repository.
 
-### 1.3 Regulatory References
-- FDA 21 CFR Part 11: Electronic Records; Electronic Signatures
-- HIPAA Security Rule: 45 CFR 164.312
-- AATB Standards for Tissue Banking
+More seriously, it was a **second** validation package. `docs/compliance/`
+already held a validation plan, protocol templates, a traceability matrix and
+a risk register, at a different version, for a different release, with
+different case identifiers. A reader could not tell which package governed,
+and neither package had been executed.
 
----
+A validation review recorded this as finding C-2. The remedy is one package,
+at one vintage, with real execution records — not two.
 
-## 2. System Description
+## Where the current package is
 
-### 2.1 System Overview
-TransTrack is a desktop application for managing organ transplant waitlists, designed for offline operation with encrypted local storage.
+| Document | Purpose |
+| --- | --- |
+| [`compliance/VALIDATION_PLAN.md`](compliance/VALIDATION_PLAN.md) | The governing plan. Ratified, effective 2026-08-02, scoped to release 1.3.0. |
+| [`compliance/VALIDATION_SUMMARY_REPORT.md`](compliance/VALIDATION_SUMMARY_REPORT.md) | **Start here.** States which qualification stages are complete and which are not. |
+| [`compliance/executed/IQ_TT-IQ-001.md`](compliance/executed/IQ_TT-IQ-001.md) | Executed Installation Qualification — vendor portion complete, host portion enumerated as not executed. |
+| [`compliance/executed/OQ_TT-OQ-001.md`](compliance/executed/OQ_TT-OQ-001.md) | Executed Operational Qualification — the automated verification that actually ran, every case citing a test file that exists. |
+| [`compliance/executed/PQ_TT-PQ-001.md`](compliance/executed/PQ_TT-PQ-001.md) | Performance Qualification protocol — **not executed**; the deploying organization's responsibility. |
+| [`compliance/FMEA.md`](compliance/FMEA.md) | Failure mode and effects analysis. |
+| [`compliance/RESIDUAL_RISK.md`](compliance/RESIDUAL_RISK.md) | Formal residual-risk statements with closure criteria. |
+| [`compliance/RISK_REGISTER.md`](compliance/RISK_REGISTER.md) | ISO 14971-style hazard register. |
+| [`compliance/TRACEABILITY_MATRIX.md`](compliance/TRACEABILITY_MATRIX.md) | Requirement → design → implementation → verification. |
+| [`compliance/CLINICAL_SOURCES.md`](compliance/CLINICAL_SOURCES.md) | Controlled source for every clinical constant. |
+| [`compliance/README.md`](compliance/README.md) | Index of the whole package. |
 
-### 2.2 Intended Use
-- Patient waitlist management
-- Donor-recipient matching
-- Priority score calculation
-- Compliance reporting
+## What replaced each withdrawn section
 
-### 2.3 System Architecture
+| Withdrawn section | Replacement |
+| --- | --- |
+| §3 Validation Plan | `compliance/VALIDATION_PLAN.md` v2.0 |
+| §4 Installation Qualification (IQ-001 to IQ-003) | `compliance/executed/IQ_TT-IQ-001.md`; site protocol at `compliance/templates/IQ_PROTOCOL_TEMPLATE.md` |
+| §5 Operational Qualification (OQ-001 to OQ-009) | `compliance/executed/OQ_TT-OQ-001.md`; site protocol at `compliance/templates/OQ_PROTOCOL_TEMPLATE.md` |
+| §6 Performance Qualification (PQ-001 to PQ-003) | `compliance/executed/PQ_TT-PQ-001.md` |
+| §7 Security Validation (SEC-001 to SEC-004) | Folded into the executed OQ: SEC-001 → OQ-A01, SEC-002 → OQ-A40, SEC-003 → OQ-A23, SEC-004 → OQ-A05 and OQ-A06 |
+| §8 Traceability Matrix | `compliance/TRACEABILITY_MATRIX.md`, machine-checked by `scripts/check-compliance-docs.mjs` |
+| §9 Deviation Handling | `compliance/VALIDATION_SUMMARY_REPORT.md` §5 and `compliance/policies/CHANGE_MANAGEMENT_SOP.md` |
+| §10 Validation Summary | `compliance/VALIDATION_SUMMARY_REPORT.md` |
+| AATB compliance claim (§1.1, §1.3) | **Removed, not replaced.** No AATB control mapping exists in this repository and none is asserted. |
+| Appendix B System Requirements | `compliance/templates/IQ_PROTOCOL_TEMPLATE.md`, "Reference workstation specification" |
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    TransTrack Desktop                        │
-├─────────────────────────────────────────────────────────────┤
-│  Presentation Layer (React + Electron Renderer)             │
-├─────────────────────────────────────────────────────────────┤
-│  Business Logic Layer (Electron Main Process)               │
-│  - Priority Calculation Engine                               │
-│  - Donor Matching Algorithm                                  │
-│  - Risk Intelligence Engine                                  │
-│  - Access Control Service                                    │
-├─────────────────────────────────────────────────────────────┤
-│  Data Layer (SQLite with Encryption)                        │
-│  - Patient Records                                           │
-│  - Audit Logs (Immutable)                                   │
-│  - System Configuration                                      │
-└─────────────────────────────────────────────────────────────┘
-```
+## Retention
 
----
-
-## 3. Validation Plan
-
-### 3.1 Validation Strategy
-- Installation Qualification (IQ)
-- Operational Qualification (OQ)
-- Performance Qualification (PQ)
-
-### 3.2 Acceptance Criteria
-All test cases must pass with documented evidence.
-
----
-
-## 4. Installation Qualification (IQ)
-
-### IQ-001: Software Installation
-| Test ID | IQ-001 |
-|---------|--------|
-| Objective | Verify software installs correctly |
-| Procedure | Execute installer on target OS |
-| Expected Result | Application installs without errors |
-| Acceptance | Pass/Fail |
-
-### IQ-002: Database Initialization
-| Test ID | IQ-002 |
-|---------|--------|
-| Objective | Verify database creates on first run |
-| Procedure | Launch application first time |
-| Expected Result | Encrypted database created |
-| Acceptance | Pass/Fail |
-
-### IQ-003: Default User Creation
-| Test ID | IQ-003 |
-|---------|--------|
-| Objective | Verify default admin user created |
-| Procedure | Check users table after first run |
-| Expected Result | Admin user exists |
-| Acceptance | Pass/Fail |
-
----
-
-## 5. Operational Qualification (OQ)
-
-### OQ-001: User Authentication
-| Test ID | OQ-001 |
-|---------|--------|
-| Objective | Verify login functionality |
-| Procedure | 1. Enter valid credentials 2. Click login |
-| Expected Result | User authenticated, dashboard displayed |
-| Acceptance | Pass/Fail |
-
-### OQ-002: Failed Login Handling
-| Test ID | OQ-002 |
-|---------|--------|
-| Objective | Verify invalid login rejected |
-| Procedure | Enter invalid credentials |
-| Expected Result | Error message displayed, access denied |
-| Acceptance | Pass/Fail |
-
-### OQ-003: Patient Creation
-| Test ID | OQ-003 |
-|---------|--------|
-| Objective | Verify patient record creation |
-| Procedure | 1. Navigate to Patients 2. Add new patient |
-| Expected Result | Patient saved to database |
-| Acceptance | Pass/Fail |
-
-### OQ-004: Audit Trail Generation
-| Test ID | OQ-004 |
-|---------|--------|
-| Objective | Verify actions logged to audit trail |
-| Procedure | Perform create/update/delete operations |
-| Expected Result | All actions recorded in audit_logs |
-| Acceptance | Pass/Fail |
-
-### OQ-005: Priority Calculation
-| Test ID | OQ-005 |
-|---------|--------|
-| Objective | Verify priority score calculation |
-| Procedure | Create patient with known parameters |
-| Expected Result | Priority score matches expected value |
-| Acceptance | Pass/Fail |
-
-### OQ-006: Donor Matching
-| Test ID | OQ-006 |
-|---------|--------|
-| Objective | Verify donor-recipient matching |
-| Procedure | Create donor and run matching |
-| Expected Result | Compatible recipients identified |
-| Acceptance | Pass/Fail |
-
-### OQ-007: Access Control
-| Test ID | OQ-007 |
-|---------|--------|
-| Objective | Verify role-based access control |
-| Procedure | Login as viewer, attempt admin actions |
-| Expected Result | Admin actions blocked |
-| Acceptance | Pass/Fail |
-
-### OQ-008: Backup Creation
-| Test ID | OQ-008 |
-|---------|--------|
-| Objective | Verify backup functionality |
-| Procedure | Create backup via menu |
-| Expected Result | Backup file created with valid checksum |
-| Acceptance | Pass/Fail |
-
-### OQ-009: Backup Restoration
-| Test ID | OQ-009 |
-|---------|--------|
-| Objective | Verify restore functionality |
-| Procedure | Restore from backup |
-| Expected Result | Database restored, data intact |
-| Acceptance | Pass/Fail |
-
----
-
-## 6. Performance Qualification (PQ)
-
-### PQ-001: Response Time
-| Test ID | PQ-001 |
-|---------|--------|
-| Objective | Verify acceptable response times |
-| Procedure | Measure time for common operations |
-| Expected Result | All operations < 2 seconds |
-| Acceptance | Pass/Fail |
-
-### PQ-002: Data Capacity
-| Test ID | PQ-002 |
-|---------|--------|
-| Objective | Verify handling of large datasets |
-| Procedure | Load 10,000 patient records |
-| Expected Result | System remains responsive |
-| Acceptance | Pass/Fail |
-
-### PQ-003: Concurrent Sessions
-| Test ID | PQ-003 |
-|---------|--------|
-| Objective | Verify multi-user support |
-| Procedure | N/A (single-user desktop app) |
-| Expected Result | N/A |
-| Acceptance | N/A |
-
----
-
-## 7. Security Validation
-
-### SEC-001: Password Hashing
-| Test ID | SEC-001 |
-|---------|--------|
-| Objective | Verify passwords not stored in plaintext |
-| Procedure | Inspect users table |
-| Expected Result | Passwords stored as bcrypt hashes |
-| Acceptance | Pass/Fail |
-
-### SEC-002: Database Encryption
-| Test ID | SEC-002 |
-|---------|--------|
-| Objective | Verify database encryption |
-| Procedure | Attempt to open database with SQLite viewer |
-| Expected Result | Data unreadable without key |
-| Acceptance | Pass/Fail |
-
-### SEC-003: Audit Log Immutability
-| Test ID | SEC-003 |
-|---------|--------|
-| Objective | Verify audit logs cannot be modified |
-| Procedure | Attempt to update/delete audit log |
-| Expected Result | Operation rejected |
-| Acceptance | Pass/Fail |
-
-### SEC-004: Session Timeout
-| Test ID | SEC-004 |
-|---------|--------|
-| Objective | Verify session expiration |
-| Procedure | Wait for session timeout period |
-| Expected Result | User logged out automatically |
-| Acceptance | Pass/Fail |
-
----
-
-## 8. Traceability Matrix
-
-| Requirement | Test Case(s) | Status |
-|-------------|--------------|--------|
-| User authentication | OQ-001, OQ-002 | |
-| Patient management | OQ-003 | |
-| Audit trail | OQ-004, SEC-003 | |
-| Priority calculation | OQ-005 | |
-| Donor matching | OQ-006 | |
-| Access control | OQ-007, SEC-001 | |
-| Backup/restore | OQ-008, OQ-009 | |
-| Data security | SEC-001, SEC-002, SEC-004 | |
-
----
-
-## 9. Deviation Handling
-
-Any deviations from expected results must be:
-1. Documented with deviation ID
-2. Root cause analyzed
-3. Corrective action implemented
-4. Re-tested to verify resolution
-5. Approved by QA
-
----
-
-## 10. Validation Summary
-
-### 10.1 Test Execution Summary
-| Category | Total | Passed | Failed | N/A |
-|----------|-------|--------|--------|-----|
-| IQ | 3 | | | |
-| OQ | 9 | | | |
-| PQ | 3 | | | |
-| SEC | 4 | | | |
-| **Total** | **19** | | | |
-
-### 10.2 Conclusion
-[To be completed after validation execution]
-
-### 10.3 Approval
-
-| Role | Name | Signature | Date |
-|------|------|-----------|------|
-| QA Manager | | | |
-| IT Manager | | | |
-| Compliance Officer | | | |
-
----
-
-## Appendix A: Test Evidence
-
-[Attach screenshots and logs as evidence]
-
-## Appendix B: System Requirements
-
-### Minimum Requirements
-- OS: Windows 10, macOS 10.14, Ubuntu 18.04
-- RAM: 4 GB
-- Storage: 500 MB
-- Display: 1024x768
-
-### Recommended Requirements
-- OS: Windows 11, macOS 12+, Ubuntu 22.04
-- RAM: 8 GB
-- Storage: 2 GB
-- Display: 1920x1080
-
----
-
-*This document is controlled. Printed copies are uncontrolled.*
+The withdrawn content remains available in this repository's version control
+history for anyone who needs to audit what was previously published. It is not
+reproduced here, because a withdrawn validation document that still reads like
+a validation document is the problem this notice exists to solve.
