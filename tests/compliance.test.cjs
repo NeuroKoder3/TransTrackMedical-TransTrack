@@ -12,6 +12,28 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
+const Database = require('better-sqlite3-multiple-ciphers');
+const { createTestDataDir } = require('../scripts/test-temp-dir.cjs');
+
+// Several checks below execute production modules rather than reading their
+// source. Those modules resolve paths through Electron's `app`, so stub it
+// before anything requires them. userData points at a scratch directory under
+// os.tmpdir() that is removed when this process exits.
+const scratchDir = createTestDataDir('compliance');
+const mockApp = { getPath: () => scratchDir, isPackaged: false };
+require.cache[require.resolve('electron')] = {
+  id: 'electron',
+  filename: 'electron',
+  loaded: true,
+  exports: {
+    app: mockApp,
+    ipcMain: { handle: () => {} },
+    dialog: {},
+    crashReporter: { start: () => {} },
+    safeStorage: { isEncryptionAvailable: () => false },
+  },
+};
 
 let passed = 0;
 let failed = 0;
@@ -34,11 +56,86 @@ function test(name, fn) {
 // ============================================================================
 console.log('Suite 1: HIPAA Technical Safeguards');
 
-test('Database encryption module exists', () => {
-  assert(fs.existsSync(path.join(__dirname, '..', 'electron', 'database', 'init.cjs')));
-  const content = fs.readFileSync(path.join(__dirname, '..', 'electron', 'database', 'init.cjs'), 'utf8');
-  assert(content.includes("cipher = 'sqlcipher'"), 'Must use SQLCipher');
-  assert(content.includes('AES-256'), 'Must document AES-256 encryption');
+// §164.312(a)(2)(iv) — Encryption at rest.
+//
+// This check used to grep electron/database/init.cjs for the strings
+// "cipher = 'sqlcipher'" and "AES-256" (finding M-23). A commented-out pragma,
+// a pragma applied to the wrong handle, or a profile that silently fell back to
+// the library's default KDF all satisfied it, while the one thing the control
+// actually claims — that PHI is unreadable in the file on disk — went untested.
+// It now writes a patient surname through the real cipher profile and reads the
+// bytes back off the filesystem.
+const dbInit = require('../electron/database/init.cjs');
+
+test('PHI written through the production cipher profile is unreadable on disk', () => {
+  const key = crypto.randomBytes(32).toString('hex');
+  const dbPath = path.join(scratchDir, 'compliance-encrypted.db');
+  const surname = 'Okonkwo';
+
+  const seed = new Database(dbPath);
+  dbInit.applyCipherPragmas(seed, key);
+  seed.exec('CREATE TABLE patients (id TEXT PRIMARY KEY, last_name TEXT)');
+  seed.prepare('INSERT INTO patients (id, last_name) VALUES (?, ?)').run('p1', surname);
+  seed.close();
+
+  const onDisk = fs.readFileSync(dbPath);
+  assert(
+    !onDisk.includes(Buffer.from(surname, 'utf8')),
+    'the patient surname is readable in the database file — PHI is not encrypted at rest',
+  );
+  assert(
+    !onDisk.subarray(0, 16).equals(Buffer.from('SQLite format 3\0', 'utf8')),
+    'the database file carries the plaintext SQLite header',
+  );
+
+  const handle = new Database(dbPath);
+  try {
+    dbInit.applyCipherPragmas(handle, key);
+
+    const result = dbInit.verifyDatabaseEncryption(handle, dbPath);
+    assert(result.verified, `encryption verification failed: ${result.problems.join('; ')}`);
+    assert.strictEqual(result.checks.cipher, 'sqlcipher', 'Must use SQLCipher');
+    assert.strictEqual(result.checks.kdfIterations, 256000, 'Must use 256000 PBKDF2 iterations');
+    assert.strictEqual(result.checks.fileHeaderEncrypted, true);
+    assert.strictEqual(result.checks.cipherSaltPresent, true);
+
+    // The value is still recoverable with the key — encryption, not corruption.
+    assert.strictEqual(
+      handle.prepare('SELECT last_name FROM patients WHERE id = ?').get('p1').last_name,
+      surname,
+    );
+
+    dbInit.applyEncryptionVerification(handle, dbPath);
+    const status = dbInit.getEncryptionStatus();
+    assert.strictEqual(status.algorithm, 'AES-256-CBC', 'Must report AES-256 encryption');
+    assert.strictEqual(status.keyDerivation, 'PBKDF2-HMAC-SHA512');
+    assert.strictEqual(status.compliant, true);
+    assert.strictEqual(status.standard, 'HIPAA');
+  } finally {
+    try { handle.close(); } catch { /* already closed by a fail-closed path */ }
+  }
+});
+
+test('A plaintext database is never reported as HIPAA compliant', () => {
+  const dbPath = path.join(scratchDir, 'compliance-plaintext.db');
+  const seed = new Database(dbPath);
+  seed.exec('CREATE TABLE patients (id TEXT PRIMARY KEY)');
+  seed.close();
+
+  const handle = new Database(dbPath);
+  try {
+    // No cipher pragmas — exactly what a mis-provisioned installation looks like.
+    const result = dbInit.applyEncryptionVerification(handle, dbPath);
+    assert.strictEqual(result.verified, false, 'a plaintext database must not verify');
+
+    const status = dbInit.getEncryptionStatus();
+    assert.strictEqual(status.enabled, false);
+    assert.strictEqual(status.compliant, false);
+    assert.strictEqual(status.standard, 'non-compliant');
+    assert(status.verification.problems.length > 0, 'the status must carry the evidence');
+  } finally {
+    try { handle.close(); } catch { /* already closed by a fail-closed path */ }
+  }
 });
 
 test('Audit log immutability triggers defined', () => {
@@ -275,12 +372,32 @@ test('Rate limiter module exists', () => {
 // ============================================================================
 console.log('\nSuite 8: Structured Logging');
 
-test('Error logger with sensitive data redaction', () => {
-  const content = fs.readFileSync(path.join(__dirname, '..', 'electron', 'ipc', 'errorLogger.cjs'), 'utf8');
-  assert(content.includes('SENSITIVE_KEYS'), 'Must define sensitive keys for redaction');
-  assert(content.includes('password'), 'Must redact passwords');
-  assert(content.includes('ssn'), 'Must redact SSN');
-  assert(content.includes('[REDACTED]'), 'Must replace with [REDACTED]');
+test('Error logger redacts sensitive data in what it writes to disk', () => {
+  // Executed rather than grepped, for the same reason as the encryption check
+  // above: the presence of the word "password" in a source file is not evidence
+  // that a password never reaches the log.
+  const errorLogger = require('../electron/ipc/errorLogger.cjs');
+  const log = errorLogger.createLogger('compliance-test');
+
+  const marker = `compliance-${crypto.randomBytes(6).toString('hex')}`;
+  log.error('write failed', new Error('disk full'), {
+    marker,
+    password: 'PlaintextPw!1',
+    ssn: '123-45-6789',
+  });
+
+  const logged = fs.readdirSync(errorLogger.LOG_DIR)
+    .map((f) => fs.readFileSync(path.join(errorLogger.LOG_DIR, f), 'utf8'))
+    .join('\n')
+    .split('\n')
+    .filter((line) => line.includes(marker));
+
+  assert(logged.length > 0, 'the logger wrote nothing to disk');
+  const entry = JSON.parse(logged[logged.length - 1]);
+  assert.strictEqual(entry.password, '[REDACTED]', 'Must redact passwords');
+  assert.strictEqual(entry.ssn, '[REDACTED]', 'Must redact SSN');
+  assert(!logged.join('\n').includes('PlaintextPw!1'), 'password value must not reach the log');
+  assert(!logged.join('\n').includes('123-45-6789'), 'SSN value must not reach the log');
 });
 
 test('Log rotation is configured', () => {

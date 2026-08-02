@@ -21,10 +21,11 @@ function test(name, fn) {
   }
 }
 
-// Mock electron + database BEFORE requiring healthCheck.
-const mockUserData = path.join(__dirname, '.test-data-health-' + Date.now());
-require('fs').mkdirSync(mockUserData, { recursive: true });
-require('fs').mkdirSync(path.join(mockUserData, 'logs'), { recursive: true });
+// Mock electron + database BEFORE requiring healthCheck. The scratch directory
+// lives under os.tmpdir() and is removed on process exit even if a test throws
+// before the explicit teardown below runs (L-9).
+const { createTestDataDir, cleanupTestDataDir } = require('../scripts/test-temp-dir.cjs');
+const mockUserData = createTestDataDir('health', { subdirs: ['logs'] });
 require.cache[require.resolve('electron')] = {
   id: 'electron', filename: 'electron', loaded: true,
   exports: {
@@ -107,7 +108,7 @@ test('getHealth never throws', () => {
 console.log(`\nResults: ${PASS} passed, ${FAIL} failed.`);
 
 // cleanup
-try { require('fs').rmSync(mockUserData, { recursive: true, force: true }); } catch { /* ignore */ }
+cleanupTestDataDir(mockUserData);
 
 if (FAIL > 0) {
   for (const f of failures) console.error(`\n${f.name}:\n${f.error.stack || f.error.message}`);

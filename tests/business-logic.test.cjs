@@ -9,10 +9,11 @@
 
 const path = require('path');
 const crypto = require('crypto');
+const { createTestDataDir } = require('../scripts/test-temp-dir.cjs');
 
-// mock electron
+// mock electron — scratch directory under os.tmpdir(), removed on exit (L-9).
 
-const mockUserDataPath = path.join(__dirname, '.test-data-biz-' + Date.now());
+const mockUserDataPath = createTestDataDir('biz');
 require.cache[require.resolve('electron')] = {
   id: 'electron',
   filename: 'electron',

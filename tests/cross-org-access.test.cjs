@@ -16,9 +16,11 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const assert = require('assert');
+const { createTestDataDir } = require('../scripts/test-temp-dir.cjs');
 
-// Mock Electron's app module for testing
-const mockUserDataPath = path.join(__dirname, '.test-data-' + Date.now());
+// Mock Electron's app module for testing. The scratch directory lives under
+// os.tmpdir() and is removed on process exit, including on failure (L-9).
+const mockUserDataPath = createTestDataDir('crossorg');
 
 // Create mock before requiring modules
 const mockApp = {
