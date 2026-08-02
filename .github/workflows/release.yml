@@ -123,11 +123,18 @@ jobs:
     needs: preflight
     runs-on: windows-latest
     env:
+      # Marks this as a release build. The signer and the notarization hook both
+      # read it and refuse to produce an unsigned artifact, rather than warning
+      # and carrying on as they do for developer builds.
+      TRANSTRACK_RELEASE_CHANNEL: public
       TRANSTRACK_SIGN_MODE: ${{ needs.preflight.outputs.windows_mode }}
       ESIGNER_USERNAME: ${{ secrets.ESIGNER_USERNAME }}
       ESIGNER_PASSWORD: ${{ secrets.ESIGNER_PASSWORD }}
       ESIGNER_CREDENTIAL_ID: ${{ secrets.ESIGNER_CREDENTIAL_ID }}
       ESIGNER_TOTP_SECRET: ${{ secrets.ESIGNER_TOTP_SECRET }}
+      # CodeSignTool is not present on the runner image; the step below installs
+      # it here. Overridable for self-hosted runners that pre-provision it.
+      ESIGNER_TOOL_PATH: ${{ vars.ESIGNER_TOOL_PATH || 'D:\CodeSignTool\CodeSignTool.bat' }}
       CSC_LINK: ${{ secrets.CSC_LINK }}
       CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
     steps:
@@ -138,6 +145,35 @@ jobs:
           node-version: '22'
           cache: 'npm'
 
+      # Without this the eSigner path cannot work: the signer resolves
+      # ESIGNER_TOOL_PATH and the runner image has no CodeSignTool on it, so the
+      # build failed part-way through with "not found: undefined".
+      - name: Install SSL.com CodeSignTool
+        if: needs.preflight.outputs.windows_mode == 'ssl_esigner'
+        shell: pwsh
+        run: |
+          $dest = Split-Path -Parent $env:ESIGNER_TOOL_PATH
+          if (Test-Path $env:ESIGNER_TOOL_PATH) {
+            Write-Host "CodeSignTool already present at $env:ESIGNER_TOOL_PATH"
+            exit 0
+          }
+          if (-not $env:ESIGNER_TOOL_URL) {
+            Write-Host "::error::ssl_esigner mode selected but CodeSignTool is not installed and no ESIGNER_TOOL_URL repository variable is set."
+            Write-Host "::error::Set the ESIGNER_TOOL_URL variable to the CodeSignTool zip from your SSL.com dashboard, or set ESIGNER_TOOL_PATH on a self-hosted runner that already has it."
+            exit 1
+          }
+          New-Item -ItemType Directory -Force -Path $dest | Out-Null
+          $zip = Join-Path $env:RUNNER_TEMP 'codesigntool.zip'
+          Invoke-WebRequest -Uri $env:ESIGNER_TOOL_URL -OutFile $zip
+          Expand-Archive -Path $zip -DestinationPath $dest -Force
+          if (-not (Test-Path $env:ESIGNER_TOOL_PATH)) {
+            Write-Host "::error::CodeSignTool was extracted to $dest but $env:ESIGNER_TOOL_PATH does not exist. Check the archive layout and adjust the ESIGNER_TOOL_PATH variable."
+            Get-ChildItem -Recurse $dest | Select-Object -First 40 | ForEach-Object { Write-Host $_.FullName }
+            exit 1
+          }
+        env:
+          ESIGNER_TOOL_URL: ${{ vars.ESIGNER_TOOL_URL }}
+
       - name: Install npm dependencies
         run: npm ci
 
@@ -146,6 +182,16 @@ jobs:
 
       - name: Build & sign Windows installer (electron-builder)
         run: npm run dist:win:enterprise
+
+      # electron-builder reports success whether or not the hook signed
+      # anything, so the artifact is inspected rather than assumed. This reads
+      # the PE certificate table and asks Windows for the trust verdict.
+      - name: Verify the installer is actually signed
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem release/enterprise/*.exe | Select-Object -First 1
+          if (-not $exe) { Write-Host "::error::No installer produced"; exit 1 }
+          node scripts/verify-artifact-signature.mjs $exe.FullName
 
       - name: Upload installer
         uses: actions/upload-artifact@v7
@@ -159,9 +205,14 @@ jobs:
     needs: preflight
     runs-on: macos-latest
     env:
+      # See build-windows: makes an un-notarized artifact a build failure rather
+      # than a warning that scrolls past.
+      TRANSTRACK_RELEASE_CHANNEL: public
       APPLE_ID: ${{ secrets.APPLE_ID }}
       APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      # electron-builder accepts either a path or base64 content here, and a
+      # secret can only hold the latter.
       CSC_LINK: ${{ secrets.APPLE_CERT_BASE64 }}
       CSC_KEY_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
     steps:
@@ -180,6 +231,18 @@ jobs:
 
       - name: Build, sign & notarize macOS DMG
         run: npm run dist:mac:enterprise
+
+      # Gatekeeper's own verdict, rather than trusting that the afterSign hook
+      # ran. `source=Notarized Developer ID` is the string that matters.
+      - name: Verify the app is signed and notarized
+        run: |
+          app=$(find release/enterprise -maxdepth 3 -name '*.app' | head -n 1)
+          if [ -z "$app" ]; then echo "::error::No .app produced"; exit 1; fi
+          codesign -dv --verbose=4 "$app" 2>&1 | sed 's/^/  /'
+          if ! spctl -a -vv "$app" 2>&1 | tee /dev/stderr | grep -q 'source=Notarized Developer ID'; then
+            echo "::error::$app is not notarized (spctl did not report a Notarized Developer ID source)"
+            exit 1
+          fi
 
       - name: Upload DMG
         uses: actions/upload-artifact@v7

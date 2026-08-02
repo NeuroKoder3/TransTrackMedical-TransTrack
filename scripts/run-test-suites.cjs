@@ -100,6 +100,10 @@ const FUNCTIONAL_SUITES = [
   // The validation package is a deliverable; its cross-references are checked
   // on the same cadence as the code they describe.
   'complianceDocs.test.mjs',
+  // Release signing: the evidence that a shipped artifact is actually signed,
+  // and that a release build refuses to produce one that is not.
+  'artifactSignature.test.mjs',
+  'notarize.test.cjs',
 ];
 
 const GROUPS = {

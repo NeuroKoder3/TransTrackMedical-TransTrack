@@ -7,6 +7,53 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed — release signing
+
+- **A release build can no longer emit an unsigned artifact.** Both
+  `sign-win.cjs` and `notarize.cjs` warned and returned whenever a credential
+  was missing. That is right for a developer build and wrong for a release: the
+  build went green, the warning scrolled past in electron-builder's output, and
+  nobody found out until a customer's machine refused the download. When
+  `TRANSTRACK_RELEASE_CHANNEL=public` (set by `release.yml` on both build jobs),
+  or `TRANSTRACK_REQUIRE_SIGNING` / `TRANSTRACK_REQUIRE_NOTARIZATION` is set,
+  the build now fails and names the missing variable.
+- **The release gate now inspects the installer instead of its filename.**
+  "Code-signed Windows installer present" was satisfied by any file matching the
+  expected name. `scripts/verify-artifact-signature.mjs` reads the artifact: the
+  OS verdict via `Get-AuthenticodeSignature` on Windows, the PE Attribute
+  Certificate Table elsewhere, with the weaker assurance labelled as such rather
+  than overstated. A catalog-only signature is rejected — Windows calls it
+  valid, but it lives outside the file and so cannot reach the receiving site.
+- **`pfx` mode works in CI.** `CSC_LINK` was treated strictly as a filesystem
+  path, but a certificate in a CI secret is base64 bytes. Base64 content is now
+  written to a temporary file with owner-only permissions and removed in a
+  `finally` block.
+- **`ssl_esigner` mode works in CI.** The workflow never set
+  `ESIGNER_TOOL_PATH` and never installed CodeSignTool, so the mode could not
+  have signed anything. Both are now handled, and a missing `ESIGNER_TOOL_URL`
+  fails the job rather than yielding an unsigned build.
+- **Notarization diagnoses the likely credential mistake.** Apple's own term is
+  "app-specific password", and `docs/DEPLOYMENT_PRODUCTION.md` said
+  `APPLE_APP_SPECIFIC_PASSWORD`, while the hook reads `APPLE_APP_PASSWORD`. The
+  doc is corrected, and the hook now says so by name when it finds the longer
+  spelling set.
+- **`tests/signWin.test.cjs` never awaited its async cases**, so every
+  `assert.rejects` counted as a pass without running. The harness is now
+  async-aware, and the suite covers mode selection, fail-closed behaviour, and
+  certificate materialisation. New: `tests/notarize.test.cjs` and
+  `tests/artifactSignature.test.mjs`, the latter parsing synthetic PE images on
+  every platform and, on Windows, checking a genuinely signed binary and a
+  catalog-signed one.
+
+### Changed — code signing guidance
+
+- **EV is no longer recommended by default.** The guidance to buy EV rested on
+  it granting immediate SmartScreen reputation; Microsoft removed that
+  behaviour, and OV now gives the same first-download experience. The docs now
+  recommend Azure Artifact Signing (~$10/month) or an OV certificate with cloud
+  HSM signing, and note that since June 2023 all code signing keys — OV
+  included — must live in hardware, so a copyable `.pfx` is no longer issuable.
+
 ### Fixed
 
 - **Support bundle log tail no longer loses a race with log rotation.**
@@ -34,6 +81,9 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   pipeline, chart filing, migration safety, and support bundles — including
   the adversarial one that matters: plant a patient name in free text, export
   a default bundle, and search the file for it.
+- **Release authenticity added to the validation package** as TT-R146 and
+  TT-R147, SDS §17, R-028, and OQ-146/147 — the last of which has the receiving
+  site verify the installer's signature themselves before installing it.
 - **Risk register extended** with R-020 to R-027 (missed notification
   deadline, duplicate or misfiled chart document, bundle PHI leakage, notice
   altered after filing, template missing a statutory element, stale

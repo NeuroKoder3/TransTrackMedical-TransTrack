@@ -86,19 +86,31 @@ npm audit --production --audit-level=high
 
 ### 2.2 Configure Code Signing
 
-Set environment variables for code signing:
+Set environment variables for code signing. See `docs/CODE_SIGNING.md` for the
+full reference, including cloud-HSM signing and how to choose a certificate.
 
 ```bash
 # Windows
-set CSC_LINK=path/to/certificate.pfx
+set TRANSTRACK_SIGN_MODE=pfx
+set CSC_LINK=path/to/certificate.pfx        # path, or base64 of the .pfx
 set CSC_KEY_PASSWORD=your-certificate-password
 
 # macOS
 export CSC_LINK=path/to/certificate.p12
 export CSC_KEY_PASSWORD=your-certificate-password
 export APPLE_ID=your-apple-id
-export APPLE_APP_SPECIFIC_PASSWORD=your-app-password
+export APPLE_APP_PASSWORD=your-app-specific-password   # not APPLE_APP_SPECIFIC_PASSWORD
+export APPLE_TEAM_ID=your-10-char-team-id
 ```
+
+For a build you intend to distribute, also set:
+
+```bash
+export TRANSTRACK_RELEASE_CHANNEL=public
+```
+
+This makes signing and notarization mandatory: if a credential is missing, the
+build fails instead of quietly emitting an unsigned artifact.
 
 ### 2.3 Build
 

@@ -140,6 +140,8 @@ Executed on a copy of a populated non-PHI test database.
 | OQ-143 | Open About dialog. | Design alignment statement present (not "certified"). | | |
 | OQ-144 | Review the release evidence for the build under test: the dependency audit output and the exception file. | Every finding is either resolved or covered by an unexpired documented exception. Confirm by back-dating one exception's review date in a scratch copy that the gate then fails. | | |
 | OQ-145 | Confirm the installed application's version matches the version in the release record; exercise each administrative screen including Disaster Recovery and System Health. | Versions match; every control performs its action rather than failing at the bridge. | | |
+| OQ-146 | Review the release build log for the artifact under test. | The signing and notarization steps report success. Confirm the control is real by inspecting the vendor's evidence that a build with a deliberately removed signing credential failed rather than producing an unsigned artifact. | | |
+| OQ-147 | On the installation host, run `Get-AuthenticodeSignature` against the received installer before installing it. | `Status` is `Valid`, `SignatureType` is `Authenticode` (not `Catalog`), and the signer certificate subject matches the vendor named in the purchase agreement. | | |
 
 ## Acceptance
 
