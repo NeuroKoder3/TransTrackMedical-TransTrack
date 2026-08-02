@@ -118,8 +118,13 @@ const FUNCTIONAL_SUITES = [
   'clinicalValidation.test.cjs',
   // H-6 / H-7 / M-21: entitlement enforcement and publisher-key provenance.
   'license.test.cjs',
-  // H-14: the offline and thin-client API clients must expose one contract.
-  'apiClientParity.test.cjs',
+  // H-14 (the offline and thin-client API clients must expose one contract) is
+  // covered by tests/components/apiClientParity.test.jsx under Vitest, because
+  // the clients are ESM renderer modules. It was previously listed here as
+  // 'apiClientParity.test.cjs', a file that has never existed — which made this
+  // runner abort before executing a single suite. See RUN_BY_OTHER_RUNNERS and
+  // assertNoOrphanSuites below: a listed-but-missing suite is a hard error
+  // precisely so this cannot pass unnoticed.
   // Previously reachable only via `npm run test:services` / `test:ipc` (H-8).
   'services.test.cjs',
   'ipc-integration.test.cjs',
