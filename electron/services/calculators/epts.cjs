@@ -24,24 +24,14 @@
 
 'use strict';
 
-// 5-segment piecewise linear approximation of raw_EPTS → EPTS_PCT (%).
-// Lower raw EPTS → lower percentile → better expected outcomes.
-// Anchors derived from OPTN Calculator Programmer's Guide (2022 cohort).
-const EPTS_ANCHORS = [
-  [-0.50, 0],
-  [ 0.30, 20],
-  [ 0.95, 50],
-  [ 1.55, 80],
-  [ 2.10, 95],
-  [ 3.00, 100],
-];
+const referenceData = require('./referenceData.cjs');
 
 function isFiniteNumber(v) { return typeof v === 'number' && Number.isFinite(v); }
 
-function rawToPct(raw) {
-  for (let i = 0; i < EPTS_ANCHORS.length - 1; i++) {
-    const [x0, y0] = EPTS_ANCHORS[i];
-    const [x1, y1] = EPTS_ANCHORS[i + 1];
+function rawToPct(raw, anchors) {
+  for (let i = 0; i < anchors.length - 1; i++) {
+    const [x0, y0] = anchors[i];
+    const [x1, y1] = anchors[i + 1];
     if (raw <= x1) {
       const t = (raw - x0) / (x1 - x0);
       return Math.max(0, Math.min(100, Math.round(y0 + t * (y1 - y0))));
@@ -65,6 +55,18 @@ function calculateEPTS({ age_years, diabetes, prior_solid_organ_transplant, year
   if (!isFiniteNumber(years_on_dialysis) || years_on_dialysis < 0) missing.push('years_on_dialysis');
   if (missing.length) return { raw: null, epts_pct: null, reason: 'INSUFFICIENT_DATA', missing, formula: 'EPTS' };
 
+  const table = referenceData.loadTable(referenceData.TABLE_IDS.EPTS);
+  if (!table.available) {
+    return {
+      raw: null,
+      epts_pct: null,
+      reason: table.reason,
+      message: table.message,
+      formula: 'EPTS',
+      source: { sourceId: 'SRC-OPTN-P8B', status: table.status },
+    };
+  }
+
   const ageOver25 = Math.max(age_years - 25, 0);
   const dx = diabetes ? 1 : 0;
   const prior = prior_solid_organ_transplant ? 1 : 0;
@@ -82,13 +84,24 @@ function calculateEPTS({ age_years, diabetes, prior_solid_organ_transplant, year
     -0.348 * dx * preemptive +
     1.262 * dx;
 
+  const source = referenceData.provenanceOf(table);
+
   return {
     raw: Number(xb.toFixed(3)),
-    epts_pct: rawToPct(xb),
+    epts_pct: rawToPct(xb, table.data.mapping),
     formula: 'EPTS',
     inputs: { age_years, diabetes, prior_solid_organ_transplant, years_on_dialysis },
     citation: 'Rao PS et al. Transplantation 2009; OPTN Policy 8.5.B.',
-    disclaimer: 'Reference value only. EPTS percentile is approximated. The decision-grade EPTS must be obtained from the OPTN Calculator. Do not use for allocation.',
+    source,
+    disclaimer:
+      'Reference value only. The EPTS percentile is derived from a piecewise ' +
+      'approximation of the OPTN mapping table; the decision-grade EPTS must be ' +
+      'obtained from the OPTN Calculator. Do not use for allocation.' +
+      (source.stale
+        ? ` WARNING: the OPTN reference table in use (revision ${source.sourceRevision}) ` +
+          `passed its review date ${source.reviewBy} ${source.daysOverdue} day(s) ago and may ` +
+          `no longer match the current OPTN cohort.`
+        : ''),
   };
 }
 

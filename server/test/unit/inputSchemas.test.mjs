@@ -21,9 +21,11 @@ afterEach(() => restoreModules());
 const VALID_BODIES = {
   meld: { creatinine_mg_dl: 1.4, bilirubin_mg_dl: 2.1, inr: 1.3 },
   'meld-na': { creatinine_mg_dl: 1.4, bilirubin_mg_dl: 2.1, inr: 1.3, sodium_meq_l: 133 },
+  // age_years selects between the OPTN adult and 12-17 MELD 3.0 equations and
+  // is therefore required (SRC-OPTN-P9D).
   'meld-3': {
     creatinine_mg_dl: 1.4, bilirubin_mg_dl: 2.1, inr: 1.3,
-    sodium_meq_l: 133, albumin_g_dl: 3.1, sex: 'female',
+    sodium_meq_l: 133, albumin_g_dl: 3.1, sex: 'female', age_years: 52,
   },
   peld: {
     bilirubin_mg_dl: 2.1, inr: 1.3, albumin_g_dl: 3.1,

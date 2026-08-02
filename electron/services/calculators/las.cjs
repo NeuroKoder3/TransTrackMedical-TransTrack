@@ -1,27 +1,35 @@
 /**
- * Lung Allocation Score (LAS) — adult, 2005 OPTN formula.
+ * TransTrack Lung Triage Index (TTLI) — an internal operational triage score.
  *
- * NOTE: OPTN replaced LAS with the **Composite Allocation Score (CAS)** for
- * lungs in March 2023. Many transplant programs still record LAS as a
- * reference value; CAS is computed centrally by UNet and is not reproducible
- * outside that system. This module computes the *legacy LAS* as a reference
- * value only.
+ * THIS IS NOT THE LUNG ALLOCATION SCORE. It is not the OPTN LAS, it is not the
+ * Composite Allocation Score, and its output will not match either.
  *
- * For programmatic use:
- *   - Output is a *reference value*, not the official OPTN-submitted score.
- *   - Returns { score: null, reason: 'INSUFFICIENT_DATA' } when inputs are
- *     missing.
+ * Finding C-3 recorded that this module was presented as "LAS" while
+ * implementing an invented heuristic: multiplicative adjustments applied to a
+ * diagnosis-group base hazard, mapped through an arbitrary linear transform.
+ * The multipliers and the transform correspond to no published coefficient set.
+ * Naming it after a published clinical score gave its output an authority the
+ * evidence base does not support, so the score has been renamed to something
+ * that cannot be mistaken for a published instrument.
  *
- * The full LAS formula uses Cox proportional-hazards survival models for
- * waitlist-without-transplant urgency and post-transplant survival benefit.
- * A faithful, accreditation-grade reproduction of the full Cox model is
- * outside the scope of this reference module; this implementation returns
- * the **diagnosis-group base contribution + clinical multipliers**, which is
- * the form most commonly recorded in pre-listing operational notes.
+ * What it actually is: an ordinal 0-100 triage indicator that ranks a centre's
+ * own lung candidates by a coarse notion of urgency, for internal worklist
+ * ordering. Its constants are expert-set, not fitted, and it has no published
+ * derivation or external validation.
  *
- * If a center requires the full LAS formula for any decision-supporting use,
- * it must be supplied by an externally-validated source and entered as an
- * opaque value via the patient.las_score field.
+ * What it is not, and must never be used as:
+ *   - the OPTN Lung Allocation Score (retired for allocation in March 2023),
+ *   - the Composite Allocation Score (computed centrally in UNet and not
+ *     reproducible outside it),
+ *   - any input to an allocation, listing or clinical decision.
+ *
+ * A centre that needs a real LAS or CAS value must obtain it from UNet and
+ * record it as an opaque value in patient.las_score. TransTrack does not
+ * compute it.
+ *
+ * Controlled-source id: SRC-INTERNAL-TTLI (an internal instrument; the register
+ * entry in docs/compliance/CLINICAL_SOURCES.md records that it has no external
+ * source and no validation evidence).
  */
 
 'use strict';
@@ -39,11 +47,11 @@ function isPositiveNumber(v) {
 }
 
 /**
- * Compute the legacy LAS reference value.
+ * Compute the TransTrack Lung Triage Index.
  *
  * Returns:
- *   { score: <number 0..100>, formula: 'LAS-REF', inputs, citation, disclaimer }
- *   or { score: null, reason: 'INSUFFICIENT_DATA', missing, formula }.
+ *   { score: <number 0..100>, formula: 'TTLI', inputs, disclaimer } or
+ *   { score: null, reason: 'INSUFFICIENT_DATA', missing, formula }.
  *
  * Inputs:
  *   diagnosis_group:   'A' | 'B' | 'C' | 'D'
@@ -67,15 +75,15 @@ function calculateLAS(input) {
   ];
   const missing = required.filter(f => input[f] === undefined || input[f] === null);
   if (missing.length) {
-    return { score: null, reason: 'INSUFFICIENT_DATA', missing, formula: 'LAS-REF' };
+    return { score: null, reason: 'INSUFFICIENT_DATA', missing, formula: 'TTLI' };
   }
 
   const dx = DIAGNOSIS_GROUPS[input.diagnosis_group];
   if (!dx) {
-    return { score: null, reason: 'INVALID_DIAGNOSIS_GROUP', missing: ['diagnosis_group'], formula: 'LAS-REF' };
+    return { score: null, reason: 'INVALID_DIAGNOSIS_GROUP', missing: ['diagnosis_group'], formula: 'TTLI' };
   }
   if (!isPositiveNumber(input.age_years) || !isPositiveNumber(input.bmi)) {
-    return { score: null, reason: 'INSUFFICIENT_DATA', missing, formula: 'LAS-REF' };
+    return { score: null, reason: 'INSUFFICIENT_DATA', missing, formula: 'TTLI' };
   }
 
   // Reference urgency contribution (relative hazard).
@@ -108,26 +116,45 @@ function calculateLAS(input) {
   if (input.creatinine_mg_dl > 2.0) urgency *= 1.1;
   if (input.bilirubin_mg_dl > 2.0) urgency *= 1.1;
 
-  // Map urgency (relative hazard, expected range ~1.0–8.0) to LAS-style 0..100.
+  // Map the expert-set relative hazard (expected range ~1.0-8.0) onto an
+  // ordinal 0..100 worklist position. The transform is arbitrary and exists
+  // only to make the index comparable between candidates at the same centre.
   const score = Math.max(0, Math.min(100, Math.round((urgency - 1) * 15 + 30)));
 
   return {
     score,
-    formula: 'LAS-REF',
+    formula: 'TTLI',
+    scoreName: 'TransTrack Lung Triage Index',
+    isPublishedInstrument: false,
     inputs: input,
-    citation: 'OPTN Policy 10 (legacy LAS, 2005); CAS replaced LAS effective 2023-03-09.',
-    disclaimer: 'Reference value only. The official LAS / CAS is computed by UNet and may differ. Do not use for allocation.',
+    source: {
+      sourceId: 'SRC-INTERNAL-TTLI',
+      sourceRevision: 'TransTrack internal, expert-set constants, no external validation',
+      externallyValidated: false,
+    },
+    disclaimer:
+      'TransTrack Lung Triage Index — an internal operational triage indicator. ' +
+      'It is NOT the OPTN Lung Allocation Score and NOT the Composite Allocation ' +
+      'Score, and it will not match either. Its constants are expert-set, not ' +
+      'derived from a published model, and it has no external validation. ' +
+      'Use for internal worklist ordering only. Obtain LAS/CAS from UNet.',
   };
 }
 
+const TTLI_FIELDS = [
+  'diagnosis_group', 'age_years', 'bmi', 'functional_status',
+  'six_minute_walk_ft', 'continuous_o2_l_min', 'pco2_mmHg',
+  'on_mechanical_ventilation', 'creatinine_mg_dl', 'bilirubin_mg_dl',
+];
+
 module.exports = {
+  calculateTTLI: calculateLAS,
+  // Legacy export name, kept so existing callers keep working. It returns the
+  // same TTLI result, explicitly flagged as not a published instrument.
   calculateLAS,
   DIAGNOSIS_GROUPS,
   REQUIRED_FIELDS: {
-    LAS: [
-      'diagnosis_group', 'age_years', 'bmi', 'functional_status',
-      'six_minute_walk_ft', 'continuous_o2_l_min', 'pco2_mmHg',
-      'on_mechanical_ventilation', 'creatinine_mg_dl', 'bilirubin_mg_dl',
-    ],
+    TTLI: TTLI_FIELDS,
+    LAS: TTLI_FIELDS,
   },
 };

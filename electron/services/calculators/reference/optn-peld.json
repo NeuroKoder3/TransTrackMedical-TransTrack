@@ -1,0 +1,37 @@
+{
+  "tableId": "optn-peld",
+  "sourceId": "SRC-OPTN-P9E",
+  "sourceTitle": "OPTN Policy 9.1.E — PELD Score, Table 9-1: PELD Score Calculation (PELD-Cr, effective 13 July 2023)",
+  "sourceUrl": "https://optn.transplant.hrsa.gov/media/3idbp5vq/policy-guid-change_impr-liv-alloc-meld-peld-sta-1a-sta-1b_liv.pdf",
+  "sourceRevision": "Policy notice 06/27/2022, in effect 2023-07-13",
+  "effectiveDate": "2023-07-13",
+  "reviewBy": "2026-12-31",
+  "status": "AWAITING_CONTROLLED_SOURCE",
+  "statusReason": "PELD is unavailable. OPTN replaced the PELD score on 13 July 2023 with PELD-Cr, whose per-term coefficients are published only in Table 9-1 of OPTN Policy 9.1.E — a table rendered as an image in the policy PDF and not reproducible from the surrounding narrative text. TransTrack will not compute a pediatric liver allocation reference score from unverified coefficients, and will not serve the superseded pre-2023 formula as if it were current. Populate `data` from the controlled OPTN policy document and set status to ACTIVE to enable PELD. See docs/compliance/CLINICAL_SOURCES.md (SRC-OPTN-P9E) and the residual-risk entry RR-01 in docs/compliance/RESIDUAL_RISK.md.",
+  "transcribedBy": null,
+  "approximation": false,
+  "approximationNote": null,
+  "dataSchema": {
+    "description": "Shape required when this table is populated from OPTN Policy 9.1.E Table 9-1.",
+    "coefficients": {
+      "lnBilirubin": "number — coefficient on loge(total bilirubin mg/dL), bilirubin floored at 1.0",
+      "lnInr": "number — coefficient on loge(INR), INR floored at 1.0",
+      "lnAlbumin": "number — coefficient on loge(albumin g/dL), albumin floored at 1.0 (signed; OPTN publishes it negative)",
+      "lnCreatinine": "number — coefficient on loge(creatinine mg/dL), creatinine capped at 1.3",
+      "ageTerm": "object — the age contribution as published (OPTN Policy 9.1.E describes a continuous age variable in PELD-Cr, replacing the legacy categorical Age<1 indicator)",
+      "growthFailureTerm": "object — the growth-failure contribution as published (continuous CDC height/weight Z-score, LMS method, 2000 CDC Growth Charts)"
+    },
+    "constants": {
+      "sumOffset": "number — the additive constant applied to the sum of terms before scaling (OPTN publishes 1.5287)",
+      "scale": "number — multiplier applied after sumOffset (OPTN publishes 10)",
+      "ageAdjustedMortalityFactor": "number — additive constant applied after scaling (OPTN publishes 2.82)"
+    },
+    "bounds": {
+      "creatinineMax": 1.3,
+      "labFloor": 1.0,
+      "scoreMin": 6,
+      "scoreMax": 40
+    }
+  },
+  "data": null
+}

@@ -36,13 +36,20 @@ const meldNaSchema = meldSchema.extend({
 const meld3Schema = meldSchema.extend({
   sodium_meq_l: lab,
   albumin_g_dl: lab,
-  sex: z.enum(['male', 'female', 'M', 'F']),
+  // Age selects between the adult (intercept 6, sex term) and adolescent
+  // 12-17 (intercept 7.33, no sex term) equations in OPTN Policy 9.1.D, so it
+  // is required. Sex is optional because the adolescent equation ignores it;
+  // the calculator reports it as missing when the adult equation applies.
+  age_years: nonNegative,
+  sex: z.enum(['male', 'female', 'M', 'F']).optional(),
 });
 
 const peldSchema = z.object({
   bilirubin_mg_dl: lab,
   inr: lab,
   albumin_g_dl: lab,
+  // PELD-Cr (OPTN Policy 9.1.E, effective 2023-07-13) takes creatinine.
+  creatinine_mg_dl: lab.optional(),
   age_years: nonNegative,
   growth_failure: z.boolean(),
 });
@@ -110,8 +117,14 @@ module.exports = async function calculatorRoutes(app) {
   app.post('/calculators/peld', perRouteRateLimit,
     async (req) => calc.calculatePELD(peldSchema.parse(req.body)));
 
+  // TTLI is a TransTrack internal triage index, not the OPTN Lung Allocation
+  // Score. The /calculators/las path is retained for existing clients; both
+  // paths return a result flagged isPublishedInstrument: false.
+  app.post('/calculators/ttli', perRouteRateLimit,
+    async (req) => calc.calculateTTLI(lasSchema.parse(req.body)));
+
   app.post('/calculators/las', perRouteRateLimit,
-    async (req) => calc.calculateLAS(lasSchema.parse(req.body)));
+    async (req) => calc.calculateTTLI(lasSchema.parse(req.body)));
 
   app.post('/calculators/kdpi', perRouteRateLimit,
     async (req) => calc.calculateKDPI(kdpiSchema.parse(req.body)));

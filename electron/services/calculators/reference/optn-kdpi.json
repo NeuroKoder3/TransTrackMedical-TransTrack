@@ -1,0 +1,25 @@
+{
+  "tableId": "optn-kdpi",
+  "sourceId": "SRC-OPTN-P8",
+  "sourceTitle": "OPTN Policy 8.5.A — Kidney Donor Profile Index (KDPI); KDRI-to-KDPI mapping table and median KDRI scaling factor",
+  "sourceUrl": "https://optn.transplant.hrsa.gov/data/allocation-calculators/kdpi-calculator/",
+  "sourceRevision": "2022 reference cohort (scaling factor and mapping as published for the 2022 donor cohort)",
+  "effectiveDate": "2023-03-01",
+  "reviewBy": "2026-12-31",
+  "status": "ACTIVE",
+  "transcribedBy": "TransTrack engineering, transcribed 2026-08-02",
+  "approximation": true,
+  "approximationNote": "The KDRI-to-KDPI map shipped here is a six-anchor piecewise-linear approximation of the OPTN cumulative-distribution table, not the full published percentile table. It is adequate for operational triage and is labelled as an approximation on every result. Decision-grade KDPI must be taken from the OPTN calculator. Replace `data.mapping` with the full published table to remove the approximation flag.",
+  "data": {
+    "kdriMedianScalingFactor": 1.32,
+    "mappingKind": "piecewise-linear-anchors",
+    "mapping": [
+      [0.50, 0],
+      [0.85, 25],
+      [1.00, 50],
+      [1.30, 75],
+      [1.65, 90],
+      [2.50, 100]
+    ]
+  }
+}
