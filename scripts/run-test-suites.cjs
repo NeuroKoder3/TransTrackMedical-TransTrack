@@ -97,6 +97,9 @@ const FUNCTIONAL_SUITES = [
   'auditExceptions.test.mjs',
   'migrationSafety.test.cjs',
   'supportBundle.test.cjs',
+  // The validation package is a deliverable; its cross-references are checked
+  // on the same cadence as the code they describe.
+  'complianceDocs.test.mjs',
 ];
 
 const GROUPS = {

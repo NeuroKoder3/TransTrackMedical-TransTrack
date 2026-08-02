@@ -5,6 +5,49 @@ All notable changes to TransTrack are documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Support bundle log tail no longer loses a race with log rotation.**
+  `readLogTail()` checked a path for existence and size and then opened it.
+  `logger.cjs` rotates those same files, so the log could be renamed in
+  between — costing a section of the diagnostics, or pairing one file's size
+  with another's bytes. It now opens once and measures the descriptor.
+- **`supportBundle.test.cjs` no longer requires an installed Electron
+  binary.** It loaded `logger.cjs`, which destructures `app` at module scope,
+  so the suite passed locally and failed in CI, where the binary download is
+  skipped. It now stubs `electron` the way the neighbouring suites do.
+
+### Changed — validation package
+
+- **Chart filing requirements renumbered TT-R137–R142 → TT-R150–R155.** The
+  original numbering collided with the pre-existing cross-cutting
+  requirements TT-R140–R142. Corrected before any site executes an OQ against
+  these ids.
+- **SDS extended** with §11 migration safety, §12 diagnostics and PHI
+  redaction, §13 the IOTA notification pipeline, §14 chart filing, §15
+  dependency vulnerability exceptions, and §16 renderer bridge integrity.
+  Sections are appended rather than interleaved so existing §-references stay
+  valid.
+- **OQ protocol extended** with 32 executable test cases covering the IOTA
+  pipeline, chart filing, migration safety, and support bundles — including
+  the adversarial one that matters: plant a patient name in free text, export
+  a default bundle, and search the file for it.
+- **Risk register extended** with R-020 to R-027 (missed notification
+  deadline, duplicate or misfiled chart document, bundle PHI leakage, notice
+  altered after filing, template missing a statutory element, stale
+  vulnerability exception, feature unwired in the packaged build). R-013's
+  mitigation was revised: transactional rollback does not cover a
+  multi-migration sequence that fails partway, which the pre-migration copy
+  now does.
+- **`scripts/check-compliance-docs.mjs`** — the cross-references between
+  these documents are now machine-verified and run in the standard test
+  suite. The requirement-id collision above survived review of both documents
+  because neither is wrong when read alone; this is the check that catches
+  that class of defect. It also found four requirements with no matrix row,
+  now traced.
+
 ## [1.2.1] - 2026-08-01
 
 Pilot-readiness release. Apart from the IOTA notification pipeline below,

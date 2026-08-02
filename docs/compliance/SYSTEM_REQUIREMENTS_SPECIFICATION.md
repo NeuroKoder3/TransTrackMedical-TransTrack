@@ -3,8 +3,16 @@
 | Document control | |
 |---|---|
 | Document ID | TT-SRS-001 |
-| Version | 1.0 |
+| Version | 1.1 |
 | Status | Baseline |
+| Applies to software version | 1.2.1 |
+
+## Revision history
+
+| Ver | Change | Rationale |
+|---|---|---|
+| 1.0 | Baseline. | Initial issue. |
+| 1.1 | Added §4.1 IOTA notification pipeline (TT-R129–R136), §4.2 chart filing (TT-R150–R155), migration safety (TT-R084–R087), and system health and support bundles (TT-R124–R128). Chart filing requirements renumbered from TT-R137–R142 to TT-R150–R155. | New functionality in software version 1.2.1. The renumbering removes a collision with the pre-existing cross-cutting requirements TT-R140–R142, which is corrected before any site executes an OQ against these IDs. |
 
 Each requirement has a unique ID `TT-Rxxx`, a category, a priority (M=Mandatory,
 S=Should, C=Could), and a verification method (R=Review, T=Test, I=Inspection,
@@ -70,6 +78,12 @@ D=Demonstration). All `M` requirements must trace to at least one OQ test case.
 | TT-R076 | M | The system shall identify notification records that are past their due date and not yet delivered. | T |
 | TT-R077 | M | Notice content shall be generated from a per-organisation template supplied by the transplant hospital. The system shall not apply vendor-authored notice language implicitly: no template shall be applied unless it has been explicitly configured for the organisation. | T |
 | TT-R078 | M | The system shall refuse to render a notice template that omits any of the five content elements required by CMS IOTA Model § 512.442(d) — inactive-since date, reason for the change, statement that organ offers cannot be received while inactive, reactivation instructions, and hospital contact information — or that references an unrecognised placeholder. The statement that organ offers cannot be received shall be system-supplied and shall not be alterable through template configuration. | T |
+| TT-R079 | M | Notice generation shall be deterministic — identical inputs shall yield identical content and content hash — and every derived value shall follow from the patient record rather than the generating environment: the 10-day and annual due dates from the transition's effective timestamp, and the required secondary recipient from the patient's ESRD status (dialysis facility for ESRD, referring provider otherwise), refusing generation when that status is unknown. | T |
+
+### 4.1 IOTA notification pipeline (OP-IOTA)
+
+| ID | Pri | Requirement | Verify |
+|---|---|---|---|
 | TT-R129 | M | Recording a waitlist status transition whose offer-eligibility impact blocks organ offers shall create the corresponding notification obligation in the same operation, so that the duty cannot be created without a tracked deadline. | T |
 | TT-R130 | M | Where notice configuration is incomplete, the system shall nevertheless record the status transition and report the notification obligation as unmet. The transition record establishes when the statutory clock started and shall never be discarded because a notice could not be produced. | T |
 | TT-R131 | M | The system shall reject a notice template at configuration time if it omits a required content element, so that the defect is surfaced when it can be corrected rather than when a patient's notice is due. | T |
@@ -78,13 +92,17 @@ D=Demonstration). All `M` requirements must trace to at least one OQ test case.
 | TT-R134 | M | Where a notice carries a duty to copy a dialysis facility or referring provider but no recipient is recorded for the patient, the system shall flag the obligation as incompletely addressed rather than presenting it as discharged. | T |
 | TT-R135 | M | The rendered notice body shall be retained and shall remain verifiable against its frozen content hash, so that a filed notice can be reproduced for the patient or a surveyor and any post-hoc alteration is detectable. | T |
 | TT-R136 | M | All IOTA notification channels shall be scoped to the authenticated user's organisation, restricted by role (configuration to administrators; obligation and delivery writes to administrators and coordinators; read access additionally to physicians and regulators), and every write shall be audit-logged. | T |
-| TT-R137 | M | The system shall record a copy of each notice in the patient's medical record via a FHIR R4 DocumentReference, and shall report a notice that has been delivered but not filed as a partially met obligation. | T |
-| TT-R138 | M | The system shall refuse to file a notice whose stored body does not match its recorded content hash. | T |
-| TT-R139 | M | The system shall support filing in dry-run mode, in which the DocumentReference is constructed and validated but not transmitted, so that readiness can be demonstrated before a site's Epic organisation has enabled document creation. | T |
-| TT-R140 | M | The system shall not transmit to an external endpoint unless a transport is explicitly supplied by the caller; no configuration value alone shall enable outbound clinical document transmission. | T |
-| TT-R141 | M | A failed chart filing shall be recorded with its cause and shall remain retryable; a notice already filed shall not be filed again. | T |
-| TT-R142 | M | The system shall support recording a filing performed by another route (manual or interface engine) so that a site without FHIR write access can evidence a discharged obligation. | T |
-| TT-R079 | M | Notice generation shall be deterministic — identical inputs shall yield identical content and content hash — and every derived value shall follow from the patient record rather than the generating environment: the 10-day and annual due dates from the transition's effective timestamp, and the required secondary recipient from the patient's ESRD status (dialysis facility for ESRD, referring provider otherwise), refusing generation when that status is unknown. | T |
+
+### 4.2 Chart filing (OP-CF)
+
+| ID | Pri | Requirement | Verify |
+|---|---|---|---|
+| TT-R150 | M | The system shall record a copy of each notice in the patient's medical record via a FHIR R4 DocumentReference, and shall report a notice that has been delivered but not filed as a partially met obligation. | T |
+| TT-R151 | M | The system shall refuse to file a notice whose stored body does not match its recorded content hash. | T |
+| TT-R152 | M | The system shall support filing in dry-run mode, in which the DocumentReference is constructed and validated but not transmitted, so that readiness can be demonstrated before a site's Epic organisation has enabled document creation. | T |
+| TT-R153 | M | The system shall not transmit to an external endpoint unless a transport is explicitly supplied by the caller; no configuration value alone shall enable outbound clinical document transmission. | T |
+| TT-R154 | M | A failed chart filing shall be recorded with its cause and shall remain retryable; a notice already filed shall not be filed again. | T |
+| TT-R155 | M | The system shall support recording a filing performed by another route (manual or interface engine) so that a site without FHIR write access can evidence a discharged obligation. | T |
 
 ## 5. Performance and reliability (PR)
 
@@ -128,3 +146,5 @@ D=Demonstration). All `M` requirements must trace to at least one OQ test case.
 | TT-R141 | M | The system shall not transmit PHI to any external host unless explicitly enabled in settings. | T,I |
 | TT-R142 | M | The system shall log a unique request_id for every IPC call and propagate it into audit and SIEM events. | T |
 | TT-R143 | M | The system shall provide an "About" dialog stating the regulatory design alignment (not certification). | I |
+| TT-R144 | M | The release gate shall fail on any dependency vulnerability that is not covered by a documented exception, whose severity exceeds what its exception assessed, or whose exception has passed its review date. An exception that no longer matches a real finding shall also fail the gate, so that the exception set cannot silently diverge from the dependency tree. | T |
+| TT-R145 | M | Every renderer call to an inter-process API shall be verified against the actual bridge surface exposed by the main process, and the release gate shall fail if the packaged application's version does not match the source version. | T |
