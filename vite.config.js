@@ -71,16 +71,24 @@ export default defineConfig({
       reporter: ['text', 'text-summary', 'lcov', 'json-summary'],
       reportsDirectory: './coverage',
       include: ['src/**/*.{js,jsx}'],
+      // Only two exclusions remain, and neither hides application logic:
+      //
+      //   • src/components/ui/** are unmodified shadcn/ui primitives (button,
+      //     dialog, input, …). They are vendored presentation wrappers around
+      //     Radix with no TransTrack behaviour in them; the components that use
+      //     them are measured, so a break in a primitive shows up there.
+      //   • src/main.jsx is the four-line ReactDOM.createRoot bootstrap. It has
+      //     no branches, and tests/buildEntryIntegrity.test.mjs pins the Vite
+      //     entry point it wires up.
+      //
+      // The five IPC-bound PHI pages (AccountSecurity, OrganOffers,
+      // PostTransplant, LivingDonors, Hl7Inbox) used to be excluded here on the
+      // grounds that the Playwright job covered them (finding H-8). It does not:
+      // the e2e specs never navigate to any of them. They are now measured and
+      // covered by tests/components/.
       exclude: [
         'src/components/ui/**',
         'src/main.jsx',
-        // IPC-bound integration pages — exercised by the Playwright e2e job
-        // rather than by JSDom component tests.
-        'src/pages/AccountSecurity.jsx',
-        'src/pages/OrganOffers.jsx',
-        'src/pages/PostTransplant.jsx',
-        'src/pages/LivingDonors.jsx',
-        'src/pages/Hl7Inbox.jsx',
       ],
       // Per-file coverage gates for PHI-touching screens. These five
       // components ingest patient, donor, lab, AHHQ, or barrier data
