@@ -20,6 +20,7 @@ requirements.
 | [`SOFTWARE_DESIGN_SPECIFICATION.md`](SOFTWARE_DESIGN_SPECIFICATION.md) | High-level design and architecture mapped to requirements. |
 | [`TRACEABILITY_MATRIX.md`](TRACEABILITY_MATRIX.md) | Requirement → design → test traceability. |
 | [`RISK_REGISTER.md`](RISK_REGISTER.md) | ISO 14971-style risk register and mitigations. |
+| `scripts/check-compliance-docs.mjs` | Automated consistency gate over the documents above: unique requirement ids, a matrix row per requirement, a verification artifact for every Mandatory requirement, and resolvable SDS, OQ and risk references. Runs in the standard test suite. |
 | [`VALIDATION_SUMMARY_REPORT_TEMPLATE.md`](VALIDATION_SUMMARY_REPORT_TEMPLATE.md) | Template for the deploying organization to sign after IQ/OQ/PQ are executed. |
 
 ### Qualification protocols (templates to execute on the customer site)
@@ -72,3 +73,11 @@ The presence and quality of these artifacts is itself a buying signal. A reviewe
 should expect to find: numbered requirements traced to tests, a risk register with
 mitigations, executable IQ/OQ/PQ templates, and explicit policy documents that map
 to HIPAA Administrative Safeguards. All of those exist here.
+
+Two things are worth checking, because they are where validation packages usually
+decay. First, the traceability is machine-verified rather than asserted:
+`scripts/check-compliance-docs.mjs` runs in the standard test suite and fails the
+build on a duplicate requirement id, an untraced requirement, or a dangling OQ or
+risk reference. Second, requirements that are *not* implemented are listed in the
+matrix with their status rather than omitted, so the gaps are visible on the page
+instead of having to be inferred from an absence.
