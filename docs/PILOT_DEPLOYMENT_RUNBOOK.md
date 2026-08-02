@@ -2,10 +2,17 @@
 
 This runbook walks a customer-facing deployment lead through standing
 up TransTrack at a single transplant centre for a 60-90 day pilot.
-It assumes the program decision-makers have already reviewed
-`docs/STRATEGIC_FIT.md`, the BAA template at
-`docs/compliance/policies/BAA_TEMPLATE.md`, and the HECVAT pre-fill at
-`docs/compliance/HECVAT_PREFILL.md`.
+It assumes the program decision-makers have already reviewed the
+validation status in
+[`compliance/VALIDATION_SUMMARY_REPORT.md`](compliance/VALIDATION_SUMMARY_REPORT.md),
+the accepted residual risks in
+[`compliance/RESIDUAL_RISK.md`](compliance/RESIDUAL_RISK.md), the BAA
+template at [`compliance/policies/BAA_TEMPLATE.md`](compliance/policies/BAA_TEMPLATE.md),
+and the HECVAT pre-fill at
+[`compliance/HECVAT_PREFILL.md`](compliance/HECVAT_PREFILL.md).
+
+For day-to-day operation once the pilot is live, see the operator runbook at
+[`../RUNBOOK.md`](../RUNBOOK.md).
 
 ---
 

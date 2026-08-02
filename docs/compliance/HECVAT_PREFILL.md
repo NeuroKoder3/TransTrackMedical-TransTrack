@@ -23,7 +23,7 @@
 | # | Question | Response |
 |---|----------|----------|
 | 1.01 | Vendor legal name | TransTrack Medical Software |
-| 1.02 | Years in business | New entity — see commercial-readiness narrative in `docs/STRATEGIC_FIT.md` |
+| 1.02 | Years in business | New entity. Corporate formation and vendor-domain provisioning are commercial prerequisites tracked outside this repository; see [`../legal/README.md`](../legal/README.md) and residual risk RR-15 in [`RESIDUAL_RISK.md`](RESIDUAL_RISK.md). |
 | 1.03 | Number of employees | Pre-revenue / founder-led at time of writing |
 | 1.04 | Primary product purpose | Operational risk intelligence to prevent inactivation of patients on transplant waiting lists. Decision *support* only — does not replace OPTN/UNet allocation, EHR, or clinical judgement. |
 | 1.05 | Is the product a medical device? | No. The product meets the FDA Clinical Decision Support exemption criteria at 21 U.S.C. § 360j(o)(1)(E). Detailed rationale: `docs/compliance/FDA_DEVICE_RATIONALE.md`. |
