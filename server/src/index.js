@@ -27,6 +27,7 @@ const pool = require('./db/pool');
 const { makeAuthHook } = require('./middleware/auth');
 const hl7Server = require('./hl7/server');
 const { HttpError } = require('./util/errors');
+const { makeOriginChecker } = require('./util/cors');
 
 function loadDotEnv() {
   const envPath = path.join(__dirname, '..', '.env');
@@ -55,15 +56,8 @@ async function build() {
 
   pool.init(config, app.log);
 
-  const allowedOrigins = (config.CORS_ALLOWED_ORIGINS || '')
-    .split(',').map(s => s.trim()).filter(Boolean);
   await app.register(cors, {
-    origin: allowedOrigins.length > 0
-      ? (origin, cb) => {
-          if (!origin || allowedOrigins.includes(origin)) cb(null, true);
-          else cb(new Error('CORS origin rejected'), false);
-        }
-      : config.NODE_ENV === 'development',
+    origin: makeOriginChecker(config),
     credentials: true,
   });
   await app.register(cookie, {
@@ -117,8 +111,12 @@ async function build() {
       return;
     }
     if (err.code === '23505') { // pg unique violation
+      // L-8: err.detail names the constraint and echoes the conflicting
+      // values, which leaks schema and other tenants' data. Log it, return
+      // nothing but the fact of the conflict.
+      req.log.warn({ constraint: err.constraint, detail: err.detail }, 'unique violation');
       reply.code(409).send({
-        error: { code: 'conflict', message: err.detail || 'Conflict' },
+        error: { code: 'conflict', message: 'Conflict' },
       });
       return;
     }
@@ -152,7 +150,7 @@ async function build() {
   app.register(require('./routes/hl7'));
   app.register(require('./routes/fhir'), { config });
   app.register(require('./routes/smart'), { config });
-  app.register(require('./routes/cds'));
+  app.register(require('./routes/cds'), { config });
   app.register(require('./routes/integrations'), { config });
   app.register(require('./routes/billing'), { config });
 
@@ -192,17 +190,39 @@ async function start() {
   const subscriptionTimer = subs.startDispatcher(config.SUBSCRIPTION_DISPATCH_MS || 5000);
 
   // --- Graceful shutdown ---
-  const shutdown = async (signal) => {
-    app.log.info({ signal }, 'shutdown signal received');
+  let shuttingDown = false;
+  const shutdown = async (reason, exitCode = 0) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    app.log.info({ reason }, 'shutting down');
     if (subscriptionTimer) clearInterval(subscriptionTimer);
     if (mllpServer) {
       await new Promise((resolve) => mllpServer.close(resolve));
     }
-    await app.close();
-    process.exit(0);
+    try {
+      await app.close();
+    } catch (err) {
+      app.log.error({ err }, 'error while closing the server');
+    }
+    process.exit(exitCode);
   };
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT', () => shutdown('SIGINT'));
+
+  // M-16: without these, an unhandled rejection or a throw from a callback
+  // either killed the process with no log line and no cleanup, or (for
+  // rejections) left it running in an undefined state. Both are now logged
+  // and drain the server before exiting non-zero so the supervisor restarts
+  // a known-good process.
+  process.on('unhandledRejection', (reason) => {
+    app.log.fatal({ err: reason instanceof Error ? reason : new Error(String(reason)) },
+      'unhandled promise rejection');
+    shutdown('unhandledRejection', 1).catch(() => process.exit(1));
+  });
+  process.on('uncaughtException', (err) => {
+    app.log.fatal({ err }, 'uncaught exception');
+    shutdown('uncaughtException', 1).catch(() => process.exit(1));
+  });
 }
 
 if (require.main === module) {

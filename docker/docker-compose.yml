@@ -3,14 +3,39 @@ version: "3.9"
 # -----------------------------------------------------------------------------
 # TransTrack development & integration-test stack.
 #
+# THIS STACK IS FOR LOCAL DEVELOPMENT AND INTEGRATION TESTS ONLY.
+# It runs NODE_ENV=development, terminates no TLS, and performs no peer
+# authentication on the HL7 MLLP port. Do not deploy it, or anything derived
+# from it, to an environment that will hold real PHI.
+#
+# Security expectations encoded below
+#   * No usable secret is baked into this file. POSTGRES_PASSWORD and
+#     JWT_SECRET must be supplied by the environment (docker/.env or the
+#     shell) or compose refuses to start. Generate them with:
+#         export POSTGRES_PASSWORD="$(openssl rand -hex 16)"
+#         export JWT_SECRET="$(openssl rand -base64 48)"
+#     The server rejects known placeholder secrets outright in production.
+#   * Every published port is bound to 127.0.0.1. In particular the MLLP
+#     listener on 2575 is plaintext and unauthenticated: exposing it on
+#     0.0.0.0 would let anything that can reach the host inject HL7 v2
+#     messages, so it stays loopback-only here. A deployment that must accept
+#     MLLP from another host has to set HL7_MLLP_TLS_CERT_FILE /
+#     HL7_MLLP_TLS_KEY_FILE / HL7_MLLP_TLS_CA_FILE and keep
+#     HL7_MLLP_TLS_REQUIRE_CLIENT_CERT=true (mutual TLS).
+#   * HL7_MLLP_HOST is 0.0.0.0 *inside the container* only so the mirth
+#     service on the compose network can reach it; the published socket is
+#     still loopback-bound on the host.
+#
 # Services
 #   postgres : PostgreSQL 16 with the transtrack database pre-created.
-#   api      : The TransTrack API + MLLP/TLS listener.
+#   api      : The TransTrack API + MLLP listener.
 #   mirth    : NextGen Mirth Connect interface engine (community).
 #              Used to verify HL7 v2 connectivity end-to-end.  Channels in
 #              ./mirth/channels/ are auto-imported on first start.
 #
 # Quick start
+#   $ export POSTGRES_PASSWORD="$(openssl rand -hex 16)"
+#   $ export JWT_SECRET="$(openssl rand -base64 48)"
 #   $ docker compose up -d postgres
 #   $ npm --prefix ../server install
 #   $ npm --prefix ../server run migrate
@@ -24,10 +49,10 @@ services:
     container_name: transtrack-postgres
     environment:
       POSTGRES_USER: transtrack
-      POSTGRES_PASSWORD: transtrack
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set — generate one with: openssl rand -hex 16}
       POSTGRES_DB: transtrack
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -42,20 +67,25 @@ services:
       dockerfile: server/Dockerfile
     container_name: transtrack-api
     environment:
-      NODE_ENV: development
-      DATABASE_URL: postgres://transtrack:transtrack@postgres:5432/transtrack
-      JWT_SECRET: dev-jwt-secret-change-me-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      NODE_ENV: ${NODE_ENV:-development}
+      DATABASE_URL: postgres://transtrack:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/transtrack
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set — generate one with: openssl rand -base64 48}
       LOG_LEVEL: info
       HL7_MLLP_ENABLED: "true"
+      # Container-internal bind so the mirth service can connect over the
+      # compose network. The host-published socket below is loopback-only.
+      HL7_MLLP_HOST: 0.0.0.0
       HL7_MLLP_PORT: "2575"
       HL7_DEFAULT_ORG_ID: ${HL7_DEFAULT_ORG_ID}
+      # Plaintext MLLP. Acceptable only because this listener is not reachable
+      # from outside the host; a real deployment sets these to PEM paths.
       HL7_MLLP_TLS_CERT_FILE: ""
       HL7_MLLP_TLS_KEY_FILE: ""
       MFA_REQUIRED_FOR_ROLES: ""
       FHIR_BASE_URL: http://localhost:8080/fhir
     ports:
-      - "8080:8080"
-      - "2575:2575"
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:2575:2575"
     depends_on:
       postgres:
         condition: service_healthy
@@ -66,8 +96,8 @@ services:
     environment:
       DATABASE: derby
     ports:
-      - "8443:8443"   # Mirth Connect Administrator (HTTPS)
-      - "9876:6661"   # Mirth's outbound MLLP (when used as a relay)
+      - "127.0.0.1:8443:8443"   # Mirth Connect Administrator (HTTPS)
+      - "127.0.0.1:9876:6661"   # Mirth's outbound MLLP (when used as a relay)
     volumes:
       - ./mirth/channels:/opt/mirth-connect/appdata/import
       - ./mirth/inbox:/opt/mirth-connect/inbox
