@@ -1,0 +1,122 @@
+# TransTrack — code ownership
+#
+# Every line assigns mandatory reviewers to a path. GitHub applies the LAST
+# matching pattern only, so the ordering below is significant: broad defaults
+# first, security-critical paths last.
+#
+# The team handles below are PLACEHOLDERS. Create the teams in the GitHub
+# organization and adjust the handles before enabling "Require review from Code
+# Owners" in branch protection, otherwise the rule silently matches nothing.
+#
+# Required teams:
+#   @transtrack/engineering        general engineering review
+#   @transtrack/platform-security  Electron/IPC boundary, crypto, audit, secrets
+#   @transtrack/clinical-informatics  clinical calculators and reference data
+#   @transtrack/interoperability   FHIR, SMART, HL7 v2, EHR integrations
+#   @transtrack/quality-assurance  validation package and controlled documents
+#   @transtrack/release-engineering  build, signing, release and CI workflows
+#
+# Rationale, and the branch-protection settings that make this file
+# load-bearing, are documented in CONTRIBUTING.md.
+
+# ---------------------------------------------------------------------------
+# Default
+# ---------------------------------------------------------------------------
+*                                       @transtrack/engineering
+
+# ---------------------------------------------------------------------------
+# Desktop application — security boundary
+# ---------------------------------------------------------------------------
+# The IPC surface is the trust boundary between the renderer and the main
+# process. Every handler is an authorization decision.
+/electron/ipc/                          @transtrack/platform-security @transtrack/engineering
+/electron/preload.cjs                   @transtrack/platform-security
+/electron/main.cjs                      @transtrack/platform-security @transtrack/engineering
+
+# Schema, migrations and encryption. A migration defect is not recoverable
+# from a running site without a restore.
+/electron/database/                     @transtrack/platform-security @transtrack/engineering
+
+# Authentication, SSO and session handling.
+/electron/auth/                         @transtrack/platform-security
+
+# Audit trail, encryption verification, secure delete, key handling, logging
+# redaction, SIEM forwarding. Changes here can silently weaken a Part 11 or
+# HIPAA control without failing a test.
+/electron/services/audit*.cjs           @transtrack/platform-security
+/electron/services/electronicSignature.cjs  @transtrack/platform-security @transtrack/quality-assurance
+/electron/services/encryptionKeyManagement.cjs  @transtrack/platform-security
+/electron/services/secretEncryption.cjs @transtrack/platform-security
+/electron/services/secureDelete.cjs     @transtrack/platform-security
+/electron/services/logger.cjs           @transtrack/platform-security
+/electron/services/siemForwarder.cjs    @transtrack/platform-security
+/electron/services/integrityMonitor.cjs @transtrack/platform-security
+/electron/services/accessControl.cjs    @transtrack/platform-security
+
+# ---------------------------------------------------------------------------
+# Clinical calculation
+# ---------------------------------------------------------------------------
+# Calculator constants are traceable to controlled sources. A change to a
+# coefficient is a change to a clinical output and requires clinical review,
+# not only engineering review.
+/electron/services/calculators/         @transtrack/clinical-informatics @transtrack/engineering
+/electron/services/calculators/reference/  @transtrack/clinical-informatics @transtrack/quality-assurance
+/electron/functions/validators.cjs      @transtrack/clinical-informatics @transtrack/platform-security
+/docs/compliance/CLINICAL_SOURCES.md    @transtrack/clinical-informatics @transtrack/quality-assurance
+
+# ---------------------------------------------------------------------------
+# Server tier — authorization and tenant isolation
+# ---------------------------------------------------------------------------
+# FHIR storage enforces SMART patient-compartment isolation and org scoping.
+# This is where cross-tenant PHI disclosure would originate.
+/server/src/fhir/                       @transtrack/platform-security @transtrack/interoperability
+/server/src/smart/                      @transtrack/platform-security @transtrack/interoperability
+/server/src/auth/                       @transtrack/platform-security
+/server/src/db/migrations/              @transtrack/platform-security @transtrack/engineering
+/server/src/integrations/               @transtrack/interoperability
+/server/src/hl7/                        @transtrack/interoperability @transtrack/platform-security
+
+# ---------------------------------------------------------------------------
+# Controlled documents
+# ---------------------------------------------------------------------------
+# The validation package is a controlled document set under
+# docs/compliance/policies/CHANGE_MANAGEMENT_SOP.md. Changes require QA review
+# regardless of who authored them.
+/docs/compliance/                       @transtrack/quality-assurance
+/docs/compliance/executed/              @transtrack/quality-assurance
+/docs/compliance/RESIDUAL_RISK.md       @transtrack/quality-assurance @transtrack/platform-security
+/docs/compliance/FMEA.md                @transtrack/quality-assurance @transtrack/platform-security
+/SECURITY.md                            @transtrack/platform-security @transtrack/quality-assurance
+/RUNBOOK.md                             @transtrack/quality-assurance
+
+# ---------------------------------------------------------------------------
+# Build, release and CI
+# ---------------------------------------------------------------------------
+# A change to the build or to a CI gate can remove a control without touching
+# any control code.
+/.github/workflows/                     @transtrack/release-engineering @transtrack/platform-security
+/.github/CODEOWNERS                     @transtrack/platform-security @transtrack/quality-assurance
+/electron-builder.enterprise.json       @transtrack/release-engineering @transtrack/platform-security
+/scripts/                               @transtrack/release-engineering @transtrack/engineering
+/scripts/check-compliance-docs.mjs      @transtrack/quality-assurance
+/scripts/sign-win.cjs                   @transtrack/release-engineering @transtrack/platform-security
+/scripts/notarize.cjs                   @transtrack/release-engineering @transtrack/platform-security
+/package.json                           @transtrack/release-engineering @transtrack/engineering
+/package-lock.json                      @transtrack/release-engineering
+/security/vulnerability-exceptions.json @transtrack/platform-security @transtrack/quality-assurance
+
+# ---------------------------------------------------------------------------
+# Security-control tests
+# ---------------------------------------------------------------------------
+# These suites are the executable form of the OQ. Weakening one is equivalent
+# to weakening the control it verifies.
+/tests/audit*.test.cjs                  @transtrack/platform-security
+/tests/phi*.test.cjs                    @transtrack/platform-security
+/tests/encryptionVerification.test.cjs  @transtrack/platform-security
+/tests/secureDelete.test.cjs            @transtrack/platform-security
+/tests/electronHardening.test.cjs       @transtrack/platform-security
+/tests/rbacMatrix.test.cjs              @transtrack/platform-security
+/tests/cross-org-access.test.cjs        @transtrack/platform-security
+/tests/calculatorReferenceVectors.test.cjs  @transtrack/clinical-informatics @transtrack/quality-assurance
+/tests/complianceDocs.test.mjs          @transtrack/quality-assurance
+/server/test/unit/patientCompartment.test.mjs  @transtrack/platform-security
