@@ -359,21 +359,23 @@ A receiving site's only means of confirming that an installer came from the
 vendor and arrived unmodified is its code signature. Two controls protect that
 property.
 
-**Signing modes.** `scripts/sign-win.cjs` supports Azure Artifact Signing
-(`azure`), a cloud HSM holding a CA-issued certificate (`ssl_esigner`), a
-PKCS#12 file (`pfx`), and an explicit unsigned developer build (`skip`). The
-first two keep the private key off the build machine entirely: the signature is
-produced by the service, and the build host holds only a credential authorising
-it to request one. This is the property that matters for a vendor of regulated
-software, because it bounds what an attacker gains by compromising a build
-machine — they can request signatures while their access lasts, but they cannot
-take the key.
+**Signing modes.** `scripts/sign-win.cjs` supports a cloud HSM holding a
+CA-issued certificate (`ssl_esigner`), a PKCS#12 file (`pfx`), and an explicit
+unsigned developer build (`skip`). Production releases use `ssl_esigner`, which
+keeps the private key off the build machine entirely: the signature is produced
+by the certificate authority's HSM, and the build host holds only a credential
+authorising it to request one, while the artifact itself never leaves the host —
+only its hash is transmitted. This bounds what an attacker gains by compromising
+a build machine: they can request signatures while their access lasts, but they
+cannot take the key. The signer always applies a trusted timestamp, so a
+signature remains verifiable after the certificate expires.
 
-Azure Artifact Signing certificates are valid for three days, so the signature
-outlives the certificate only by virtue of a trusted timestamp. The signer
-always timestamps, and the timestamp authority is not left to a default that
-could drift, because an untimestamped artifact verifies for three days and then
-begins failing at receiving sites with nothing about it having changed.
+**Post-condition verification.** A signing tool's exit status reports whether
+the tool ran, not whether the artifact changed; CodeSignTool has been observed
+to report a failure and exit 0. The signer therefore writes signed output to a
+temporary directory, confirms a file was produced, moves it over the original,
+and re-reads the artifact to confirm a certificate table is present before
+allowing the build to continue.
 
 **Fail closed on a designated release.** `scripts/sign-win.cjs` and
 `scripts/notarize.cjs` both distinguish a developer build, where a missing

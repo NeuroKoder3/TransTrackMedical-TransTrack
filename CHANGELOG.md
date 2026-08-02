@@ -7,26 +7,49 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Added — Azure Artifact Signing
+### Fixed — SSL.com eSigner signing (`ssl_esigner` mode)
 
-- **`TRANSTRACK_SIGN_MODE=azure`.** Microsoft's cloud signing service, roughly
-  $10/month, with no certificate to buy, no hardware token, and no annual
-  re-issue. `signtool` loads `Azure.CodeSigning.Dlib.dll`, which authenticates
-  to Azure and has the signature produced server-side, so no private key is
-  ever on the build machine. The release workflow detects the mode from the
-  secrets present and installs the client tools on the runner.
-- Two behaviours worth knowing rather than discovering. Artifact Signing
-  certificates are valid for **three days**, so the signer always timestamps
-  against Microsoft's authority — an untimestamped installer verifies for three
-  days and then starts failing on customer machines with nothing about the file
-  having changed. And `DefaultAzureCredential`'s chain includes a browser
-  prompt that would hang a headless build, so the signer narrows the chain to
-  the service principal when one is present, and otherwise excludes only the
-  browser so federated identity still works.
-- The two common Azure failures both surface from `signtool` as a generic
-  `SignerSign()` error. A 403 now says it is probably a region mismatch or a
-  missing signer role; a dlib load failure now says it is probably a missing
-  .NET 8 runtime or an x64/x86 mismatch.
+The eSigner path had never been exercised against a real certificate. Audited
+against SSL.com's CodeSignTool command guide, it would have failed on the first
+attempt for three independent reasons, each of which presented as something
+other than what it was.
+
+- **The TOTP secret was being consumed as if it were a code generator seed the
+  signer owned.** `-totp_secret` takes the secret from the SSL.com dashboard;
+  CodeSignTool derives the six-digit code itself. The signer was deriving a code
+  and passing *that*, so CodeSignTool tried to derive an OTP from six digits.
+  The failure would have read `Error: invalid otp` and looked like a broken 2FA
+  enrolment. The now-unused RFC 6238 helpers have been removed rather than left
+  as an attractive nuisance.
+- **`-overwrite` is not a CodeSignTool option**, so every invocation would have
+  been rejected for an unknown argument. The signer now writes to a temporary
+  output directory and moves the result over the original, which also avoids
+  the interactive overwrite confirmation that would hang a CI build outright.
+- **Arguments were passed as `-name value`.** SSL.com documents `-name=value`
+  throughout; the space-separated form is not documented to work.
+
+Two further problems in the same path:
+
+- **A password containing shell metacharacters was silently corrupted.**
+  CodeSignTool is a batch file, so its arguments are re-parsed by `cmd.exe` —
+  and SSL.com's own documentation uses `P!@^^ssword12` as its example password.
+  Values are now quoted, and the two characters that cannot survive quoting
+  (`"` and `%`) are refused up front with an explanation, rather than sending a
+  different password than the one configured and surfacing as an authentication
+  failure. The PFX path no longer uses a shell at all, so Node quotes for it.
+- **A zero exit status was treated as proof of signing.** CodeSignTool has been
+  observed to print a failure and exit 0. Every mode now re-reads the artifact
+  afterwards and fails the build unless it actually carries an embedded
+  signature.
+
+### Removed — Azure Artifact Signing
+
+- **`TRANSTRACK_SIGN_MODE=azure` and its workflow, gate and documentation
+  support have been removed.** Artifact Signing requires an organisation
+  verifiable for three years or more, which TransTrack Medical Software does not
+  meet, so the mode could not have been used. Keeping it would have left the
+  validation package describing a signing path that cannot be demonstrated on
+  request. Documented in `docs/CODE_SIGNING.md` as worth revisiting at renewal.
 
 ### Fixed — release signing
 
@@ -71,9 +94,9 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **EV is no longer recommended by default.** The guidance to buy EV rested on
   it granting immediate SmartScreen reputation; Microsoft removed that
   behaviour, and OV now gives the same first-download experience. The docs now
-  recommend Azure Artifact Signing (~$10/month) or an OV certificate with cloud
-  HSM signing, and note that since June 2023 all code signing keys — OV
-  included — must live in hardware, so a copyable `.pfx` is no longer issuable.
+  recommend an OV certificate with cloud HSM signing, and note that since June
+  2023 all code signing keys — OV included — must live in hardware, so a
+  copyable `.pfx` is no longer issuable.
 
 ### Fixed
 

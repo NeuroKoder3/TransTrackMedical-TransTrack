@@ -73,9 +73,9 @@ not an engineering one.
 
 | Option | Indicative cost | Notes |
 |---|---|---|
-| **Azure Artifact Signing** (formerly Trusted Signing) | ~$10/month | Microsoft's recommended route for non-Store distribution. No hardware token, no annual re-issue, CI-native. Organisations in US/Canada/EU/UK; individuals US/Canada only. Implemented as `azure` mode. |
-| **OV certificate** (Sectigo, DigiCert, Certum, SSL.com) | ~$150–300/yr | Same SmartScreen behaviour as EV. Works with `pfx` mode, or with a cloud HSM via `ssl_esigner`. |
-| **EV certificate** | ~$400–700/yr | Choose only if a customer's procurement process demands it. |
+| **OV certificate + SSL.com eSigner** | ~$150–300/yr | **This is what TransTrack uses.** Same SmartScreen behaviour as EV, and the cloud HSM makes it work unattended in CI. Implemented as `ssl_esigner` mode. |
+| **EV certificate** | ~$400–700/yr | Choose only if a customer's procurement process demands it. Same `ssl_esigner` mode — only the certificate differs. |
+| Azure Artifact Signing | ~$10/month | Cheaper, but requires an organisation verifiable for **three years or more**. Not available to TransTrack Medical Software yet; revisit when the company clears that bar. |
 | Apple Developer Program (Organization) | $99/yr | Required for notarization; no alternative. |
 | D-U-N-S registration | Free | Needed for Apple organisation enrolment and for EV vetting. |
 
@@ -97,119 +97,60 @@ Two constraints worth knowing before you commit:
 ### Modes supported
 
 `scripts/sign-win.cjs` is the electron-builder hook that signs every
-Windows artifact. It supports four modes selected by the
+Windows artifact. It supports three modes selected by the
 `TRANSTRACK_SIGN_MODE` environment variable:
 
 | Mode           | Use case                                                         | Required env vars |
 |----------------|------------------------------------------------------------------|-------------------|
-| `azure`        | Recommended. Azure Artifact Signing — no certificate to buy.     | `AZURE_SIGNING_ENDPOINT`, `AZURE_SIGNING_ACCOUNT`, `AZURE_SIGNING_PROFILE`, `AZURE_SIGNING_DLIB`, plus `AZURE_TENANT_ID` / `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET` |
-| `ssl_esigner`  | A traditional CA certificate held in SSL.com's cloud HSM.        | `ESIGNER_USERNAME`, `ESIGNER_PASSWORD`, `ESIGNER_CREDENTIAL_ID`, `ESIGNER_TOTP_SECRET`, `ESIGNER_TOOL_PATH` |
+| `ssl_esigner`  | **The production route.** An OV (or EV) certificate held in SSL.com's cloud HSM. | `ESIGNER_USERNAME`, `ESIGNER_PASSWORD`, `ESIGNER_CREDENTIAL_ID`, `ESIGNER_TOTP_SECRET`, `ESIGNER_TOOL_PATH` |
 | `pfx`          | A `.pfx` you already hold; internal and test builds.             | `CSC_LINK` (path **or** base64 content), `CSC_KEY_PASSWORD` |
 | `skip`         | Unsigned development builds. Never use for release.              | (none) |
 
 If `TRANSTRACK_SIGN_MODE` is **unset**, the script auto-detects in the
-order `ssl_esigner` → `azure` → `pfx` → `skip`. When a mode is named explicitly
+order `ssl_esigner` → `pfx` → `skip`. When a mode is named explicitly
 but its variables are incomplete, the signer fails immediately and names the
 missing variable rather than falling through to `skip`.
 
-### Azure Artifact Signing (recommended)
+Whichever mode runs, the signer re-reads the artifact afterwards and fails the
+build unless it now carries an embedded signature. A zero exit status is not
+accepted as evidence on its own — CodeSignTool in particular has been observed
+to report a failure and exit 0, and the point of the release gate is that no
+unsigned artifact reaches a customer.
 
-Microsoft signs on your behalf against a certificate you never possess. There
-is no `.pfx`, no USB token, no yearly re-issue, and no private key on the build
-machine — `signtool` loads a library that authenticates to Azure and the
-signature is produced server-side.
+### OV certificate via SSL.com eSigner (the production route)
 
-Eligibility is the one thing to check before committing: your organisation must
-have been verifiable for **three years or more**. Newer organisations, and
-individuals, can enrol but the certificate subject shows an unverified identity.
+Since the June 2023 CA/Browser Forum rules, the private key for a code signing
+certificate has to live in certified hardware. That leaves two shapes: a USB
+token somebody physically plugs into the build machine, or a cloud HSM. Only the
+second works in unattended CI, so this is the route TransTrack uses.
 
-**1. Set up the Azure resources.** In the portal, create an Artifact Signing
-account, complete identity validation, and create a certificate profile of type
-*Public Trust*. Note the region — the endpoint URI must match it, and a mismatch
-surfaces as an opaque 403 during signing.
+Only a *hash* of the artifact is sent to SSL.com. The installer itself never
+leaves the build machine, which is the answer to the question a hospital
+security reviewer will eventually ask.
 
-| Region | Endpoint |
-|---|---|
-| East US | `https://eus.codesigning.azure.net` |
-| West US 2 | `https://wus2.codesigning.azure.net` |
-| West US 3 | `https://wus3.codesigning.azure.net` |
-| West Central US | `https://wcus.codesigning.azure.net` |
-| North Europe | `https://neu.codesigning.azure.net` |
-| West Europe | `https://weu.codesigning.azure.net` |
+**1. Buy the certificate.** An **SSL.com Code Signing Certificate**, OV unless a
+customer's procurement demands EV, with **eSigner Cloud Signing** included.
+DigiCert KeyLocker and Certum SimplySign are the same shape if you prefer them,
+but the tooling below is SSL.com-specific.
 
-(Full list in [Microsoft's integration guide](https://learn.microsoft.com/en-us/azure/artifact-signing/how-to-signing-integrations).)
+**2. Complete vetting.** For OV this is organisation verification: SSL.com
+confirms the legal entity exists and that you are authorised to request on its
+behalf. Expect to supply incorporation documents and to take a verification
+phone call at a number they establish independently. Budget a few business days.
 
-**2. Create a service principal for CI.** Register an application in Entra ID,
-create a client secret, and grant it the **Trusted Signing Certificate Profile
-Signer** role on the Artifact Signing account. Without that role assignment
-signing fails with a 403 that looks identical to a wrong endpoint.
+**3. Enrol the certificate in eSigner** and set up TOTP two-factor
+authentication, following SSL.com's
+[automation guide](https://www.ssl.com/how-to/automate-esigner-ev-code-signing/).
+When it shows you the QR code, also reveal and copy the **secret string** behind
+it — that is what CI needs, and it is shown only at setup time.
 
-**3. Install the client tools on the signing machine.** One MSI supplies the
-dlib, the .NET 8 runtime, and a new-enough `signtool`:
+**4. Download CodeSignTool** from the SSL.com dashboard. It ships as a `.bat`
+(Windows) or `.sh` (Linux/macOS) wrapper around a Java jar. The Windows download
+bundles a Java runtime; the Linux/macOS one requires Java to be installed.
 
-```powershell
-winget install -e --id Microsoft.Azure.ArtifactSigningClientTools
-```
-
-The release workflow does this automatically when `azure` mode is selected.
-
-**4. Set the environment:**
-
-```text
-TRANSTRACK_SIGN_MODE=azure
-AZURE_SIGNING_ENDPOINT=https://eus.codesigning.azure.net
-AZURE_SIGNING_ACCOUNT=<Artifact Signing account name>
-AZURE_SIGNING_PROFILE=<certificate profile name>
-AZURE_SIGNING_DLIB=C:\Program Files\Microsoft\Azure Artifact Signing Client Tools\bin\x64\Azure.CodeSigning.Dlib.dll
-AZURE_TENANT_ID=<Entra tenant id>
-AZURE_CLIENT_ID=<app registration client id>
-AZURE_CLIENT_SECRET=<client secret>
-```
-
-Two things worth understanding about how this mode behaves.
-
-**Timestamping is not optional.** Artifact Signing certificates are valid for
-**three days**. A signature survives past that only because a timestamp proves
-it was made while the certificate was live. The signer always timestamps against
-Microsoft's authority (`http://timestamp.acs.microsoft.com`). Override
-`SIGN_TIMESTAMP_URL` only if you know why; an installer signed without a
-timestamp verifies for three days and then begins failing on customer machines
-with nothing about the file having changed.
-
-**The credential chain is narrowed deliberately.** `DefaultAzureCredential`
-tries a series of credential sources in order, one of which opens a browser. On
-a headless build that hangs rather than fails. When a service principal is
-present in the environment the signer excludes every other source; with
-federated identity (GitHub OIDC, managed identity) it keeps the chain but still
-excludes the browser.
-
-If signing fails, the two common causes are both reported as a generic
-`SignerSign()` error by `signtool`, so the signer adds a hint: a **403** is
-almost always a region mismatch or a missing role assignment, and a **dlib load
-failure** is almost always a missing .NET 8 runtime or an x64/x86 mismatch
-between `signtool` and the dlib. Note that the 20348 Windows SDK does not work
-with this dlib; you need 10.0.2261.755 or newer.
-
-### Cloud HSM via SSL.com eSigner
-
-A cloud HSM is preferable to a physical USB token because it works in
-unattended CI without anyone present to insert the token. Since the 2023
-hardware-key requirement this is effectively the only workable CI option for a
-traditional CA certificate.
-
-Procurement steps:
-
-1. Purchase an **SSL.com Code Signing Certificate** — OV unless a customer
-   requires EV — with **eSigner Cloud Signing** (or DigiCert KeyLocker /
-   Certum SimplySign — same shape).
-2. Complete the SSL.com vetting process (D-U-N-S number required for EV).
-3. Download **CodeSignTool** from the SSL.com dashboard. The tool ships
-   as a `.bat` (Windows) or `.sh` (Linux/macOS) wrapper around a Java jar.
-4. From the SSL.com dashboard, copy:
-   - your account username and password,
-   - the **Credential ID** (a UUID identifying the certificate slot),
-   - the **TOTP secret** (a base32 string — this is the seed, not the
-     6-digit code).
+**5. Collect four values** from the dashboard: account username, account
+password, the **Credential ID** (a UUID naming the certificate slot), and the
+**TOTP secret** from step 3.
 
 CI environment variables (e.g., GitHub Actions):
 
@@ -218,7 +159,7 @@ TRANSTRACK_SIGN_MODE=ssl_esigner
 ESIGNER_USERNAME=<your account username>
 ESIGNER_PASSWORD=<your account password>
 ESIGNER_CREDENTIAL_ID=<credential UUID>
-ESIGNER_TOTP_SECRET=<base32 TOTP seed>
+ESIGNER_TOTP_SECRET=<the TOTP secret string, not a 6-digit code>
 ESIGNER_TOOL_PATH=C:\CodeSignTool\CodeSignTool.bat
 ESIGNER_TOOL_URL=<direct download URL for the CodeSignTool zip>
 ```
@@ -229,8 +170,28 @@ current one from your dashboard and store it as a repository secret. If the
 mode is active and the URL is missing, the workflow fails rather than building
 an unsigned installer.
 
-The signer derives a one-time TOTP code at sign time using the seed
-(RFC 6238, SHA1, 30-second step, 6 digits).
+Three details that cause most first-attempt failures:
+
+**`ESIGNER_TOTP_SECRET` is the secret, not a code.** CodeSignTool computes the
+six-digit code itself from the secret, which is why it can run unattended. The
+secret is a long base64-looking string
+(`ii5gVvZ9G+WkxB3FauAnoL/z14AXSMistcE0jZMWWNSjQDlql2kt2D6Z+l8=`), not the six
+digits your authenticator app shows. Storing the digits produces `Error: invalid
+otp`, which reads like a 2FA problem and is not.
+
+**The account password cannot contain `"` or `%`.** CodeSignTool is a batch
+file, so its arguments are re-parsed by the Windows command interpreter. Most
+special characters survive being quoted; those two cannot — a double quote ends
+the quoted run and a percent sign triggers variable expansion even inside
+quotes. The signer refuses such a password up front with a clear message rather
+than sending a corrupted one and letting it look like an authentication failure.
+Every other special character is fine.
+
+**A zero exit status is not proof.** CodeSignTool sometimes prints a failure and
+exits 0. The signer therefore signs into a temporary directory, confirms a
+signed file was actually produced, moves it over the original, and then re-reads
+the artifact to confirm it carries a signature. Any of those failing fails the
+build.
 
 ### Alternate: PFX file
 
@@ -364,24 +325,8 @@ accepted) and `notepad.exe` (catalog-signed, must be rejected).
 
 `.github/workflows/release.yml` builds and signs on tag push. A `preflight` job
 picks the mode from whichever secrets are present, using the same precedence as
-the signer's own auto-detect, and fails the release if none are. For Azure the
+the signer's own auto-detect, and fails the release if none are. For Windows the
 repository secrets are:
-
-```text
-AZURE_SIGNING_ENDPOINT
-AZURE_SIGNING_ACCOUNT
-AZURE_SIGNING_PROFILE
-AZURE_TENANT_ID
-AZURE_CLIENT_ID
-AZURE_CLIENT_SECRET
-```
-
-The workflow installs the client tools on the runner and sets
-`AZURE_SIGNING_DLIB` to the default install path; override it with an
-`AZURE_SIGNING_DLIB` repository *variable* if you use a self-hosted runner that
-provisions it elsewhere.
-
-For eSigner instead:
 
 ```yaml
 env:
@@ -415,14 +360,20 @@ un-notarized artifact fails there even if the hooks somehow did not.
 
 ## What to do first
 
-Use **Azure Artifact Signing**. It is roughly $10/month, needs no certificate
-purchase, no hardware token, and no annual re-issue, and it is implemented as
-`azure` mode. The setup is four steps and is written out above; the only thing
-to verify before committing is the three-year organisation age requirement.
+Buy an **SSL.com OV Code Signing Certificate with eSigner Cloud Signing**,
+roughly $150–300/year. Skip EV unless a customer asks for it in writing — it
+costs two to three times as much and, since Microsoft stopped granting it
+automatic SmartScreen trust, buys nothing technical. If procurement later
+insists on EV, the certificate changes and the pipeline does not: same
+`ssl_esigner` mode, same four secrets.
 
-Fall back to an **OV certificate with cloud HSM signing** (`ssl_esigner`) if you
-are not eligible for Artifact Signing. Skip EV unless a customer asks for it in
-writing.
+The long pole is organisation vetting, not anything in this repository. Start
+that before you need the release.
+
+Azure Artifact Signing would be cheaper at about $10/month, but it requires an
+organisation verifiable for three years or more, which TransTrack Medical
+Software does not yet meet. Worth revisiting at renewal once the company clears
+that bar.
 
 macOS has no equivalent decision: Apple Developer Program Organization
 enrolment at $99/year, and the D-U-N-S number takes about two weeks, so start

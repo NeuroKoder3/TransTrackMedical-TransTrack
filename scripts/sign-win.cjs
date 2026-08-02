@@ -6,35 +6,29 @@
  * script supports three signing modes, selected by environment variable, in
  * priority order:
  *
- *   MODE 1  TRANSTRACK_SIGN_MODE=ssl_esigner   (recommended for CI/CD)
- *           SSL.com eSigner CodeSignTool — cloud HSM, no physical USB token,
- *           CI-friendly. Required env vars:
+ *   MODE 1  TRANSTRACK_SIGN_MODE=ssl_esigner   (the production route)
+ *           SSL.com eSigner CodeSignTool — the certificate's private key lives
+ *           in SSL.com's cloud HSM, so there is no USB token to plug in and no
+ *           key on the build machine. Only a hash of the artifact is sent for
+ *           signing; the artifact itself never leaves. Required env vars:
  *             ESIGNER_USERNAME      - SSL.com account username
  *             ESIGNER_PASSWORD      - SSL.com account password
  *             ESIGNER_CREDENTIAL_ID - certificate slot id from SSL.com dashboard
- *             ESIGNER_TOTP_SECRET   - the BASE32 TOTP secret (NOT the 6-digit code)
+ *             ESIGNER_TOTP_SECRET   - the TOTP *secret* from the dashboard, not
+ *                                     a 6-digit code: CodeSignTool derives the
+ *                                     code itself and the secret is base64
  *             ESIGNER_TOOL_PATH     - absolute path to CodeSignTool.bat (or .sh on linux/mac)
  *
- *   MODE 2  TRANSTRACK_SIGN_MODE=azure       (cheapest for a new vendor)
- *           Azure Artifact Signing, formerly Trusted Signing. Microsoft's cloud
- *           signing service: no certificate to buy, no hardware token, no
- *           annual re-issue. signtool loads Azure.CodeSigning.Dlib.dll, which
- *           authenticates to Azure and performs the signature server-side, so
- *           no private key is ever on the build machine. Required env vars:
- *             AZURE_SIGNING_ENDPOINT - region URI, e.g. https://eus.codesigning.azure.net
- *             AZURE_SIGNING_ACCOUNT  - Artifact Signing account name
- *             AZURE_SIGNING_PROFILE  - certificate profile name
- *             AZURE_SIGNING_DLIB     - path to x64\\Azure.CodeSigning.Dlib.dll
- *           plus credentials for DefaultAzureCredential, normally:
- *             AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET
- *
- *   MODE 3  TRANSTRACK_SIGN_MODE=pfx
- *           A PKCS#12 certificate held as a file. Required env vars:
+ *   MODE 2  TRANSTRACK_SIGN_MODE=pfx
+ *           A PKCS#12 certificate held as a file. Since June 2023 no CA can
+ *           issue a code signing key that is exportable to a file, so this mode
+ *           is for a certificate already held, internal builds, and test
+ *           signing — not for a new purchase. Required env vars:
  *             CSC_LINK             - path to the .pfx, OR its base64 contents
  *                                    (CI secrets carry the bytes, not a path)
  *             CSC_KEY_PASSWORD     - PFX export password
  *
- *   MODE 4  TRANSTRACK_SIGN_MODE=skip
+ *   MODE 3  TRANSTRACK_SIGN_MODE=skip
  *           No-op. Used for unsigned local development builds. The artifact is
  *           still produced but arrives unverifiable on any other machine, so
  *           Windows warns the user before it will run. Never use for release —
@@ -43,8 +37,12 @@
  *
  * Auto-detect: when TRANSTRACK_SIGN_MODE is unset, the script picks the
  * first mode for which all required env vars are present, in the order
- * ssl_esigner -> azure -> pfx -> skip. A mode named *explicitly* whose
- * variables are incomplete is an error, not a reason to fall through to skip.
+ * ssl_esigner -> pfx -> skip. A mode named *explicitly* whose variables are
+ * incomplete is an error, not a reason to fall through to skip.
+ *
+ * Whichever mode runs, the artifact is re-read afterwards and must actually
+ * carry an embedded signature. A zero exit status is not sufficient evidence:
+ * CodeSignTool in particular has been observed to print a failure and exit 0.
  *
  * The script accepts the file-to-sign path as the first argv after node /
  * the script itself, OR as `process.env.SIGNTOOL_PATH` (electron-builder
@@ -74,14 +72,6 @@ function _autoDetectMode() {
     process.env.ESIGNER_TOOL_PATH
   ) {
     return 'ssl_esigner';
-  }
-  if (
-    process.env.AZURE_SIGNING_ENDPOINT &&
-    process.env.AZURE_SIGNING_ACCOUNT &&
-    process.env.AZURE_SIGNING_PROFILE &&
-    process.env.AZURE_SIGNING_DLIB
-  ) {
-    return 'azure';
   }
   if (process.env.CSC_LINK && process.env.CSC_KEY_PASSWORD) {
     return 'pfx';
@@ -119,12 +109,6 @@ const MODE_REQUIREMENTS = Object.freeze({
     'ESIGNER_CREDENTIAL_ID',
     'ESIGNER_TOTP_SECRET',
     'ESIGNER_TOOL_PATH',
-  ],
-  azure: [
-    'AZURE_SIGNING_ENDPOINT',
-    'AZURE_SIGNING_ACCOUNT',
-    'AZURE_SIGNING_PROFILE',
-    'AZURE_SIGNING_DLIB',
   ],
   pfx: ['CSC_LINK', 'CSC_KEY_PASSWORD'],
   skip: [],
@@ -204,171 +188,123 @@ function _resolveFilePath(input) {
   return null;
 }
 
+/**
+ * Quote a value so cmd.exe passes it through unchanged.
+ *
+ * CodeSignTool ships as a .bat, and Node cannot spawn a batch file without a
+ * shell, so the arguments are re-parsed by cmd.exe. Inside double quotes cmd
+ * stops treating `&`, `|`, `<`, `>`, `^` and `(` `)` as syntax, which matters
+ * because SSL.com passwords routinely contain them — their own documentation
+ * uses `P!@^^ssword12` as the example.
+ *
+ * Two characters cannot be rescued this way, so they are refused rather than
+ * silently mangled into a wrong password and an "invalid credentials" error
+ * that looks like an account problem:
+ *   `"` terminates the quoting, and cmd has no in-quote escape for it.
+ *   `%` triggers environment expansion even inside quotes.
+ */
+function _quoteForCmd(name, value) {
+  const text = String(value);
+  const offender = /["%]/.exec(text);
+  if (offender) {
+    throw new Error(
+      `${name} contains a ${offender[0] === '"' ? 'double quote' : 'percent sign'}, ` +
+      `which cannot be passed through the Windows command interpreter to ` +
+      `CodeSignTool without corrupting it. Change the value in your SSL.com ` +
+      `account to avoid " and %, then update the secret.`,
+    );
+  }
+  return `"${text}"`;
+}
+
+/** Keep secrets out of anything we echo from the tool. */
+function _redact(text, secrets) {
+  let out = String(text);
+  for (const s of secrets) {
+    if (s) out = out.split(s).join('***');
+  }
+  return out;
+}
+
 function _runSslEsigner(filePath) {
   const tool = process.env.ESIGNER_TOOL_PATH;
   if (!fs.existsSync(tool)) {
-    throw new Error(`ESIGNER_TOOL_PATH not found: ${tool}`);
-  }
-  // Use TOTP secret to derive a one-time code at sign time
-  const totp = _generateTotp(process.env.ESIGNER_TOTP_SECRET);
-  const args = [
-    'sign',
-    '-username',      process.env.ESIGNER_USERNAME,
-    '-password',      process.env.ESIGNER_PASSWORD,
-    '-credential_id', process.env.ESIGNER_CREDENTIAL_ID,
-    '-totp_secret',   totp,
-    '-input_file_path',  filePath,
-    '-output_dir_path', path.dirname(filePath),
-    '-overwrite',
-  ];
-  _log(`Signing via SSL.com eSigner: ${path.basename(filePath)}`);
-  const result = child_process.spawnSync(tool, args, {
-    stdio: ['ignore', 'pipe', 'pipe'],
-    shell: true,
-  });
-  if (result.status !== 0) {
-    process.stderr.write(result.stderr?.toString() || '');
-    throw new Error(`SSL.com CodeSignTool failed (exit ${result.status})`);
-  }
-  process.stdout.write(result.stdout?.toString() || '');
-  _log(`Signed (eSigner): ${path.basename(filePath)}`);
-}
-
-/**
- * Timestamp authority for Azure Artifact Signing.
- *
- * Not optional and not interchangeable. Artifact Signing certificates are valid
- * for three days; the signature outlives them only because a timestamp proves
- * it was made while the certificate was live. Sign without one and the
- * installer verifies for three days and then starts failing on customer
- * machines — with nothing about the artifact having changed.
- */
-const AZURE_TIMESTAMP_URL = 'http://timestamp.acs.microsoft.com';
-
-/**
- * Build the metadata document the Azure dlib reads.
- *
- * Exposed for tests: the contents decide which Azure account signs, and an
- * endpoint that does not match the account's region fails as a 403 from inside
- * signtool, which is a poor place to learn about a typo.
- *
- * @param {NodeJS.ProcessEnv} env
- */
-function _buildAzureMetadata(env) {
-  const metadata = {
-    Endpoint: env.AZURE_SIGNING_ENDPOINT,
-    CodeSigningAccountName: env.AZURE_SIGNING_ACCOUNT,
-    CertificateProfileName: env.AZURE_SIGNING_PROFILE,
-  };
-
-  // Correlates a signature with the build that produced it in the Azure audit
-  // log. GitHub Actions supplies a run id; anything stable will do.
-  const correlation = env.AZURE_SIGNING_CORRELATION_ID || env.GITHUB_RUN_ID;
-  if (correlation) metadata.CorrelationId = String(correlation);
-
-  // DefaultAzureCredential tries a chain of credential sources. On a build
-  // machine most of them cannot succeed, and one of them — the interactive
-  // browser — can hang a headless run waiting for a login nobody is there to
-  // perform. With a service principal in the environment there is exactly one
-  // credential worth attempting, so say so.
-  if (env.AZURE_TENANT_ID && env.AZURE_CLIENT_ID && env.AZURE_CLIENT_SECRET) {
-    metadata.ExcludeCredentials = [
-      'ManagedIdentityCredential',
-      'WorkloadIdentityCredential',
-      'SharedTokenCacheCredential',
-      'VisualStudioCredential',
-      'VisualStudioCodeCredential',
-      'AzureCliCredential',
-      'AzurePowerShellCredential',
-      'AzureDeveloperCliCredential',
-      'InteractiveBrowserCredential',
-    ];
-  } else {
-    // Federated identity (GitHub OIDC, managed identity) is legitimate and
-    // needs the rest of the chain — but never the browser.
-    metadata.ExcludeCredentials = ['InteractiveBrowserCredential'];
-  }
-
-  return metadata;
-}
-
-function _runAzureSign(filePath) {
-  const dlib = process.env.AZURE_SIGNING_DLIB;
-  if (!fs.existsSync(dlib)) {
     throw new Error(
-      `AZURE_SIGNING_DLIB not found: ${dlib}. Install the Artifact Signing client ` +
-      `tools (winget install -e --id Microsoft.Azure.ArtifactSigningClientTools) ` +
-      `and point this at x64\\Azure.CodeSigning.Dlib.dll.`,
+      `ESIGNER_TOOL_PATH not found: ${tool}. Download CodeSignTool from your ` +
+      `SSL.com dashboard and point this at CodeSignTool.bat.`,
     );
   }
 
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-azsign-'));
-  const metadataFile = path.join(dir, 'metadata.json');
-  try {
-    fs.writeFileSync(metadataFile, JSON.stringify(_buildAzureMetadata(process.env), null, 2));
+  const secrets = [process.env.ESIGNER_PASSWORD, process.env.ESIGNER_TOTP_SECRET];
 
+  // Sign into a sibling directory rather than over the input. CodeSignTool
+  // prompts for confirmation before overwriting its input file, and a prompt in
+  // CI is a hung build, not a failed one. A sibling keeps the (large) installer
+  // on the same volume so the move back is a rename rather than a copy.
+  const outDir = fs.mkdtempSync(path.join(path.dirname(filePath), '.tt-signed-'));
+  try {
     const args = [
       'sign',
-      '/v',
-      '/fd',   'SHA256',
-      '/tr',   process.env.SIGN_TIMESTAMP_URL || AZURE_TIMESTAMP_URL,
-      '/td',   'SHA256',
-      '/dlib', dlib,
-      '/dmdf', metadataFile,
-      filePath,
+      // CodeSignTool is picocli-based and every SSL.com example uses the
+      // name=value form; the space-separated form is not documented to work.
+      `-username=${_quoteForCmd('ESIGNER_USERNAME', process.env.ESIGNER_USERNAME)}`,
+      `-password=${_quoteForCmd('ESIGNER_PASSWORD', process.env.ESIGNER_PASSWORD)}`,
+      `-credential_id=${_quoteForCmd('ESIGNER_CREDENTIAL_ID', process.env.ESIGNER_CREDENTIAL_ID)}`,
+      // The *secret*, not a generated code. CodeSignTool derives the six-digit
+      // OTP itself; handing it a code makes it try to derive an OTP from that
+      // code, which fails as "invalid otp" and looks like a 2FA problem.
+      `-totp_secret=${_quoteForCmd('ESIGNER_TOTP_SECRET', process.env.ESIGNER_TOTP_SECRET)}`,
+      `-input_file_path="${filePath}"`,
+      `-output_dir_path="${outDir}"`,
     ];
 
-    _log(`Signing via Azure Artifact Signing: ${path.basename(filePath)}`);
-    const result = child_process.spawnSync(
-      process.env.SIGNTOOL_EXE || 'signtool',
-      args,
-      { stdio: ['ignore', 'pipe', 'pipe'], shell: true },
-    );
+    _log(`Signing via SSL.com eSigner: ${path.basename(filePath)}`);
+    const result = child_process.spawnSync(tool, args, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      shell: true,
+      // CodeSignTool resolves conf/ and logs/ relative to its own directory.
+      cwd: path.dirname(tool),
+    });
+
+    const stdout = _redact(result.stdout?.toString() || '', secrets);
+    const stderr = _redact(result.stderr?.toString() || '', secrets);
+    process.stdout.write(stdout);
 
     if (result.status !== 0) {
-      const stderr = result.stderr?.toString() || '';
-      const stdout = result.stdout?.toString() || '';
       process.stderr.write(stderr);
-      process.stdout.write(stdout);
+      throw new Error(`SSL.com CodeSignTool failed (exit ${result.status})`);
+    }
+
+    // CodeSignTool has been observed to report a failure and still exit 0, so
+    // its exit status alone is not evidence that anything was signed.
+    const signed = path.join(outDir, path.basename(filePath));
+    if (!fs.existsSync(signed)) {
+      process.stderr.write(stderr);
       throw new Error(
-        `signtool with the Azure dlib failed (exit ${result.status}). ` +
-        _azureHint(`${stdout}\n${stderr}`),
+        `CodeSignTool exited 0 but produced no signed file in ${outDir}. ` +
+        `The output above is the tool's own report of what went wrong; ` +
+        `"invalid otp" here usually means ESIGNER_TOTP_SECRET holds a 6-digit ` +
+        `code rather than the secret from the dashboard.`,
       );
     }
 
-    process.stdout.write(result.stdout?.toString() || '');
-    _log(`Signed (Azure): ${path.basename(filePath)}`);
+    _replaceFile(signed, filePath);
+    _log(`Signed (eSigner): ${path.basename(filePath)}`);
   } finally {
-    try { fs.rmSync(dir, { recursive: true, force: true }); }
-    catch (e) { _warn(`could not remove temporary metadata directory: ${e.message}`); }
+    try { fs.rmSync(outDir, { recursive: true, force: true }); }
+    catch (e) { _warn(`could not remove temporary signing directory: ${e.message}`); }
   }
 }
 
-/**
- * Translate the two Azure failures that are common and opaque.
- *
- * Both surface from inside signtool as a generic SignerSign() error, which
- * tells the operator nothing about which of the several things they configured
- * is wrong.
- */
-function _azureHint(output) {
-  if (/403|forbidden/i.test(output)) {
-    return (
-      'A 403 here is usually one of two things: AZURE_SIGNING_ENDPOINT names a ' +
-      'different region than the one holding the account and certificate ' +
-      'profile, or the service principal lacks the "Trusted Signing Certificate ' +
-      'Profile Signer" role on the account.'
-    );
+/** Move `from` onto `to`, falling back to a copy across volumes. */
+function _replaceFile(from, to) {
+  try {
+    fs.rmSync(to, { force: true });
+    fs.renameSync(from, to);
+  } catch (e) {
+    if (e.code !== 'EXDEV') throw e;
+    fs.copyFileSync(from, to);
   }
-  if (/dlib|0x80070002|not found|could not load/i.test(output)) {
-    return (
-      'Check that the .NET 8 runtime is installed and that signtool and the dlib ' +
-      'are the same architecture — an x64 signtool cannot load the x86 dlib. ' +
-      'The Windows SDK must be 10.0.2261.755 or newer; the 20348 SDK does not ' +
-      'work with this dlib.'
-    );
-  }
-  return 'See docs/CODE_SIGNING.md for the Azure Artifact Signing setup.';
 }
 
 function _runPfxSign(filePath) {
@@ -387,14 +323,22 @@ function _runPfxSign(filePath) {
       filePath,
     ];
     _log(`Signing via signtool/PFX: ${path.basename(filePath)}`);
+    // No shell here. signtool is an .exe, so Node can quote the arguments
+    // itself — which it does correctly, unlike cmd.exe, for a PFX password
+    // containing the special characters export passwords tend to contain.
     const result = child_process.spawnSync('signtool', args, {
       stdio: ['ignore', 'pipe', 'pipe'],
-      shell: true,
     });
+    if (result.error) {
+      throw new Error(
+        `could not run signtool: ${result.error.message}. It ships with the ` +
+        `Windows 10/11 SDK and must be on PATH.`,
+      );
+    }
     if (result.status !== 0) {
       // signtool echoes the /p value in some diagnostics; the password is the
       // one thing that must not reach a build log.
-      const stderr = (result.stderr?.toString() || '').split(pfxPwd).join('***');
+      const stderr = _redact(result.stderr?.toString() || '', [pfxPwd]);
       process.stderr.write(stderr);
       throw new Error(`signtool failed (exit ${result.status})`);
     }
@@ -405,39 +349,44 @@ function _runPfxSign(filePath) {
   }
 }
 
-function _generateTotp(base32Secret) {
-  // Standard RFC 6238 TOTP: SHA1, 30s step, 6 digits.
-  const crypto = require('crypto');
-  const key = _base32Decode(base32Secret.replace(/\s+/g, '').toUpperCase());
-  const counter = Math.floor(Date.now() / 30000);
-  const buf = Buffer.alloc(8);
-  buf.writeUInt32BE(0, 0);
-  buf.writeUInt32BE(counter, 4);
-  const hmac = crypto.createHmac('sha1', key).update(buf).digest();
-  const offset = hmac[hmac.length - 1] & 0x0f;
-  const binary =
-    ((hmac[offset]     & 0x7f) << 24) |
-    ((hmac[offset + 1] & 0xff) << 16) |
-    ((hmac[offset + 2] & 0xff) << 8)  |
-    ( hmac[offset + 3] & 0xff);
-  return String(binary % 1000000).padStart(6, '0');
-}
-
-function _base32Decode(input) {
-  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
-  let bits = 0, value = 0;
-  const out = [];
-  for (const ch of input.replace(/=+$/, '')) {
-    const idx = alphabet.indexOf(ch);
-    if (idx < 0) throw new Error(`Invalid base32 char: ${ch}`);
-    value = (value << 5) | idx;
-    bits += 5;
-    if (bits >= 8) {
-      bits -= 8;
-      out.push((value >>> bits) & 0xff);
-    }
+/**
+ * Confirm the artifact actually gained a signature.
+ *
+ * A signing tool's exit status reports whether the tool ran, not whether the
+ * file on disk changed. CodeSignTool has been observed to print a failure and
+ * exit 0, and the whole point of the release gate is that no unsigned artifact
+ * reaches a customer — so the file is re-read rather than trusted.
+ *
+ * This is a post-condition, not a validity check: it establishes that a
+ * certificate table is present. Trust evaluation happens in the release gate,
+ * which has the artifact and the tooling to ask the operating system.
+ */
+async function _assertSignatureEmbedded(filePath) {
+  let readEmbeddedSignature;
+  try {
+    ({ readEmbeddedSignature } = await import('./verify-artifact-signature.mjs'));
+  } catch (e) {
+    _warn(`could not load the signature verifier, skipping post-sign check: ${e.message}`);
+    return;
   }
-  return Buffer.from(out);
+
+  let result;
+  try {
+    result = readEmbeddedSignature(filePath);
+  } catch (e) {
+    // electron-builder signs PE files, but if it ever hands us something else
+    // the inability to parse it is not evidence that signing failed.
+    _warn(`post-sign check skipped for ${path.basename(filePath)}: ${e.message}`);
+    return;
+  }
+
+  if (!result.present) {
+    throw new Error(
+      `${path.basename(filePath)} still carries no embedded signature after the ` +
+      `signing tool reported success. Treat the tool's output above as the real ` +
+      `error; the exit status was misleading.`,
+    );
+  }
 }
 
 async function sign(configuration) {
@@ -469,17 +418,18 @@ async function sign(configuration) {
     _warn(
       `TRANSTRACK_SIGN_MODE=skip (auto-detected: no signing credentials in environment). ` +
       `Artifact "${path.basename(filePath)}" will be UNSIGNED. ` +
-      `Set AZURE_SIGNING_*, ESIGNER_* or CSC_LINK/CSC_KEY_PASSWORD before producing a release.`
+      `Set ESIGNER_* or CSC_LINK/CSC_KEY_PASSWORD before producing a release.`
     );
     return;
   }
 
   _assertModeConfigured(MODE);
 
-  if (MODE === 'ssl_esigner') return _runSslEsigner(filePath);
-  if (MODE === 'azure')       return _runAzureSign(filePath);
-  if (MODE === 'pfx')         return _runPfxSign(filePath);
-  throw new Error(`Unknown TRANSTRACK_SIGN_MODE: ${MODE}`);
+  if (MODE === 'ssl_esigner') _runSslEsigner(filePath);
+  else if (MODE === 'pfx')    _runPfxSign(filePath);
+  else throw new Error(`Unknown TRANSTRACK_SIGN_MODE: ${MODE}`);
+
+  await _assertSignatureEmbedded(filePath);
 }
 
 module.exports = sign;
@@ -488,15 +438,13 @@ module.exports.default = sign;
 // production code.
 module.exports.__testing__ = {
   _autoDetectMode,
-  _generateTotp,
-  _base32Decode,
   _resolveFilePath,
   _signingRequired,
   _assertModeConfigured,
   _materializeCertificate,
-  _buildAzureMetadata,
-  _runAzureSign,
-  _azureHint,
-  AZURE_TIMESTAMP_URL,
+  _quoteForCmd,
+  _redact,
+  _replaceFile,
+  _assertSignatureEmbedded,
   MODE_REQUIREMENTS,
 };

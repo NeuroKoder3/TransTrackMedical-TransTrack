@@ -315,21 +315,25 @@ await runStep('Code-signed Windows installer present (release/enterprise)', sign
 
 await runStep('Windows code-signing configured (any supported mode)', signingSeverity, () => {
   const mode = (process.env.TRANSTRACK_SIGN_MODE || '').toLowerCase();
+
+  // An explicitly named mode that the signer does not implement must fail here
+  // rather than fall through to auto-detect. Otherwise a stale
+  // TRANSTRACK_SIGN_MODE=azure left over from the removed Artifact Signing
+  // support would report a pass for a mode nobody asked for.
+  const KNOWN = ['ssl_esigner', 'pfx', 'skip'];
+  if (mode && !KNOWN.includes(mode)) {
+    throw new Error(
+      `TRANSTRACK_SIGN_MODE=${mode} is not a supported mode (${KNOWN.join(', ')})`,
+    );
+  }
+  if (mode === 'skip') throw new Error('TRANSTRACK_SIGN_MODE=skip produces an unsigned artifact');
+
   if (mode === 'ssl_esigner') {
     for (const k of ['ESIGNER_USERNAME', 'ESIGNER_PASSWORD', 'ESIGNER_CREDENTIAL_ID',
                      'ESIGNER_TOTP_SECRET', 'ESIGNER_TOOL_PATH']) {
       if (!process.env[k]) throw new Error(`${k} not set`);
     }
     return 'ssl_esigner mode';
-  }
-  if (mode === 'azure') {
-    // AZURE_SIGNING_DLIB is deliberately not required here. It is a path on the
-    // Windows machine that did the signing, and this gate runs on Linux, where
-    // demanding it would fail a correctly configured release.
-    for (const k of ['AZURE_SIGNING_ENDPOINT', 'AZURE_SIGNING_ACCOUNT', 'AZURE_SIGNING_PROFILE']) {
-      if (!process.env[k]) throw new Error(`${k} not set`);
-    }
-    return 'azure mode (Artifact Signing)';
   }
   if (mode === 'pfx' || (process.env.CSC_LINK && process.env.CSC_KEY_PASSWORD)) {
     if (!process.env.CSC_LINK || !process.env.CSC_KEY_PASSWORD) {
@@ -341,10 +345,6 @@ await runStep('Windows code-signing configured (any supported mode)', signingSev
       process.env.ESIGNER_CREDENTIAL_ID && process.env.ESIGNER_TOTP_SECRET &&
       process.env.ESIGNER_TOOL_PATH) {
     return 'ssl_esigner mode (auto-detected)';
-  }
-  if (process.env.AZURE_SIGNING_ENDPOINT && process.env.AZURE_SIGNING_ACCOUNT &&
-      process.env.AZURE_SIGNING_PROFILE) {
-    return 'azure mode (auto-detected)';
   }
   throw new Error('no code-signing credentials in environment');
 });
