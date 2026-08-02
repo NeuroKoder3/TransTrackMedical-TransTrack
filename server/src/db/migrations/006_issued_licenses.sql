@@ -9,9 +9,13 @@
 --
 -- The full signed wire-format string is stored in `wire_format` so we
 -- never have to re-derive it from raw payload + private key during
--- re-send. This row IS sensitive (it contains a valid license) and is
--- protected by row-level security plus the database-at-rest encryption
--- that already protects the rest of the schema.
+-- re-send. This row IS sensitive (it contains a valid license).
+--
+-- NOTE: this file originally claimed the table was "protected by row-level
+-- security". It was not — no RLS DDL was ever written here, and migrations
+-- are forward-only. Row-level security is enabled on this table by
+-- 010_tenant_rls_hardening.sql; at this point in the migration history the
+-- table has no RLS at all.
 
 CREATE TABLE IF NOT EXISTS issued_licenses (
   license_id              TEXT PRIMARY KEY,

@@ -3,6 +3,7 @@
 const { z } = require('zod');
 const { withTransaction } = require('../db/pool');
 const { requireRole } = require('../middleware/auth');
+const { errors } = require('../util/errors');
 const ingestMod = require('../hl7/ingest');
 const { parseMessage, buildAck } = require('../hl7/messageParser');
 const messageTypes = require('../hl7/messageTypes');
@@ -141,9 +142,14 @@ module.exports = async function hl7Routes(app) {
     async (req) => {
       const id = z.string().uuid().parse(req.params.id);
       return withTransaction(req.auth, async (client) => {
+        // The org predicate is redundant with the row-level-security policy
+        // added in migration 010 and is kept as defence in depth: a dead
+        // letter quarantined for another tenant must never be replayable
+        // into this one, even if RLS is misconfigured on a given database.
         const r = await client.query(
-          `SELECT * FROM hl7_dead_letters WHERE id = $1 AND replay_status = 'pending'`,
-          [id]
+          `SELECT * FROM hl7_dead_letters
+            WHERE id = $1 AND org_id = $2 AND replay_status = 'pending'`,
+          [id, req.auth.orgId]
         );
         const dl = r.rows[0];
         if (!dl) return { replayed: false, reason: 'not found or already processed' };
@@ -165,8 +171,8 @@ module.exports = async function hl7Routes(app) {
         await client.query(
           `UPDATE hl7_dead_letters
              SET replay_status = 'replayed', replayed_at = now(), replayed_message_id = $2
-           WHERE id = $1`,
-          [id, result.hl7MessageId]
+           WHERE id = $1 AND org_id = $3`,
+          [id, result.hl7MessageId, req.auth.orgId]
         );
         return { replayed: true, result };
       });
@@ -178,8 +184,9 @@ module.exports = async function hl7Routes(app) {
       const id = z.string().uuid().parse(req.params.id);
       return withTransaction(req.auth, async (client) => {
         const r = await client.query(
-          `UPDATE hl7_dead_letters SET replay_status = 'discarded' WHERE id = $1 AND replay_status = 'pending' RETURNING id`,
-          [id]
+          `UPDATE hl7_dead_letters SET replay_status = 'discarded'
+            WHERE id = $1 AND org_id = $2 AND replay_status = 'pending' RETURNING id`,
+          [id, req.auth.orgId]
         );
         return { discarded: r.rows.length > 0 };
       });
@@ -193,7 +200,8 @@ module.exports = async function hl7Routes(app) {
       return withTransaction(req.auth, async (client) => {
         const r = await client.query(
           `SELECT id, sending_app, org_id, description, is_active, created_at
-           FROM hl7_sending_apps ORDER BY sending_app`
+           FROM hl7_sending_apps WHERE org_id = $1 ORDER BY sending_app`,
+          [req.auth.orgId]
         );
         return r.rows;
       });
@@ -204,14 +212,20 @@ module.exports = async function hl7Routes(app) {
     async (req) => {
       const body = z.object({
         sending_app: z.string().min(1),
-        org_id: z.string().uuid(),
+        // Accepted for backwards compatibility only; a mapping is always
+        // created for the caller's own organisation. Naming another org is
+        // refused rather than silently rewritten.
+        org_id: z.string().uuid().optional(),
         description: z.string().optional(),
       }).parse(req.body);
+      if (body.org_id && body.org_id !== req.auth.orgId) {
+        throw errors.forbidden('A sending-app mapping may only be created for your own organisation');
+      }
       return withTransaction(req.auth, async (client) => {
         const r = await client.query(
           `INSERT INTO hl7_sending_apps (sending_app, org_id, description)
            VALUES ($1, $2, $3) RETURNING *`,
-          [body.sending_app, body.org_id, body.description || null]
+          [body.sending_app, req.auth.orgId, body.description || null]
         );
         return r.rows[0];
       });
@@ -223,7 +237,8 @@ module.exports = async function hl7Routes(app) {
       const id = z.string().uuid().parse(req.params.id);
       return withTransaction(req.auth, async (client) => {
         const r = await client.query(
-          `DELETE FROM hl7_sending_apps WHERE id = $1 RETURNING id`, [id]
+          `DELETE FROM hl7_sending_apps WHERE id = $1 AND org_id = $2 RETURNING id`,
+          [id, req.auth.orgId]
         );
         return { deleted: r.rows.length > 0 };
       });
