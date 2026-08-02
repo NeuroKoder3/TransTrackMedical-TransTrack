@@ -130,11 +130,18 @@ All metrics are computed locally from the encrypted SQLite database. No cloud, A
 
 ### Transplant Clinical Calculators (reference values)
 
-* **MELD**, **MELD-Na**, **MELD 3.0**, **PELD** — liver/pediatric scoring
-* **LAS** (legacy lung allocation reference)
-* **KDPI / KDRI** — deceased-donor kidney donor profile index with percentile mapping
-* **EPTS** — estimated post-transplant survival (Rao 2009) with percentile mapping
-* All calculators are reference-only; allocation decisions occur in OPTN/UNet
+Every calculator constant is traceable to a controlled source recorded in
+[`docs/compliance/CLINICAL_SOURCES.md`](docs/compliance/CLINICAL_SOURCES.md).
+All values are reference-only: allocation and listing decisions are made in
+OPTN/UNet, not here.
+
+| Calculator | Status | Notes |
+|---|---|---|
+| **MELD**, **MELD-Na**, **MELD 3.0** | Available | Coefficients traced to the published equations; verified against reference vectors in `tests/calculatorReferenceVectors.test.cjs`. |
+| **PELD** | **Unavailable — fails closed** | OPTN Policy 9.1.E Table 9-1 publishes its coefficients only as an image, which could not be verified against a controlled source. Rather than compute from a secondary source that contradicts OPTN's own narrative, TransTrack returns no value. Pediatric liver candidates have no PELD reference score in TransTrack; use the OPTN calculator. See residual risk **RR-01**. |
+| **TransTrack Lung Triage Index (TTLI)** | Available — internal instrument | **This is not the OPTN Lung Allocation Score.** It is an internal 0–100 ordinal triage indicator for ordering a centre's own lung worklist. Its constants are expert-set, not fitted, and it has no published derivation or external validation. It is flagged `isPublishedInstrument: false` on every result. The OPTN LAS was retired for allocation in March 2023 and the Composite Allocation Score is computed centrally in UNet; a centre needing either must obtain it from UNet and store it as an opaque value. See residual risk **RR-07**. |
+| **KDPI / KDRI** | Available, with approximation flag | Deceased-donor kidney donor profile index. The percentile map is a piecewise approximation of the OPTN mapping table and is flagged as an approximation on every result. See residual risk **RR-03**. |
+| **EPTS** | Available, with approximation flag | Estimated post-transplant survival (Rao 2009). Percentile map is a piecewise approximation, flagged on every result. See residual risk **RR-03**. |
 
 ### Operational Workflows
 
@@ -145,13 +152,31 @@ All metrics are computed locally from the encrypted SQLite database. No cloud, A
 ### Compliance posture (design controls — not certifications)
 
 * **HIPAA Security Rule alignment**: AES-256 at-rest encryption (SQLCipher), role-based access control, account lockout, immutable audit logs, audit-log immutability enforced at the database trigger level
-* **21 CFR Part 11 alignment**: timestamped audit trail, electronic-record integrity controls, password complexity & history, session controls, validation documentation package included
-* **Offline operation**: no PHI leaves the local system unless explicitly exported by an authorized user
-* **Validation package**: see [`docs/compliance/`](docs/compliance/) for the validation plan, IQ/OQ/PQ templates, risk register, and HIPAA / Part 11 control mappings
+* **21 CFR Part 11 alignment**: timestamped audit trail, electronic-record integrity controls, application-level electronic signature records binding signer identity, meaning, payload hash and timestamp, password complexity & history, session controls. Known gaps — including the absence of re-authentication at signing — are stated in [`docs/compliance/PART_11_CONTROL_MAPPING.md`](docs/compliance/PART_11_CONTROL_MAPPING.md)
+* **Local-first data handling**: in the default configuration no PHI leaves the workstation unless an authorized user exports it. This is a default, not a structural guarantee — see "What can leave the workstation" below
+* **Validation package**: see [`docs/compliance/`](docs/compliance/). Vendor Installation and Operational Qualification for this release are executed and recorded in [`docs/compliance/executed/`](docs/compliance/executed/); Performance Qualification is the deploying organization's responsibility and has **not** been executed by the vendor. Start with [`docs/compliance/VALIDATION_SUMMARY_REPORT.md`](docs/compliance/VALIDATION_SUMMARY_REPORT.md)
 
-### Offline-First Architecture
+### What can leave the workstation
 
-* No internet connection required
+TransTrack performs its core function with no network connection. It is not,
+however, a system with no external network dependencies. Every egress path below
+is optional and off unless configured:
+
+| Path | Default | What leaves |
+|---|---|---|
+| Remote log sink (`SENTRY_DSN` / `TRANSTRACK_REMOTE_LOG_URL`) | Off | Error-level log lines, truncated, with PHI redacted at the sink and metadata restricted to an allow-list |
+| SIEM forwarder (RFC 5424 syslog / CEF) | Off — no destinations configured | PHI-redacted audit events; plaintext transport refused unless explicitly overridden |
+| Optional server tier (Fastify / FHIR / SMART) | Not deployed | PHI, by design — this is an integration tier, and it is early access |
+| HL7 v2 MLLP listener | Bound to `127.0.0.1` | Inbound only |
+| Auto-update via GitHub Releases | On in packaged builds | Version metadata and the update download; no PHI |
+
+Configure for zero egress by leaving those variables unset, creating no SIEM
+destinations, not deploying the server tier, and blocking the update endpoint.
+See [`SECURITY.md`](SECURITY.md#network-egress) and residual risk **RR-12**.
+
+### Local-First Architecture
+
+* No internet connection required for core operation (see the egress table above)
 * AES-256 local encryption
 * Secure backup/restore and data sovereignty
 
@@ -238,12 +263,27 @@ Download from the [Releases page](https://github.com/NeuroKoder3/TransTrackMedic
 
 Only this GitHub Releases page is an authorized download channel.
 
-| Platform              | File                         |
-| --------------------- | ---------------------------- |
-| Windows (x64)         | `TransTrack-1.0.0-x64.exe`   |
-| macOS (Intel)         | `TransTrack-1.0.0-x64.dmg`   |
-| macOS (Apple Silicon) | `TransTrack-1.0.0-arm64.dmg` |
-| Linux                 | `TransTrack-1.0.0.AppImage`  |
+Two build configurations exist. The **standard** build is produced from the
+`build` block in `package.json`; the **enterprise** build is produced from
+`electron-builder.enterprise.json`, which sets `productName` to
+`TransTrack Enterprise` and adds Windows signing and macOS notarization steps.
+Filenames follow electron-builder's `artifactName` patterns, so substitute the
+release version for `${version}` (for example `1.3.0`):
+
+| Platform              | Standard build                       | Enterprise build                                |
+| --------------------- | ------------------------------------ | ----------------------------------------------- |
+| Windows (x64)         | `TransTrack-${version}-x64.exe`      | `TransTrack-Enterprise-${version}-x64.exe`      |
+| macOS (Intel)         | `TransTrack-${version}-x64.dmg`      | `TransTrack-Enterprise-${version}-x64.dmg`      |
+| macOS (Apple Silicon) | `TransTrack-${version}-arm64.dmg`    | `TransTrack-Enterprise-${version}-arm64.dmg`    |
+| Linux (AppImage)      | `TransTrack-${version}.AppImage`     | `TransTrack-Enterprise-${version}.AppImage`     |
+| Linux (deb)           | `TransTrack-${version}.deb`          | `TransTrack-Enterprise-${version}.deb`          |
+
+> **Code signing.** Windows Authenticode signing and macOS notarization are
+> wired into the enterprise configuration but the signing credentials have not
+> yet been procured, so published artifacts may be unsigned. Verify a download
+> against the SHA-256 digest published with the release before installing.
+> Tracked as residual risk **RR-10** in
+> [`docs/compliance/RESIDUAL_RISK.md`](docs/compliance/RESIDUAL_RISK.md).
 
 ### Build from Source
 
@@ -279,15 +319,15 @@ npm run build:electron
    (`must_change_password = 1`). Delete the token file after rotation.
 4. Begin entering or importing data — all features are immediately available.
 
-Contact [Trans_Track@outlook.com](mailto:Trans_Track@outlook.com) if you need assistance.
+See [Contact](#contact) if you need assistance.
 
 ## Trust and Anti-Impersonation Notice
 
 - Official repository: `https://github.com/NeuroKoder3/TransTrackMedical-TransTrack`
 - Official releases: `https://github.com/NeuroKoder3/TransTrackMedical-TransTrack/releases`
-- Official support email: `Trans_Track@outlook.com`
+- Official support address: `support@transtrack.example` (see [Contact](#contact) for provisioning status)
 - Any lookalike page claiming to be "official TransTrack" outside these channels should be treated as untrusted.
-- If you suspect malware, impersonation, or fraud linked to TransTrack branding, report it immediately to `Trans_Track@outlook.com`.
+- If you suspect malware, impersonation, or fraud linked to TransTrack branding, report it to `security@transtrack.example` following the procedure in [`SECURITY.md`](SECURITY.md#reporting-a-security-issue).
 
 ---
 
@@ -307,18 +347,44 @@ Contact [Trans_Track@outlook.com](mailto:Trans_Track@outlook.com) if you need as
 * Timestamped, immutable audit trail (append-only with DB-level UPDATE/DELETE blocks)
 * Strong password policy with history and expiration
 * Session controls and re-authentication for sensitive operations
+* Application-level electronic signature records (identity + meaning + payload hash + timestamp), immutable at the database trigger level. Not PKI digital signatures, and not re-authenticated at the point of signing — see [`docs/compliance/PART_11_CONTROL_MAPPING.md`](docs/compliance/PART_11_CONTROL_MAPPING.md)
 * Validation documentation package (see [`docs/compliance/`](docs/compliance/))
+
+### Validation status
+
+| Stage | Status | Where |
+|---|---|---|
+| Validation Plan | Approved and in force | [`docs/compliance/VALIDATION_PLAN.md`](docs/compliance/VALIDATION_PLAN.md) |
+| Installation Qualification | Executed by the vendor for the build-and-install steps that can be evidenced without a target host; host-specific steps are the site's | [`docs/compliance/executed/IQ_TT-IQ-001.md`](docs/compliance/executed/IQ_TT-IQ-001.md) |
+| Operational Qualification | Executed by the vendor for the automated portion; the interactive portion is the site's | [`docs/compliance/executed/OQ_TT-OQ-001.md`](docs/compliance/executed/OQ_TT-OQ-001.md) |
+| Performance Qualification | **Not executed.** PQ requires clinical users and site data; it is the deploying organization's responsibility. The protocol to execute is provided | [`docs/compliance/executed/PQ_TT-PQ-001.md`](docs/compliance/executed/PQ_TT-PQ-001.md) |
+| Risk analysis | FMEA and formal residual-risk statements complete | [`FMEA.md`](docs/compliance/FMEA.md), [`RESIDUAL_RISK.md`](docs/compliance/RESIDUAL_RISK.md) |
+
+Vendor software verification is complete for this release. Site qualification is
+not, and no claim is made that it is. The single document to read is
+[`docs/compliance/VALIDATION_SUMMARY_REPORT.md`](docs/compliance/VALIDATION_SUMMARY_REPORT.md).
+
+### Server tier maturity
+
+The optional server tier (`server/`) is **early access**. It is versioned with
+the desktop application but is not covered by the vendor Operational
+Qualification beyond unit-level verification: its integration suites require a
+live PostgreSQL instance, which was not available in the vendor verification
+environment, so row-level security and cross-tenant isolation are evidenced at
+the DDL and application-query level rather than by execution against a running
+database. A site deploying the server tier must extend its own OQ and PQ to
+cover it. Recorded as residual risks **RR-04** and **RR-14**.
 
 ### Security architecture
 
-* Fully offline operation by default
+* Local-only operation by default; all network egress paths are opt-in (see the table above)
 * Local AES-256 encryption with key rotation support
 * Secure, encrypted backups and disaster-recovery tooling
 * Hardened Electron renderer: `sandbox: true`, `contextIsolation: true`, `nodeIntegration: false`, strict CSP, no renderer permissions
 * Every IPC call is sender-validated and argument-validated before any handler runs
 * Audit trail is tamper-evident on two layers: SHA-256 hash chain plus a keyed HMAC held in OS secure storage
-* Plaintext databases, database temp copies, rotated backups (including WAL sidecars), and the first-launch setup token are wiped by multi-pass overwrite rather than unlinked
-* Independent penetration test and SOC 2 Type II are the responsibility of the deploying organization
+* Plaintext databases, database temp copies, rotated backups (including WAL sidecars), and the first-launch setup token are overwritten in multiple passes before being unlinked, rather than simply unlinked. **This reduces exposure; it is not a guarantee of erasure.** On SSDs, copy-on-write filesystems (APFS, Btrfs, ZFS), snapshotted volumes and thin-provisioned storage, an overwrite writes to new blocks and the original data can survive in unreferenced blocks beyond the application's reach. `electron/services/secureDelete.cjs` documents this directly. The effective control against media-level recovery is full-disk encryption plus cryptographic erase of the key at decommissioning — the deploying organization's responsibility. See residual risk **RR-08**
+* Independent penetration test and SOC 2 Type II are the responsibility of the deploying organization; neither has been performed (**RR-09**)
 
 [Compliance overview](docs/COMPLIANCE.md) · [Validation package](docs/compliance/README.md) · [Hardening & residual risk](docs/security/PRODUCTION_READINESS_HARDENING.md)
 
@@ -346,4 +412,15 @@ for what each suite covers.
 
 ## Contact
 
-**[Trans_Track@outlook.com](mailto:Trans_Track@outlook.com)** — deployment help or technical inquiries.
+| Purpose | Address |
+|---|---|
+| Security vulnerability disclosure | `security@transtrack.example` — see [`SECURITY.md`](SECURITY.md#reporting-a-security-issue) for the response SLA and escalation path |
+| Deployment help and technical inquiries | `support@transtrack.example` |
+
+> These are role-based placeholders on the reserved `.example` domain and are
+> **not yet provisioned**; mail sent to them will not be delivered. Provisioning
+> monitored role addresses on the production product domain is a prerequisite
+> for commercial release, tracked as residual risk **RR-15** in
+> [`docs/compliance/RESIDUAL_RISK.md`](docs/compliance/RESIDUAL_RISK.md). Until
+> then, use the repository's private vulnerability reporting facility on GitHub
+> for security issues, and open a GitHub issue for everything else.

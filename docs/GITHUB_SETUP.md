@@ -27,7 +27,7 @@ git push -u origin main
 1. Confirm repository settings on GitHub:
    - Go to https://github.com/new
    - Repository name: `TransTrackMedical-TransTrack`
-   - Description: `HIPAA/FDA/AATB Compliant Transplant Waitlist Management System`
+   - Description: `Transplant waitlist and operations management — local-first desktop application with HIPAA Security Rule and 21 CFR Part 11 design controls`
    - Public or Private (as needed)
    - DO NOT recreate or reinitialize the existing repository
 
@@ -77,13 +77,17 @@ encrypted-database
 ### Add Topics via GitHub CLI
 
 ```powershell
-gh repo edit --add-topic transplant,organ-transplant,hipaa-compliant,fda-compliant,medical-software,healthcare,electron-app,offline-first,fhir,ehr-integration
+gh repo edit --add-topic transplant,organ-transplant,hipaa,part-11,medical-software,healthcare,electron-app,local-first,fhir,ehr-integration
 ```
+
+Avoid `hipaa-compliant` and `fda-compliant` as topics. Compliance is a
+determination a deploying organization makes about its own practices; asserting
+it as a product attribute is the same error corrected under finding M-17.
 
 ### Description
 
 ```
-HIPAA/FDA/AATB Compliant Transplant Waitlist Management System - Fully offline Electron desktop application for transplant centers, hospitals, and tissue banks. Features patient management, donor matching, priority scoring, and EHR integration.
+Transplant waitlist and operations management - local-first Electron desktop application for transplant centers, with HIPAA Security Rule and 21 CFR Part 11 design controls. Patient management, donor matching, operational risk intelligence, and FHIR/HL7 integration.
 ```
 
 ### Website

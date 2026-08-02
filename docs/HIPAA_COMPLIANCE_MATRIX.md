@@ -7,7 +7,9 @@ This document maps each TransTrack function and component to the applicable HIPA
 - **HIPAA Security Rule**: 45 CFR Part 164, Subpart C
 - **HIPAA Privacy Rule**: 45 CFR Part 164, Subpart E
 - **FDA 21 CFR Part 11**: Electronic Records and Signatures
-- **AATB Standards**: American Association of Tissue Banks
+
+No AATB conformance is claimed; see [`COMPLIANCE.md`](COMPLIANCE.md) for why
+that claim was withdrawn.
 
 ---
 
