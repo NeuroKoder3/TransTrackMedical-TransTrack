@@ -8,13 +8,11 @@
  * over-eager reset means the session never expires at all. All of it is
  * timer-driven, so only a test with a controlled clock can observe it.
  *
- * Writing that test found the third failure mode for real. See the
- * "known defect" block at the bottom of this file: the warning dialog is
- * mounted and then immediately torn down again, and the auto-logoff timer is
- * re-armed instead of firing. The fix belongs in the component, which is
- * outside the scope of the change this file lands with, so the required
- * behaviour is pinned here with `it.fails` — those cases start failing (and so
- * demand attention) the moment the component is fixed.
+ * Writing that test found the third failure mode for real: the warning dialog
+ * was mounted and immediately torn down again, and the auto-logoff timer was
+ * re-armed instead of firing, so automatic logoff never happened. The component
+ * has been fixed; see the block at the bottom of this file for the root cause
+ * and the assertions that now guard it.
  */
 import React from 'react';
 import { render, screen, act, fireEvent } from '@testing-library/react';
@@ -77,8 +75,6 @@ describe('IdleTimeoutManager', () => {
     render(<IdleTimeoutManager />);
     advance(IDLE_MS - WARNING_MS - 1000);
     expect(authState.logout).not.toHaveBeenCalled();
-    // Crossing the warning boundary and the limit inside one advance, for the
-    // reason given in the known-defect block at the bottom of this file.
     advance(WARNING_MS + 1000);
     expect(authState.logout).toHaveBeenCalledTimes(1);
     expect(authState.logout.mock.calls[0][0]).toBe(true);
@@ -201,41 +197,34 @@ describe('deployment-configured idle policy', () => {
 });
 
 /**
- * KNOWN DEFECT — the warning dialog and the sequential auto-logoff.
+ * The warning dialog and the sequential auto-logoff.
  *
- * Root cause: `handleActivity` lists `showWarning` in its dependency array, and
- * the effect that registers the activity listeners lists `handleActivity`. When
- * the warning timer sets `showWarning` to true, `handleActivity` is recreated,
- * the effect tears down and re-runs, and its re-run calls `resetTimers()` —
- * which sets `showWarning` back to false and re-arms both timers from now. So:
+ * These cases were written against a real defect and pinned with `it.fails`
+ * while the component was out of scope. The component has since been fixed and
+ * they are now live assertions.
  *
- *   • the dialog mounts for a single commit and is removed again, and
- *   • the 15-minute logoff timer is re-armed every 13 minutes and never fires.
+ * The defect: `handleActivity` listed `showWarning` in its dependency array and
+ * the effect registering the activity listeners listed `handleActivity`. When
+ * the warning timer set `showWarning` to true, `handleActivity` was recreated,
+ * the effect tore down and re-ran, and its re-run called `resetTimers()` —
+ * clearing the warning and re-arming both timers from that moment. The dialog
+ * mounted for a single commit and the idle-logoff timer was re-armed every 13
+ * minutes, so automatic logoff never fired at all. An unattended workstation
+ * kept the last-rendered chart on screen indefinitely and never returned to the
+ * login view, defeating HIPAA §164.312(a)(2)(iii).
  *
- * Measured with real timers against a 400ms/250ms policy: the dialog is present
- * in one 50ms sample and gone in every later one, and `logout` is still
- * uncalled 1.1s in — nearly three idle periods.
+ * The fix reads every value the timer logic needs through a ref and narrows the
+ * effect's dependencies to `isAuthenticated`, so raising the warning can no
+ * longer re-run the effect. State is write-only from the timers' point of view.
  *
- * The `it('arms the logoff timer at the idle limit')` case above passes because
- * a single `advanceTimersByTime` call runs the warning and logoff timers in the
- * same flush, before React can process the state update and re-run the effect.
- * Split the advance in two, as a real clock does, and it stops firing.
- *
- * Impact: an unattended workstation keeps the last-rendered chart on screen and
- * never returns to the login view. The main process is a partial backstop —
- * `validateSession` in electron/ipc/shared.cjs clears the session once
- * IDLE_TIMEOUT_MS has elapsed, so the next IPC call fails — but nothing wipes
- * the screen, and the user is never warned or given the chance to extend.
- *
- * The fix is in the component (read `showWarning` through a ref, or drop it
- * from the dependency array and re-register listeners only on auth changes).
- * src/** is out of scope for this change, so the required behaviour is pinned
- * with `it.fails`: each case asserts what the control is supposed to do and is
- * marked as currently failing. When the component is fixed these turn red, and
- * whoever fixes it removes the `.fails`.
+ * Note the deliberate use of two separate `advance()` calls below. A single
+ * `advanceTimersByTime` spanning both deadlines runs the warning and logoff
+ * timers in one flush, before React can process the state update — which is why
+ * the original defect hid from a single-advance test. Splitting the advance is
+ * what a real clock does and is what exercises the regression.
  */
-describe('IdleTimeoutManager: required behaviour, currently defective', () => {
-  it.fails('keeps the warning on screen for the whole warning window', () => {
+describe('IdleTimeoutManager: warning window and sequential logoff', () => {
+  it('keeps the warning on screen for the whole warning window', () => {
     render(<IdleTimeoutManager />);
     advance(IDLE_MS - WARNING_MS);
     expect(screen.getByText(/Session Expiring Soon/i)).toBeInTheDocument();
@@ -245,14 +234,14 @@ describe('IdleTimeoutManager: required behaviour, currently defective', () => {
     expect(screen.getByText('1:00')).toBeInTheDocument();
   });
 
-  it.fails('logs out when the warning window elapses with no response', () => {
+  it('logs out when the warning window elapses with no response', () => {
     render(<IdleTimeoutManager />);
     advance(IDLE_MS - WARNING_MS);
     advance(WARNING_MS);
     expect(authState.logout).toHaveBeenCalledWith(true);
   });
 
-  it.fails('lets the user extend the session from the dialog', () => {
+  it('lets the user extend the session from the dialog', () => {
     const isAuthenticated = vi.fn().mockResolvedValue(true);
     window.electronAPI = { ...realElectronAPI, auth: { isAuthenticated } };
     render(<IdleTimeoutManager />);
@@ -265,7 +254,7 @@ describe('IdleTimeoutManager: required behaviour, currently defective', () => {
     expect(authState.logout).not.toHaveBeenCalled();
   });
 
-  it.fails('lets the user log out immediately from the dialog', () => {
+  it('lets the user log out immediately from the dialog', () => {
     render(<IdleTimeoutManager />);
     advance(IDLE_MS - WARNING_MS);
     act(() => { fireEvent.click(screen.getByRole('button', { name: /Log Out Now/i })); });
