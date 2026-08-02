@@ -34,6 +34,9 @@ const secureDelete = require('../services/secureDelete.cjs');
 
 let db = null;
 let encryptionEnabled = false;
+// Evidence behind `encryptionEnabled`, kept so getEncryptionStatus() can report
+// what was actually proved rather than a bare boolean.
+let encryptionVerification = null;
 
 // Database file paths
 
@@ -190,6 +193,179 @@ function getDatabaseEncryptionKey() {
 }
 
 /**
+ * True when this build must not run on an unverified-encryption database.
+ *
+ * Identical to the condition getEncryptionKey() uses to refuse a plaintext key
+ * file, so the two fail-closed behaviours cannot diverge: a packaged build, or
+ * an explicit NODE_ENV=production. Development and the E2E harness
+ * (NODE_ENV=test) continue on a warning so a broken keyring on a workstation
+ * does not stop the app from being worked on.
+ */
+function isProductionBuild() {
+  return Boolean((app && app.isPackaged) || process.env.NODE_ENV === 'production');
+}
+
+/**
+ * Apply the documented HIPAA-grade cipher profile to an open handle.
+ *
+ * One definition for every path that opens an encrypted database (initial open,
+ * plaintext→encrypted migration, backup verification, restore verification).
+ * The migration path used to set only cipher/legacy/key, so a database upgraded
+ * from plaintext could end up with the library's default KDF rather than the
+ * 256000-iteration PBKDF2-SHA512 profile the compliance claim rests on, and
+ * nothing would have detected the difference.
+ *
+ * Pragma order is significant: cipher selection and legacy mode precede the
+ * key, and the explicit parameters follow it.
+ */
+function applyCipherPragmas(handle, encryptionKey) {
+  handle.pragma(`cipher = 'sqlcipher'`);
+  handle.pragma(`legacy = 4`); // SQLCipher 4.x compatibility mode
+  handle.pragma(`key = "x'${encryptionKey}'"`); // Hex key format for binary key
+  handle.pragma('cipher_page_size = 4096');
+  handle.pragma('kdf_iter = 256000');
+  handle.pragma('cipher_hmac_algorithm = HMAC_SHA512');
+  handle.pragma('cipher_kdf_algorithm = PBKDF2_HMAC_SHA512');
+}
+
+/**
+ * Prove that this database is encrypted and that our key was accepted.
+ *
+ * The previous check called `db.pragma('cipher_version')` and set
+ * encryptionEnabled unconditionally. That proved nothing: this SQLCipher build
+ * returns an empty result for cipher_version whether or not the file is
+ * encrypted, so the flag — which getEncryptionStatus() reports to the
+ * Compliance Center as "AES-256, HIPAA compliant" — was true even on a
+ * plaintext database.
+ *
+ * Five independent checks replace it, each proving something the others do not:
+ *
+ *   1. `PRAGMA cipher` must report sqlcipher — the profile above reached this
+ *      handle rather than the library's default (chacha20).
+ *   2. `PRAGMA kdf_iter` must report 256000 — the iteration count the
+ *      compliance claim quotes is the one actually in force, so a path that
+ *      opens the database with a partial pragma set is caught at runtime and
+ *      not only by code review (see finding M-7).
+ *   3. A real read of a data page must succeed. Opening a plaintext file with a
+ *      key, or an encrypted file with the wrong key, fails here with
+ *      "file is not a database" — this is the check that proves the key works.
+ *   4. For a file-backed database, `PRAGMA cipher_salt` must be populated. The
+ *      salt is read out of the encrypted file header, so it exists only when
+ *      the pages on disk are genuinely SQLCipher pages.
+ *   5. For a file-backed database, the first 16 bytes on disk must not be the
+ *      plaintext "SQLite format 3\0" magic. This is the only check that reads
+ *      the bytes at rest directly, which is what the encryption claim is about.
+ *
+ * `cipher_version` is recorded when the build populates it, but nothing depends
+ * on it: this build returns an empty result unconditionally, which is precisely
+ * why the old check could not fail.
+ *
+ * An in-memory database is reported as unverified rather than exempt: the
+ * driver refuses `PRAGMA key` on one, so its contents are not encrypted and the
+ * status must not imply otherwise. Only file-backed databases are ever opened
+ * by initDatabase, so this does not affect the application's own start-up.
+ */
+function verifyDatabaseEncryption(handle, dbPath) {
+  const problems = [];
+  const checks = {};
+
+  /** Read a scalar pragma; this build returns [{ value: value }] or []. */
+  const scalar = (name) => {
+    try {
+      const rows = handle.pragma(name);
+      return rows?.[0] ? Object.values(rows[0])[0] : null;
+    } catch {
+      return null;
+    }
+  };
+
+  checks.cipher = scalar('cipher');
+  if (String(checks.cipher || '').toLowerCase() !== 'sqlcipher') {
+    problems.push(`cipher is "${checks.cipher || 'unset'}", expected sqlcipher`);
+  }
+
+  checks.kdfIterations = checks.cipher === null ? null : Number(scalar('kdf_iter'));
+  if (checks.kdfIterations !== 256000) {
+    problems.push(`kdf_iter is ${checks.kdfIterations || 'unset'}, expected 256000`);
+  }
+
+  checks.cipherVersion = scalar('cipher_version');
+
+  try {
+    handle.prepare('SELECT count(*) AS n FROM sqlite_master').get();
+    checks.dataPageReadable = true;
+  } catch (e) {
+    checks.dataPageReadable = false;
+    problems.push(`could not read a data page with the configured key: ${e.message}`);
+  }
+
+  const fileBacked = Boolean(dbPath) && dbPath !== ':memory:' && !dbPath.startsWith('file::memory:');
+  if (fileBacked) {
+    checks.cipherSaltPresent = Boolean(scalar('cipher_salt'));
+    if (!checks.cipherSaltPresent) {
+      problems.push('no SQLCipher salt is present, so the file is not an encrypted database');
+    }
+
+    const headerEncrypted = isDatabaseEncrypted(dbPath);
+    checks.fileHeaderEncrypted = headerEncrypted;
+    if (headerEncrypted === false) {
+      problems.push('database file begins with the plaintext "SQLite format 3" header');
+    } else if (headerEncrypted === null) {
+      problems.push('could not read the database file header to confirm encryption at rest');
+    }
+  } else {
+    checks.cipherSaltPresent = false;
+    checks.fileHeaderEncrypted = null;
+    problems.push('database is not file-backed and therefore holds PHI unencrypted in memory');
+  }
+
+  return { verified: problems.length === 0, checks, problems };
+}
+
+/**
+ * Run encryption verification against the live handle and act on the result.
+ *
+ * FAIL-CLOSED: on a packaged or NODE_ENV=production build an unverified
+ * database is a refusal to start, not a warning. The previous code warned only
+ * when NODE_ENV was 'development' — i.e. it was silent in exactly the builds
+ * that matter — and carried on serving PHI from a possibly-plaintext file while
+ * reporting "HIPAA compliant" to the Compliance Center.
+ *
+ * On a development workstation or under the E2E harness (NODE_ENV=test) the
+ * failure is loud but not fatal, matching how getEncryptionKey() treats a
+ * missing OS keyring. `encryptionEnabled` is still left false in that case, so
+ * the compliance surface never claims protection that was not demonstrated.
+ *
+ * Exported so the fail-closed decision can be exercised directly against a
+ * handle whose encryption state is known — see tests/encryptionVerification.
+ */
+function applyEncryptionVerification(handle, dbPath) {
+  const result = verifyDatabaseEncryption(handle, dbPath);
+  encryptionVerification = { ...result, verifiedAt: new Date().toISOString() };
+  encryptionEnabled = result.verified;
+
+  if (result.verified) return result;
+
+  const summary = result.problems.join('; ');
+  if (isProductionBuild()) {
+    // Drop the handle before throwing: a caller that catches this must not be
+    // able to reach an open connection to an unverified database.
+    try { handle.close(); } catch { /* handle may already be unusable */ }
+    if (handle === db) db = null;
+    throw new Error(
+      `Database encryption could not be verified and this build requires it: ${summary}. ` +
+      'Refusing to start. Restore from an encrypted backup or recover the encryption key.'
+    );
+  }
+
+  console.error(
+    `[encryption] Database encryption NOT verified: ${summary}. ` +
+    'Continuing because this is not a packaged/production build; PHI is not protected at rest.'
+  );
+  return result;
+}
+
+/**
  * Check if a database file is encrypted
  * SQLCipher databases start with different magic bytes than regular SQLite
  */
@@ -242,11 +418,10 @@ async function migrateToEncrypted(unencryptedPath, encryptedPath, encryptionKey)
     verbose: null
   });
   
-  // Set encryption key using SQLCipher pragmas
-  encryptedDb.pragma(`cipher = 'sqlcipher'`);
-  encryptedDb.pragma(`legacy = 4`); // SQLCipher 4.x compatibility
-  encryptedDb.pragma(`key = "x'${encryptionKey}'"`);
-  
+  // Identical cipher profile to the normal open path — see applyCipherPragmas.
+  applyCipherPragmas(encryptedDb, encryptionKey);
+
+
   // Copy schema and data
   try {
     // Get all table names
@@ -340,6 +515,27 @@ async function migrateToEncrypted(unencryptedPath, encryptedPath, encryptionKey)
     
     throw new Error(`Database migration failed: ${error.message}`);
   }
+}
+
+// --- system audit records ---
+
+/**
+ * Write a system-originated audit record through the hash-chained writer.
+ *
+ * These events (first-run initialisation, backup, re-key, break-glass) used to
+ * be direct INSERTs with no prev_hash/record_hash, which produced rows that
+ * verification could not check. Routing them here means every row in
+ * audit_logs is part of one chain.
+ *
+ * Required lazily because services/auditChain.cjs depends on this module for
+ * the database handle; a top-level require would be circular.
+ */
+function auditSystemEvent(record) {
+  const { appendAuditRecord } = require('../services/auditChain.cjs');
+  return appendAuditRecord(
+    { user_email: 'system', user_role: 'system', ...record },
+    { db }
+  );
 }
 
 // Organization management
@@ -590,28 +786,12 @@ async function initDatabase() {
     verbose: null // Disable verbose logging for security
   });
   
-  // Configure SQLCipher encryption
-  db.pragma(`cipher = 'sqlcipher'`);
-  db.pragma(`legacy = 4`); // SQLCipher 4.x compatibility mode
-  db.pragma(`key = "x'${encryptionKey}'"`); // Hex key format for binary key
+  // Configure SQLCipher encryption with the documented HIPAA-grade profile.
+  applyCipherPragmas(db, encryptionKey);
 
-  // Explicit HIPAA-grade cipher parameters (better-sqlite3-multiple-ciphers pragmas)
-  db.pragma('cipher_page_size = 4096');
-  db.pragma('kdf_iter = 256000');
-  db.pragma('cipher_hmac_algorithm = HMAC_SHA512');
-  db.pragma('cipher_kdf_algorithm = PBKDF2_HMAC_SHA512');
-
-  // Verify encryption is working by trying to read
-  try {
-    db.pragma('cipher_version');
-    encryptionEnabled = true;
-  } catch (e) {
-    if (process.env.NODE_ENV === 'development') {
-      console.warn('Warning: Database encryption verification failed');
-    }
-  }
-  
-  // Enable foreign keys and WAL mode for better performance
+  // Enable foreign keys and WAL mode for better performance.
+  // WAL also forces the first page to be written, so a database created moments
+  // ago has a real (encrypted) header for the verification below to inspect.
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
 
@@ -624,6 +804,12 @@ async function initDatabase() {
   
   // Create schema (new multi-org schema) - tables only, no indexes yet
   createSchema(db);
+
+  // Encryption is verified here rather than immediately after the pragmas
+  // because a database created moments ago is still zero bytes on disk: there is
+  // no header to inspect and no data page to read until the schema materialises
+  // one. See verifyDatabaseEncryption for what each check proves.
+  applyEncryptionVerification(db, dbPath);
   
   // Check if we need to migrate from pre-org schema
   const migrateNeeded = needsOrgMigration();
@@ -687,27 +873,80 @@ async function initDatabase() {
 /**
  * Enterprise break-glass recovery for the local admin account.
  *
- * When TRANSTRACK_ADMIN_BREAK_GLASS_PASSWORD is set (≥12 chars) at process
- * start, this:
- *   1. Sets admin@transtrack.local's password to that value
- *   2. Clears any login lockout for that account
- *   3. Forces a password change on next successful sign-in
+ * Setting TRANSTRACK_ADMIN_BREAK_GLASS_PASSWORD (≥12 chars) resets
+ * admin@transtrack.local's credential at start-up and clears its lockout, so
+ * a site that has locked itself out can get back in without losing the
+ * database. That is a legitimate operational need and it is also, on its own, a
+ * complete authentication bypass driven by an environment variable — anything
+ * that can set a variable in the application's environment becomes the
+ * administrator on the next launch.
  *
- * The env var is never echoed. Remove it after recovering access.
+ * Three things make it a controlled, evidenced procedure rather than a bypass:
+ *
+ *   1. On a packaged or production build the password variable alone does
+ *      nothing. TRANSTRACK_ADMIN_BREAK_GLASS_CONFIRM must also be set to the
+ *      exact account being recovered, which a script that merely injects a
+ *      variable will not know to do, and which puts the operator's intent in
+ *      the process environment where the incident review can see it.
+ *   2. Every invocation writes a high-severity audit record through the
+ *      hash-chained writer, so the reset is inside the tamper-evident trail
+ *      alongside the sign-ins that follow it. A failure to write that record
+ *      aborts the reset: an unevidenced credential reset must not happen.
+ *   3. MFA enrolment is never cleared silently. It is left alone unless
+ *      TRANSTRACK_ADMIN_BREAK_GLASS_RESET_MFA=1 is set, and when it is, the
+ *      removal is a separate audit event naming what was destroyed. Clearing it
+ *      by default meant a stolen environment variable defeated the second
+ *      factor as well as the first.
+ *
+ * must_change_password is always set, so the credential is single-use.
+ * The password value itself is never echoed or audited.
  */
 async function applyAdminBreakGlass(defaultOrgId) {
   const breakGlass = process.env.TRANSTRACK_ADMIN_BREAK_GLASS_PASSWORD;
   if (!breakGlass || breakGlass.length < 12) return;
 
+  const BREAK_GLASS_ACCOUNT = 'admin@transtrack.local';
+
+  if (isProductionBuild()) {
+    const confirmation = (process.env.TRANSTRACK_ADMIN_BREAK_GLASS_CONFIRM || '').trim();
+    if (confirmation.toLowerCase() !== BREAK_GLASS_ACCOUNT) {
+      console.error(
+        '[break-glass] REFUSED on a packaged/production build: ' +
+        `set TRANSTRACK_ADMIN_BREAK_GLASS_CONFIRM=${BREAK_GLASS_ACCOUNT} to confirm the reset.`
+      );
+      return;
+    }
+  }
+
   const bcrypt = require('bcryptjs');
   const admin = db.prepare(
     "SELECT id, email FROM users WHERE org_id = ? AND LOWER(email) = LOWER(?) AND role = 'admin' AND is_active = 1 LIMIT 1"
-  ).get(defaultOrgId, 'admin@transtrack.local');
+  ).get(defaultOrgId, BREAK_GLASS_ACCOUNT);
 
   if (!admin) {
-    console.warn('[break-glass] admin@transtrack.local not found — no password reset applied');
+    console.warn(`[break-glass] ${BREAK_GLASS_ACCOUNT} not found — no password reset applied`);
     return;
   }
+
+  const resetMfa = process.env.TRANSTRACK_ADMIN_BREAK_GLASS_RESET_MFA === '1';
+
+  // Written BEFORE the credential changes, and deliberately not wrapped in a
+  // try/catch: appendAuditRecord throws when the row cannot be chained, and a
+  // credential reset that cannot be evidenced must not proceed.
+  auditSystemEvent({
+    org_id: defaultOrgId,
+    action: 'break_glass_admin_password_reset',
+    entity_type: 'User',
+    entity_id: admin.id,
+    details: JSON.stringify({
+      severity: 'high',
+      account: admin.email,
+      source: 'env:TRANSTRACK_ADMIN_BREAK_GLASS_PASSWORD',
+      packagedBuild: Boolean(app && app.isPackaged),
+      mustChangePassword: true,
+      mfaResetRequested: resetMfa,
+    }),
+  });
 
   const hashedPassword = await bcrypt.hash(breakGlass, 12);
   db.prepare(
@@ -718,16 +957,43 @@ async function applyAdminBreakGlass(defaultOrgId) {
     db.prepare('DELETE FROM login_attempts WHERE email = ?').run(admin.email.toLowerCase().trim());
   } catch { /* table may not exist yet in odd upgrade paths */ }
 
-  // Clear MFA enrollment so a lost authenticator cannot permanently lock out
-  // the sole local administrator during break-glass recovery.
-  try {
-    db.prepare('DELETE FROM user_mfa_backup_codes WHERE user_id = ?').run(admin.id);
-    db.prepare('DELETE FROM user_mfa WHERE user_id = ?').run(admin.id);
-  } catch { /* MFA tables may not exist on very old DBs */ }
+  let mfaCleared = false;
+  if (resetMfa) {
+    try {
+      const backupCodes = db.prepare('DELETE FROM user_mfa_backup_codes WHERE user_id = ?').run(admin.id);
+      const enrolment = db.prepare('DELETE FROM user_mfa WHERE user_id = ?').run(admin.id);
+      mfaCleared = (enrolment.changes + backupCodes.changes) > 0;
+
+      if (mfaCleared) {
+        // A separate record because destroying the second factor is a separate
+        // decision from resetting the first, and reads as one in the trail.
+        auditSystemEvent({
+          org_id: defaultOrgId,
+          action: 'break_glass_mfa_enrolment_cleared',
+          entity_type: 'User',
+          entity_id: admin.id,
+          details: JSON.stringify({
+            severity: 'high',
+            account: admin.email,
+            source: 'env:TRANSTRACK_ADMIN_BREAK_GLASS_RESET_MFA',
+            enrolmentsRemoved: enrolment.changes,
+            backupCodesRemoved: backupCodes.changes,
+          }),
+        });
+      }
+    } catch (mfaErr) {
+      // MFA tables may not exist on very old databases. Reported rather than
+      // swallowed, because the operator asked for something that did not happen.
+      console.error(`[break-glass] MFA reset could not be applied: ${mfaErr.message}`);
+    }
+  }
 
   process.stdout.write(
-    '\n[break-glass] admin@transtrack.local password reset from TRANSTRACK_ADMIN_BREAK_GLASS_PASSWORD.\n' +
-    '[break-glass] MFA cleared for this account. Sign in, change the password, re-enroll MFA, then unset the env var.\n\n'
+    `\n[break-glass] ${admin.email} password reset from TRANSTRACK_ADMIN_BREAK_GLASS_PASSWORD.\n` +
+    (mfaCleared
+      ? '[break-glass] MFA enrolment CLEARED for this account and audited separately. Re-enroll immediately.\n'
+      : '[break-glass] MFA enrolment left intact — the existing second factor is still required to sign in.\n') +
+    '[break-glass] Sign in, change the password, then unset the env var(s).\n\n'
   );
 }
 
@@ -867,20 +1133,13 @@ async function seedDefaultData(defaultOrgId) {
     );
     
     // Log initial setup (no sensitive data)
-    const auditId = uuidv4();
-    db.prepare(`
-      INSERT INTO audit_logs (id, org_id, action, entity_type, details, user_email, user_role, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      auditId, 
-      defaultOrgId,
-      'system_init', 
-      'System', 
-      'TransTrack database initialized with multi-organization support', 
-      'system', 
-      'system',
-      now
-    );
+    auditSystemEvent({
+      org_id: defaultOrgId,
+      action: 'system_init',
+      entity_type: 'System',
+      details: 'TransTrack database initialized with multi-organization support',
+      created_at: now,
+    });
   }
 }
 
@@ -974,11 +1233,13 @@ function seedDemoData(orgId) {
     }
   }
 
-  const auditId = uuidv4();
-  db.prepare(`
-    INSERT INTO audit_logs (id, org_id, action, entity_type, details, user_email, user_role, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(auditId, orgId, 'demo_data_loaded', 'System', 'Demo data seeded for evaluation', 'system', 'system', now);
+  auditSystemEvent({
+    org_id: orgId,
+    action: 'demo_data_loaded',
+    entity_type: 'System',
+    details: 'Demo data seeded for evaluation',
+    created_at: now,
+  });
 }
 
 // --- encryption utilities ---
@@ -1028,6 +1289,9 @@ function verifyDatabaseIntegrity() {
  */
 function getEncryptionStatus() {
   const safeStorageActive = isSafeStorageAvailable();
+  // Every field below is derived from encryptionEnabled, which is set only by
+  // applyEncryptionVerification. There is no path that reports a cipher profile
+  // this process did not prove was in effect.
   return {
     enabled: encryptionEnabled,
     algorithm: encryptionEnabled ? 'AES-256-CBC' : 'none',
@@ -1037,7 +1301,15 @@ function getEncryptionStatus() {
     pageSize: encryptionEnabled ? 4096 : 0,
     keyProtection: safeStorageActive ? 'os-keychain' : 'file-permissions',
     compliant: encryptionEnabled,
-    standard: encryptionEnabled ? 'HIPAA' : 'non-compliant'
+    standard: encryptionEnabled ? 'HIPAA' : 'non-compliant',
+    verification: encryptionVerification
+      ? {
+          verified: encryptionVerification.verified,
+          verifiedAt: encryptionVerification.verifiedAt,
+          checks: encryptionVerification.checks,
+          problems: encryptionVerification.problems,
+        }
+      : { verified: false, verifiedAt: null, checks: {}, problems: ['verification has not run'] },
   };
 }
 
@@ -1052,6 +1324,7 @@ async function closeDatabase() {
     db.close();
     db = null;
     encryptionEnabled = false;
+    encryptionVerification = null;
     if (process.env.NODE_ENV === 'development') {
       console.log('Database connection closed');
     }
@@ -1089,23 +1362,14 @@ async function backupDatabase(targetPath) {
   }
   
   // Log backup action
-  const { v4: uuidv4 } = require('uuid');
   const defaultOrg = getDefaultOrganization();
-  
-  db.prepare(`
-    INSERT INTO audit_logs (id, org_id, action, entity_type, details, user_email, user_role, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    uuidv4(), 
-    defaultOrg?.id || 'SYSTEM',
-    'backup', 
-    'System', 
-    'Encrypted database backup created', 
-    'system', 
-    'system',
-    new Date().toISOString()
-  );
-  
+  auditSystemEvent({
+    org_id: defaultOrg?.id || 'SYSTEM',
+    action: 'backup',
+    entity_type: 'System',
+    details: 'Encrypted database backup created',
+  });
+
   return true;
 }
 
@@ -1139,23 +1403,14 @@ async function rekeyDatabase(newKey) {
     writeProtectedKey(keyBackupPath, newKey);
     
     // Log the rekey action
-    const { v4: uuidv4 } = require('uuid');
     const defaultOrg = getDefaultOrganization();
-    
-    db.prepare(`
-      INSERT INTO audit_logs (id, org_id, action, entity_type, details, user_email, user_role, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      uuidv4(), 
-      defaultOrg?.id || 'SYSTEM',
-      'rekey', 
-      'System', 
-      'Database encryption key rotated', 
-      'system', 
-      'system',
-      new Date().toISOString()
-    );
-    
+    auditSystemEvent({
+      org_id: defaultOrg?.id || 'SYSTEM',
+      action: 'rekey',
+      entity_type: 'System',
+      details: 'Database encryption key rotated',
+    });
+
     return true;
   } catch (error) {
     throw new Error(`Database rekey failed: ${error.message}`);
@@ -1187,13 +1442,7 @@ async function restoreDatabaseFromBackup(backupPath) {
   let testDb = null;
   try {
     testDb = new Database(backupPath, { readonly: true, verbose: null });
-    testDb.pragma(`cipher = 'sqlcipher'`);
-    testDb.pragma(`legacy = 4`);
-    testDb.pragma(`key = "x'${encryptionKey}'"`);
-    testDb.pragma('cipher_page_size = 4096');
-    testDb.pragma('kdf_iter = 256000');
-    testDb.pragma('cipher_hmac_algorithm = HMAC_SHA512');
-    testDb.pragma('cipher_kdf_algorithm = PBKDF2_HMAC_SHA512');
+    applyCipherPragmas(testDb, encryptionKey);
     const check = testDb.pragma('integrity_check');
     if (check[0]?.integrity_check !== 'ok') {
       throw new Error('Backup integrity check failed');
@@ -1226,13 +1475,7 @@ async function restoreDatabaseFromBackup(backupPath) {
     let verifyDb = null;
     try {
       verifyDb = new Database(tempPath, { readonly: true, verbose: null });
-      verifyDb.pragma(`cipher = 'sqlcipher'`);
-      verifyDb.pragma(`legacy = 4`);
-      verifyDb.pragma(`key = "x'${encryptionKey}'"`);
-      verifyDb.pragma('cipher_page_size = 4096');
-      verifyDb.pragma('kdf_iter = 256000');
-      verifyDb.pragma('cipher_hmac_algorithm = HMAC_SHA512');
-      verifyDb.pragma('cipher_kdf_algorithm = PBKDF2_HMAC_SHA512');
+      applyCipherPragmas(verifyDb, encryptionKey);
       const check2 = verifyDb.pragma('integrity_check');
       if (check2[0]?.integrity_check !== 'ok') {
         throw new Error('Copied backup failed integrity check');
@@ -1288,6 +1531,9 @@ module.exports = {
   // Encryption
   isEncryptionEnabled,
   getDatabaseEncryptionKey,
+  applyCipherPragmas,
+  verifyDatabaseEncryption,
+  applyEncryptionVerification,
   verifyDatabaseIntegrity,
   rekeyDatabase,
   getEncryptionStatus,
