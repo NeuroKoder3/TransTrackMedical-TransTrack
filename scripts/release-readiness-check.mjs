@@ -19,6 +19,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, statSync, readdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { inspectWindowsArtifact } from './verify-artifact-signature.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, '..');
@@ -296,7 +297,20 @@ await runStep('Code-signed Windows installer present (release/enterprise)', sign
       'rebuild before release so the signed artifact matches the tested source',
     );
   }
-  return `${newest.f} (${(statSync(resolve(dir, newest.f)).size / 1024 / 1024).toFixed(1)} MB)`;
+
+  // Look inside the file. This step is named for code signing, but until now it
+  // only matched a filename — an entirely unsigned installer called the right
+  // thing passed it. On Windows the signature is checked for validity; on Linux
+  // (where the release gate job runs) the PE certificate table is parsed
+  // directly, which proves a signature is embedded without needing any tooling.
+  const artifact = resolve(dir, newest.f);
+  const sig = inspectWindowsArtifact(artifact);
+  if (!sig.signed) {
+    throw new Error(`${newest.f} is not signed: ${sig.detail}`);
+  }
+
+  const sizeMb = (statSync(artifact).size / 1024 / 1024).toFixed(1);
+  return `${newest.f} (${sizeMb} MB) — ${sig.detail}`;
 });
 
 await runStep('Windows code-signing configured (any supported mode)', signingSeverity, () => {
