@@ -2,8 +2,9 @@
  * TransTrack — sign-win.cjs unit tests.
  *
  * Validates the parts that don't need a real Authenticode certificate: mode
- * auto-detection, the fail-closed behaviour on release builds, base32/TOTP,
- * certificate materialisation from base64, and the path resolver.
+ * auto-detection, the fail-closed behaviour on release builds, the CodeSignTool
+ * argument contract, certificate materialisation from base64, the post-sign
+ * verification, and the path resolver.
  *
  * The harness awaits its tests. It previously did not: `test()` called an
  * `async` function and incremented the pass counter on the next line, so every
@@ -39,9 +40,6 @@ function test(name, fn) {
 const SIGNING_ENV_KEYS = (k) =>
   k.startsWith('ESIGNER_') ||
   k.startsWith('CSC_') ||
-  k.startsWith('AZURE_') ||
-  k === 'GITHUB_RUN_ID' ||
-  k === 'SIGNTOOL_EXE' ||
   k === 'TRANSTRACK_SIGN_MODE' ||
   k === 'TRANSTRACK_RELEASE_CHANNEL' ||
   k === 'TRANSTRACK_REQUIRE_SIGNING' ||
@@ -185,131 +183,125 @@ test('pfx mode names both missing variables at once', async () => {
   });
 });
 
-test('azure mode names every missing variable at once', async () => {
-  await withSigner({ TRANSTRACK_SIGN_MODE: 'azure' }, async (sign) => {
-    await assert.rejects(() => sign('C:/tmp/file.exe'), (e) => {
-      for (const k of ['AZURE_SIGNING_ENDPOINT', 'AZURE_SIGNING_ACCOUNT',
-                       'AZURE_SIGNING_PROFILE', 'AZURE_SIGNING_DLIB']) {
-        assert.match(e.message, new RegExp(k));
-      }
-      return true;
-    });
-  });
+console.log('\n=== CodeSignTool argument contract ===');
+
+// These assertions encode SSL.com's documented CLI so that a future edit which
+// drifts from it fails here rather than at 2am against a real certificate.
+// Reference: https://www.ssl.com/guide/esigner-codesigntool-command-guide/
+
+test('a password with shell metacharacters survives cmd.exe intact', async () => {
+  // CodeSignTool is a .bat, so Node cannot spawn it without a shell and the
+  // arguments get re-parsed by cmd. SSL.com's own documentation uses
+  // `P!@^^ssword12` as its example password, so this is the normal case, not an
+  // exotic one. Unquoted, cmd would eat the carets and treat & as a separator.
+  const quoted = exposed._quoteForCmd('ESIGNER_PASSWORD', 'P!@^^ss&word|12');
+  assert.strictEqual(quoted, '"P!@^^ss&word|12"');
 });
 
-console.log('\n=== Azure Artifact Signing ===');
-
-const AZURE_ENV = Object.freeze({
-  TRANSTRACK_SIGN_MODE: 'azure',
-  AZURE_SIGNING_ENDPOINT: 'https://eus.codesigning.azure.net',
-  AZURE_SIGNING_ACCOUNT: 'transtrack-signing',
-  AZURE_SIGNING_PROFILE: 'transtrack-public',
-  AZURE_TENANT_ID: 'tenant-1',
-  AZURE_CLIENT_ID: 'client-1',
-  AZURE_CLIENT_SECRET: 'secret-1',
-});
-
-test('auto-detect selects azure when its variables are present', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-dlib-'));
-  const dlib = path.join(dir, 'Azure.CodeSigning.Dlib.dll');
-  fs.writeFileSync(dlib, 'not a real dll');
-  try {
-    const env = { ...AZURE_ENV, AZURE_SIGNING_DLIB: dlib };
-    delete env.TRANSTRACK_SIGN_MODE;
-    await withSigner(env, async (mod) => {
-      assert.strictEqual(mod.__testing__._autoDetectMode(), 'azure');
-    });
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+test('a password containing a quote or percent is refused, not corrupted', async () => {
+  // Neither can be escaped inside cmd's quoting: `"` ends the quoted run and
+  // `%` expands even inside quotes. Passing them anyway would send a different
+  // password than the one configured and surface as an authentication failure
+  // that looks like an account problem.
+  for (const bad of ['pass"word', 'pass%PATH%word']) {
+    assert.throws(
+      () => exposed._quoteForCmd('ESIGNER_PASSWORD', bad),
+      /cannot be passed through the Windows command interpreter/,
+    );
   }
 });
 
-test('esigner still wins auto-detect when both are configured', async () => {
-  // Ordering matters for anyone migrating: a half-removed eSigner
-  // configuration should not silently take precedence by accident, so the
-  // precedence is asserted rather than left to reading the function.
-  await withSigner(
-    {
-      ESIGNER_USERNAME: 'u', ESIGNER_PASSWORD: 'p', ESIGNER_CREDENTIAL_ID: 'c',
-      ESIGNER_TOTP_SECRET: 'JBSWY3DPEHPK3PXP', ESIGNER_TOOL_PATH: 'C:/tool.bat',
-      AZURE_SIGNING_ENDPOINT: 'https://eus.codesigning.azure.net',
-      AZURE_SIGNING_ACCOUNT: 'a', AZURE_SIGNING_PROFILE: 'p',
-      AZURE_SIGNING_DLIB: 'C:/dlib.dll',
-    },
-    async (mod) => {
-      assert.strictEqual(mod.__testing__._autoDetectMode(), 'ssl_esigner');
-    },
+test('secrets are stripped from anything echoed out of the tool', async () => {
+  const out = exposed._redact(
+    'authenticating as bob with hunter2 and totp seedvalue==',
+    ['hunter2', 'seedvalue=='],
   );
+  assert.ok(!out.includes('hunter2'));
+  assert.ok(!out.includes('seedvalue=='));
+  assert.match(out, /authenticating as bob/);
 });
 
-test('a missing dlib is reported with the command that installs it', async () => {
+test('a missing CodeSignTool says where to get it', async () => {
   await withSigner(
-    { ...AZURE_ENV, AZURE_SIGNING_DLIB: 'C:/definitely/not/here/Azure.CodeSigning.Dlib.dll' },
+    {
+      TRANSTRACK_SIGN_MODE: 'ssl_esigner',
+      ESIGNER_USERNAME: 'u', ESIGNER_PASSWORD: 'p', ESIGNER_CREDENTIAL_ID: 'c',
+      ESIGNER_TOTP_SECRET: 's', ESIGNER_TOOL_PATH: 'C:/nope/CodeSignTool.bat',
+    },
     async (sign) => {
       await assert.rejects(() => sign('C:/tmp/file.exe'), (e) => {
-        assert.match(e.message, /AZURE_SIGNING_DLIB not found/);
-        assert.match(e.message, /winget install/);
+        assert.match(e.message, /ESIGNER_TOOL_PATH not found/);
+        assert.match(e.message, /SSL\.com dashboard/);
         return true;
       });
     },
   );
 });
 
-test('metadata names the account, profile and endpoint the dlib will use', async () => {
-  const m = exposed._buildAzureMetadata({ ...AZURE_ENV });
-  assert.strictEqual(m.Endpoint, 'https://eus.codesigning.azure.net');
-  assert.strictEqual(m.CodeSigningAccountName, 'transtrack-signing');
-  assert.strictEqual(m.CertificateProfileName, 'transtrack-public');
+console.log('\n=== post-sign verification ===');
+
+test('a tool that reports success without signing anything is caught', async () => {
+  // CodeSignTool has been observed to print a failure and exit 0. An exit
+  // status describes whether the tool ran, not whether the file changed, so
+  // the artifact is re-read rather than trusted.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-postsign-'));
+  try {
+    const exe = path.join(dir, 'unsigned.exe');
+    fs.writeFileSync(exe, makeUnsignedPe());
+    await assert.rejects(
+      () => exposed._assertSignatureEmbedded(exe),
+      /still carries no embedded signature/,
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
-test('a service principal narrows the credential chain to exactly one', async () => {
-  // DefaultAzureCredential walks a chain. On a build machine the others cannot
-  // succeed, and the interactive browser can hang a headless run outright.
-  const m = exposed._buildAzureMetadata({ ...AZURE_ENV });
-  assert.ok(Array.isArray(m.ExcludeCredentials));
-  assert.ok(m.ExcludeCredentials.includes('InteractiveBrowserCredential'));
-  assert.ok(m.ExcludeCredentials.includes('ManagedIdentityCredential'));
-  assert.ok(m.ExcludeCredentials.includes('AzureCliCredential'));
+test('a genuinely signed artifact passes the post-sign check', async () => {
+  if (process.platform !== 'win32') {
+    console.log('        (skipped off Windows — no signed PE to hand)');
+    return;
+  }
+  await exposed._assertSignatureEmbedded(process.execPath);
 });
 
-test('federated identity keeps its chain but never the browser', async () => {
-  // GitHub OIDC and managed identity are legitimate and need the rest of the
-  // chain; excluding everything would break them.
-  const env = { ...AZURE_ENV };
-  delete env.AZURE_CLIENT_SECRET;
-  const m = exposed._buildAzureMetadata(env);
-  assert.deepStrictEqual(m.ExcludeCredentials, ['InteractiveBrowserCredential']);
+test('a file that is not a PE image is skipped rather than failed', async () => {
+  // The hook signs PE files, but an unparseable input is not evidence that
+  // signing failed, and turning it into a build failure would be wrong.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-postsign-'));
+  try {
+    const txt = path.join(dir, 'notpe.txt');
+    fs.writeFileSync(txt, 'hello');
+    await exposed._assertSignatureEmbedded(txt);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
-test('a correlation id is carried through when the build supplies one', async () => {
-  const explicit = exposed._buildAzureMetadata({ ...AZURE_ENV, AZURE_SIGNING_CORRELATION_ID: 'run-9' });
-  assert.strictEqual(explicit.CorrelationId, 'run-9');
-
-  const fromCi = exposed._buildAzureMetadata({ ...AZURE_ENV, GITHUB_RUN_ID: '30726011240' });
-  assert.strictEqual(fromCi.CorrelationId, '30726011240');
-
-  assert.ok(!('CorrelationId' in exposed._buildAzureMetadata({ ...AZURE_ENV })));
+test('the signed output replaces the original even across volumes', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-replace-'));
+  try {
+    const from = path.join(dir, 'signed.exe');
+    const to = path.join(dir, 'original.exe');
+    fs.writeFileSync(from, 'SIGNED');
+    fs.writeFileSync(to, 'ORIGINAL');
+    exposed._replaceFile(from, to);
+    assert.strictEqual(fs.readFileSync(to, 'utf8'), 'SIGNED');
+    assert.ok(!fs.existsSync(from), 'the temporary copy must not be left behind');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
-test('the Azure timestamp authority is the Microsoft one', async () => {
-  // Artifact Signing certificates live three days. Without a timestamp the
-  // installer verifies for three days and then starts failing on customer
-  // machines, with nothing about the file having changed — so the default must
-  // never quietly become a generic CA's timestamp server.
-  assert.strictEqual(exposed.AZURE_TIMESTAMP_URL, 'http://timestamp.acs.microsoft.com');
-});
-
-test('a 403 is explained as a region or role problem', async () => {
-  const hint = exposed._azureHint('SignerSign() failed. (403) Forbidden');
-  assert.match(hint, /region/);
-  assert.match(hint, /Signer.*role|role/);
-});
-
-test('a dlib load failure is explained as runtime or architecture', async () => {
-  const hint = exposed._azureHint('could not load Azure.CodeSigning.Dlib.dll');
-  assert.match(hint, /\.NET 8/);
-  assert.match(hint, /x64|architecture/);
-});
+/** Smallest structurally valid PE32+ image with an empty certificate table. */
+function makeUnsignedPe() {
+  const buf = Buffer.alloc(0x400);
+  buf.writeUInt16LE(0x5a4d, 0);
+  buf.writeUInt32LE(0x80, 0x3c);
+  buf.writeUInt32LE(0x00004550, 0x80);
+  buf.writeUInt16LE(0x20b, 0x98);
+  return buf;
+}
 
 console.log('\n=== signing-required detection ===');
 
@@ -385,22 +377,6 @@ test('a wrong path is reported as a path problem, not a corrupt certificate', as
 test('base64 of something that is not a PKCS#12 is rejected', async () => {
   const notACert = Buffer.alloc(200, 0x41).toString('base64');
   assert.throws(() => exposed._materializeCertificate(notACert), /PKCS#12/);
-});
-
-console.log('\n=== TOTP RFC 6238 vectors (via base32 decoder) ===');
-
-test('base32 decode of known vector: "JBSWY3DPEHPK3PXP"', async () => {
-  const buf = exposed._base32Decode('JBSWY3DPEHPK3PXP');
-  // "Hello!" then DE AD BE EF
-  assert.deepStrictEqual(
-    Array.from(buf),
-    [0x48, 0x65, 0x6c, 0x6c, 0x6f, 0x21, 0xde, 0xad, 0xbe, 0xef],
-  );
-});
-
-test('TOTP digits are 6, all numeric', async () => {
-  const code = exposed._generateTotp('GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ');
-  assert.match(code, /^\d{6}$/);
 });
 
 test('_resolveFilePath: handles string and {path} shapes', async () => {
