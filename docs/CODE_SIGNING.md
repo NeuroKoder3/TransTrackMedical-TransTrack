@@ -193,6 +193,12 @@ A **catalog-only** signature is rejected even though Windows reports it `Valid`.
 Catalog signatures live in a system-wide `.cat` file, not in the executable, so
 they do not survive a download to a customer's machine.
 
+If the machine cannot evaluate a trust chain at all — no network for the
+revocation check, or a `Get-AuthenticodeSignature` that returns nothing, which
+is what some hosted runners do — the check reports that a signature is embedded
+and says plainly that validity was not established, rather than reporting the
+artifact as unsigned. Always confirm on a networked host before distributing.
+
 To inspect the signer identity:
 
 ```powershell

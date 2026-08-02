@@ -384,7 +384,23 @@ than overstating what was checked.
 A catalog-only signature is rejected even when Windows reports it valid. Catalog
 signatures reside in a system-wide store rather than in the file, so they do not
 travel with a downloaded installer and cannot serve as evidence of authenticity
-at the receiving site.
+at the receiving site. Because the deciding fact is read from the file, this
+rejection holds even where the operating system cannot be consulted.
+
+The absence of an operating system verdict is distinguished from a negative one.
+Not every host can evaluate a trust chain — a build machine without network
+cannot complete a revocation check, and one hosted runner returns no verdict at
+all — and treating that silence as "not signed" would reject a correctly signed
+artifact for a reason having nothing to do with the artifact. Where no verdict
+is obtainable, the result is the same reduced assurance a non-Windows host
+reports, with the cause stated. Windows' own `UnknownError` is treated the same
+way, since it means the same thing. Statuses that are conclusions — `NotSigned`,
+`HashMismatch`, `NotTrusted` — remain rejections.
+
+This means the strongest available evidence depends on where the check runs, so
+OQ-147 has the receiving site verify the installer on its own hardware. That is
+the only execution of this check that does not depend on the vendor's build
+environment being able to answer.
 
 `scripts/release-readiness-check.mjs` calls the verifier, so the gate's
 "code-signed installer present" item now reflects the artifact's actual contents

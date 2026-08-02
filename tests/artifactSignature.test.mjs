@@ -147,18 +147,46 @@ test('off Windows, an embedded signature is accepted with reduced assurance', ()
   assert.match(r.detail, /validity not checked/);
 });
 
-test('on Windows, a fixture with a fake certificate table is rejected as invalid', () => {
+/**
+ * Whether this machine can actually evaluate a trust chain.
+ *
+ * Not every Windows host can. A hosted CI runner returned no verdict at all for
+ * node.exe, which is genuinely signed. Where that is the case the verifier
+ * degrades to the same evidence a Linux host has — a signature is embedded, its
+ * trust unestablished — and the assertions below have to degrade with it rather
+ * than assert a capability the environment does not have.
+ */
+let osProbe = null;
+function osVerdict() {
+  if (osProbe === null) osProbe = verifyAuthenticode(process.execPath);
+  return osProbe;
+}
+function osVerdictWorks() {
+  const v = osVerdict();
+  return v.available && v.valid;
+}
+
+test('a fixture with a fake certificate table does not pass as validly signed', () => {
   if (process.platform !== 'win32') {
     console.log('      (skipped off Windows)');
     return;
   }
-  // The table points at filler, not a PKCS#7 blob. Windows answers NotSigned —
-  // a conclusion, not an inability to reach one — so this must be rejected even
-  // though a certificate table is present. It is the case the PE-only check
-  // cannot catch.
+  // The table points at filler, not a PKCS#7 blob. This is the case PE parsing
+  // alone cannot catch, so what can be asserted depends on whether the OS is
+  // able to look.
   const p = fixture('verdict-fake.exe', makePe({ certOffset: 0x300, certSize: 0x40 }));
   const r = inspectWindowsArtifact(p);
-  assert.strictEqual(r.signed, false, 'a forged certificate table must not pass on Windows');
+
+  if (osVerdictWorks()) {
+    // Windows answers NotSigned — a conclusion, not an inability to reach one.
+    assert.strictEqual(r.signed, false, 'a forged certificate table must be rejected');
+  } else {
+    // Without an OS verdict the forgery is indistinguishable from a real
+    // signature by file layout alone. The verifier must not claim otherwise.
+    assert.notStrictEqual(r.assurance, 'valid', 'must not claim validity it could not check');
+    assert.match(r.detail, /not checked|could not complete/);
+    console.log('      (no OS verdict here — checked that validity is not claimed)');
+  }
 });
 
 console.log('\nWhen the OS cannot reach a verdict');
@@ -181,12 +209,6 @@ test('an absent Windows verdict is reported as unavailable, not as invalid', () 
 
 console.log('\nReal binaries (Windows only)');
 
-/** True when this machine can actually evaluate a trust chain. */
-function osVerdictWorks() {
-  const v = verifyAuthenticode(process.execPath);
-  return v.available && v.valid;
-}
-
 test('a genuinely signed executable is accepted', () => {
   if (process.platform !== 'win32') {
     console.log('      (skipped off Windows)');
@@ -204,7 +226,10 @@ test('a genuinely signed executable is accepted', () => {
     // trust, rather than claiming either more or less than it knows.
     assert.strictEqual(r.assurance, 'embedded');
     assert.match(r.detail, /not checked|could not complete/);
-    console.log('      (trust evaluation unavailable here — checked the degraded path instead)');
+    // Print why, so a future failure on a new runner is diagnosable from the
+    // log rather than needing a reproduction.
+    const v = osVerdict();
+    console.log(`      (no trust evaluation here: ${v.available ? `status ${v.status}` : v.reason})`);
   }
 });
 
