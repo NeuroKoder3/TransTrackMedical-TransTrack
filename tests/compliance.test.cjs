@@ -157,28 +157,57 @@ test('Audit log schema includes required fields', () => {
   }
 });
 
+// The three checks below used to grep electron/ipc/shared.cjs for the strings
+// "minLength: 12", "SESSION_DURATION_MS" and "MAX_LOGIN_ATTEMPTS" (the class of
+// weakness in finding M-23: a commented-out constant, or one that is defined and
+// never consulted, satisfies a substring search). They now execute the exported
+// validator and read the exported constants.
+const shared = require('../electron/ipc/shared.cjs');
+
 test('Password requirements meet NIST guidelines', () => {
-  const content = fs.readFileSync(path.join(__dirname, '..', 'electron', 'ipc', 'shared.cjs'), 'utf8');
-  assert(content.includes('minLength: 12'), 'Minimum password length must be 12');
-  assert(content.includes('requireUppercase'), 'Must require uppercase');
-  assert(content.includes('requireSpecial'), 'Must require special characters');
+  const rejected = {
+    'too short': 'Ab!1defg',
+    'no uppercase': 'abcdefgh1!xyz',
+    'no lowercase': 'ABCDEFGH1!XYZ',
+    'no digit': 'Abcdefgh!xyzQ',
+    'no special character': 'Abcdefgh1xyzQ',
+  };
+  for (const [why, password] of Object.entries(rejected)) {
+    const result = shared.validatePasswordStrength(password);
+    assert.strictEqual(result.valid, false, `a password with ${why} must be rejected`);
+    assert(result.errors.length > 0, `rejecting for ${why} must say why`);
+  }
+
+  // An empty or absent credential must never be treated as acceptable.
+  for (const empty of ['', null, undefined]) {
+    assert.strictEqual(shared.validatePasswordStrength(empty).valid, false);
+  }
+
+  const ok = shared.validatePasswordStrength('Str0ng!Passphrase9');
+  assert.strictEqual(ok.valid, true, `a compliant password was rejected: ${ok.errors.join('; ')}`);
+  assert.strictEqual(ok.errors.length, 0);
 });
 
 test('Session expiration is configured', () => {
-  const content = fs.readFileSync(path.join(__dirname, '..', 'electron', 'ipc', 'shared.cjs'), 'utf8');
-  assert(content.includes('SESSION_DURATION_MS'), 'Must define session duration');
-  const match = content.match(/SESSION_DURATION_MS\s*=\s*(\d+)/);
-  if (match) {
-    const hours = parseInt(match[1]) / (1000 * 60 * 60);
-    assert(hours <= 12, `Session must expire within 12 hours (currently ${hours}h)`);
-  }
+  const hours = shared.SESSION_DURATION_MS / (1000 * 60 * 60);
+  assert(Number.isFinite(hours) && hours > 0, 'Must define an absolute session duration');
+  assert(hours <= 12, `Session must expire within 12 hours (currently ${hours}h)`);
+
+  const idleMinutes = shared.IDLE_TIMEOUT_MS / (1000 * 60);
+  assert(Number.isFinite(idleMinutes) && idleMinutes > 0, 'Must define an idle timeout');
+  assert(idleMinutes <= 30, `Idle timeout must be 30 minutes or less (currently ${idleMinutes}m)`);
 });
 
 test('Account lockout is implemented', () => {
-  const content = fs.readFileSync(path.join(__dirname, '..', 'electron', 'ipc', 'shared.cjs'), 'utf8');
-  assert(content.includes('MAX_LOGIN_ATTEMPTS'), 'Must define max login attempts');
-  assert(content.includes('LOCKOUT_DURATION_MS'), 'Must define lockout duration');
-  assert(content.includes('checkAccountLockout'), 'Must implement lockout check');
+  assert(
+    Number.isInteger(shared.MAX_LOGIN_ATTEMPTS) && shared.MAX_LOGIN_ATTEMPTS > 0 && shared.MAX_LOGIN_ATTEMPTS <= 10,
+    `Max login attempts must be between 1 and 10 (currently ${shared.MAX_LOGIN_ATTEMPTS})`,
+  );
+  const lockoutMinutes = shared.LOCKOUT_DURATION_MS / (1000 * 60);
+  assert(lockoutMinutes >= 15, `Lockout must last at least 15 minutes (currently ${lockoutMinutes}m)`);
+  assert.strictEqual(typeof shared.checkAccountLockout, 'function', 'Lockout must be enforced, not only configured');
+  assert.strictEqual(typeof shared.recordFailedLogin, 'function');
+  assert.strictEqual(typeof shared.clearFailedLogins, 'function');
 });
 
 // ============================================================================
