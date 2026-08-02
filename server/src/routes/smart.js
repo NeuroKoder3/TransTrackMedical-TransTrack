@@ -30,6 +30,8 @@ const tokens = require('../smart/tokens');
 const authzCodes = require('../smart/authzCodes');
 const clients = require('../smart/clients');
 const backendJwt = require('../smart/backendJwt');
+const idToken = require('../smart/idToken');
+const launchContexts = require('../smart/launchContexts');
 const { authenticateOAuthClient } = require('../smart/clientAuth');
 const {
   assertRegisteredRedirect, constrainScopes, requirePkceForPublic,
@@ -58,6 +60,8 @@ module.exports = async function smartRoutes(app, opts) {
           'client_secret_basic', 'client_secret_post', 'private_key_jwt', 'none',
         ],
         registration_endpoint: `${issuer}/oauth2/register`,
+        jwks_uri: `${issuer}/.well-known/jwks.json`,
+        id_token_signing_alg_values_supported: [config.SMART_ID_TOKEN_ALG || 'RS256'],
         introspection_endpoint: `${issuer}/oauth2/introspect`,
         revocation_endpoint: `${issuer}/oauth2/revoke`,
         introspection_endpoint_auth_methods_supported: [
@@ -99,6 +103,22 @@ module.exports = async function smartRoutes(app, opts) {
           'permission-offline',
         ],
       };
+    });
+
+  // ----- ID token JWK Set ---------------------------------------------------
+  // Relying parties verify SMART/OIDC ID tokens against this. It carries only
+  // public key material.
+  app.get('/.well-known/jwks.json',
+    { config: { public: true, rateLimit: { max: 60, timeWindow: '1 minute' } } },
+    async (req, reply) => {
+      reply.type('application/json');
+      try {
+        return idToken.publicJwks(config);
+      } catch (err) {
+        req.log.error({ err }, 'ID token signing key unavailable');
+        reply.code(503);
+        return { error: 'id_token_signing_key_unavailable' };
+      }
     });
 
   // Also publish the SMART config under the FHIR base, per the spec.
@@ -146,7 +166,17 @@ module.exports = async function smartRoutes(app, opts) {
         throw errors.badRequest('aud parameter does not match this server\'s FHIR base URL');
       }
 
-      const launchContext = q.launch ? await resolveLaunchContext(q.launch, smartClient.org_id) : {};
+      // M-11: resolve the launch here, once, and hand the browser only an
+      // opaque handle. The patient is never round-tripped through the client.
+      const launchContext = q.launch
+        ? await resolveLaunchContext(q.launch, smartClient.org_id)
+        : {};
+      const launchHandle = await launchContexts.issue({
+        orgId: smartClient.org_id,
+        clientId: smartClient.client_id,
+        context: launchContext,
+      });
+
       reply.type('text/html');
       return consentPage({
         clientId: q.client_id,
@@ -157,8 +187,7 @@ module.exports = async function smartRoutes(app, opts) {
         codeChallenge: q.code_challenge || '',
         codeChallengeMethod: q.code_challenge_method || '',
         nonce: q.nonce || '',
-        launchPatient: launchContext.patient || '',
-        launchEncounter: launchContext.encounter || '',
+        launchHandle: launchHandle || '',
       });
     });
 
@@ -173,8 +202,10 @@ module.exports = async function smartRoutes(app, opts) {
         code_challenge: z.string().optional(),
         code_challenge_method: z.enum(['S256']).optional(),
         nonce: z.string().optional(),
-        launch_patient: z.string().optional(),
-        launch_encounter: z.string().optional(),
+        // Opaque reference to the server-side launch record created at
+        // GET /oauth2/authorize. The launch context itself is never accepted
+        // from the client (M-11).
+        launch_handle: z.string().optional(),
         username: z.string().optional(),
         password: z.string().optional(),
         mfa_code: z.string().optional(),
@@ -243,10 +274,15 @@ module.exports = async function smartRoutes(app, opts) {
         userId = result.userId;
       }
 
-      const launchContext = {
-        patient: body.launch_patient || undefined,
-        encounter: body.launch_encounter || undefined,
-      };
+      // The launch context comes from the server-side record only. A request
+      // with no handle, or one whose handle is expired, already spent, or
+      // belongs to another client, gets no launch context — not a
+      // client-supplied one.
+      const launchContext = body.launch_handle
+        ? (await launchContexts.consume(body.launch_handle, {
+            clientId: smartClient.client_id,
+          })) || {}
+        : {};
 
       const code = await authzCodes.issue({
         orgId: smartClient.org_id,
@@ -321,7 +357,7 @@ module.exports = async function smartRoutes(app, opts) {
         }
         const launchCtx = consumed.launchContext || {};
         if (consumed.scope.includes('openid')) {
-          launchCtx.id_token = makeIdToken({
+          launchCtx.id_token = idToken.signIdToken(config, {
             issuer, clientId: consumed.clientId, userId: consumed.userId,
             nonce: consumed.nonce,
           });
@@ -497,23 +533,6 @@ async function resolveLaunchContext(launchToken, orgId) {
   return {};
 }
 
-function makeIdToken({ issuer, clientId, userId, nonce }) {
-  // Minimal ID token (HS256 with a fixed secret would normally be RS256; we
-  // sign with our jwt module so the surface stays consistent).
-  const jwt = require('../auth/jwt');
-  const cfg = require('../config').load();
-  return jwt.sign(
-    {
-      sub: userId,
-      aud: clientId,
-      nonce: nonce || undefined,
-      fhirUser: `Practitioner/${userId}`,
-    },
-    cfg.JWT_SECRET,
-    { ttlSeconds: 3600, issuer, audience: clientId }
-  );
-}
-
 function consentPage(args) {
   const escape = (s) => String(s).replace(/[&<>"']/g, c =>
     ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -546,8 +565,7 @@ function consentPage(args) {
   <input type="hidden" name="code_challenge" value="${a.codeChallenge}">
   <input type="hidden" name="code_challenge_method" value="${a.codeChallengeMethod}">
   <input type="hidden" name="nonce" value="${a.nonce}">
-  <input type="hidden" name="launch_patient" value="${a.launchPatient}">
-  <input type="hidden" name="launch_encounter" value="${a.launchEncounter}">
+  <input type="hidden" name="launch_handle" value="${a.launchHandle}">
   <label>Email <input type="email" name="username" autocomplete="username" required></label>
   <label>Password <input type="password" name="password" autocomplete="current-password" required></label>
   <div class="row">

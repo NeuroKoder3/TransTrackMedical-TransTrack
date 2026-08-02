@@ -74,8 +74,10 @@ function jwkToPublicKey(jwk) {
  *   smartClient: row from smart_clients
  *   assertion:   the JWT string
  *   tokenUrl:    our /token endpoint (must equal the JWT aud)
+ *   opts.jtiStore: replay cache (defaults to the DB-backed store)
  */
-async function verifyAssertion(smartClient, assertion, tokenUrl) {
+async function verifyAssertion(smartClient, assertion, tokenUrl, opts = {}) {
+  const jtiStore = opts.jtiStore || require('./jtiStore');
   if (typeof assertion !== 'string' || assertion.split('.').length !== 3) {
     throw new Error('invalid_request: malformed assertion');
   }
@@ -129,6 +131,17 @@ async function verifyAssertion(smartClient, assertion, tokenUrl) {
     throw new Error('invalid_request: alg not supported');
   }
   if (!verified) throw new Error('invalid_grant: signature verification failed');
+
+  // L-14: only once the assertion is proven authentic — claiming a jti is
+  // cheap, so recording unverified ones would let anyone poison the cache
+  // against a legitimate client.
+  const firstUse = await jtiStore.remember({
+    clientId: smartClient.client_id,
+    jti: String(payload.jti),
+    expiresAtSeconds: payload.exp,
+  });
+  if (!firstUse) throw new Error('invalid_grant: client assertion jti has already been used');
+
   return payload;
 }
 
