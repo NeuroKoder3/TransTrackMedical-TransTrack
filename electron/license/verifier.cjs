@@ -52,7 +52,7 @@ function verify(wireLicense, opts = {}) {
 
   // M-21: prefer monotonic high-water clock so rollback cannot extend expiry.
   let nowMs = opts.nowMs;
-  if (nowMs == null) {
+  if (nowMs === undefined || nowMs === null) {
     try {
       nowMs = require('./storage.cjs').observeMonotonicNow();
     } catch {

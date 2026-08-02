@@ -53,7 +53,9 @@ function _isPackagedApp() {
  * Escape hatch (packaged QA only): TRANSTRACK_ALLOW_DEV_PUBLISHER=true
  */
 function assertPublisherKeyAllowed(opts = {}) {
-  const packaged = opts.packaged != null ? !!opts.packaged : _isPackagedApp();
+  const packaged = opts.packaged !== undefined && opts.packaged !== null
+    ? !!opts.packaged
+    : _isPackagedApp();
   const allowDev =
     process.env.TRANSTRACK_ALLOW_DEV_PUBLISHER === 'true' ||
     opts.allowDevPublisher === true;
