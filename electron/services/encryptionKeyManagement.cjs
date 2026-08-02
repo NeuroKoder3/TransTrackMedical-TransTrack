@@ -25,6 +25,7 @@ const {
   rekeyDatabase,
   backupDatabase,
 } = require('../database/init.cjs');
+const { appendAuditRecord } = require('./auditChain.cjs');
 
 const KEY_ROTATION_MIN_INTERVAL_DAYS = 1;
 
@@ -98,22 +99,19 @@ async function rotateEncryptionKey(options = {}) {
   };
   appendRotationLog(entry);
 
-  db.prepare(`
-    INSERT INTO audit_logs (id, org_id, action, entity_type, details, user_email, user_role, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    uuidv4(),
-    'SYSTEM',
-    'encryption_key_rotated',
-    'System',
-    JSON.stringify({
+  // Through the chained writer, not a direct INSERT: a key rotation is exactly
+  // the event an attacker would want missing from a verifiable trail.
+  appendAuditRecord({
+    org_id: 'SYSTEM',
+    action: 'encryption_key_rotated',
+    entity_type: 'System',
+    details: JSON.stringify({
       preRotationBackup: path.basename(preRotationBackupPath),
       integrityVerified: true,
     }),
-    createdBy,
-    'admin',
-    new Date().toISOString()
-  );
+    user_email: createdBy,
+    user_role: 'admin',
+  }, { db });
 
   return {
     success: true,

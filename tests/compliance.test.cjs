@@ -123,11 +123,18 @@ test('Audit trail captures WHO, WHAT, WHEN', () => {
 });
 
 test('Audit logs are append-only (no update/delete exports)', () => {
-  const content = fs.readFileSync(path.join(__dirname, '..', 'electron', 'ipc', 'shared.cjs'), 'utf8');
-  const logAuditFn = content.substring(content.indexOf('function logAudit'));
-  assert(logAuditFn.includes('INSERT INTO audit_logs'), 'logAudit must only INSERT');
+  // logAudit delegates to the single chained writer in services/auditChain.cjs,
+  // so the append-only property has to be asserted where the SQL now lives.
+  const shared = fs.readFileSync(path.join(__dirname, '..', 'electron', 'ipc', 'shared.cjs'), 'utf8');
+  const logAuditFn = shared.substring(shared.indexOf('function logAudit'));
+  assert(logAuditFn.includes('appendAuditRecord'), 'logAudit must write through the chained writer');
   assert(!logAuditFn.includes('UPDATE audit_logs'), 'logAudit must never UPDATE');
   assert(!logAuditFn.includes('DELETE FROM audit_logs'), 'logAudit must never DELETE');
+
+  const writer = fs.readFileSync(path.join(__dirname, '..', 'electron', 'services', 'auditChain.cjs'), 'utf8');
+  assert(writer.includes('INSERT INTO audit_logs'), 'the chained writer must INSERT audit rows');
+  assert(!writer.includes('UPDATE audit_logs'), 'the chained writer must never UPDATE');
+  assert(!writer.includes('DELETE FROM audit_logs'), 'the chained writer must never DELETE');
 });
 
 // ============================================================================

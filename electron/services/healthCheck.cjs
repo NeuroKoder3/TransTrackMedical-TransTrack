@@ -169,6 +169,12 @@ function _checkAuditTrail() {
     let hmacKey = { available: false, osProtected: false, reason: 'module_unavailable' };
     try { hmacKey = require('./auditHmacKey.cjs').getStatus(); } catch { /* keep default */ }
 
+    // Result of the startup replay (main.cjs). Reported rather than recomputed:
+    // replaying the whole trail on every diagnostics call would make the health
+    // endpoint cost grow with the audit table.
+    let chainVerification = null;
+    try { chainVerification = require('./auditChain.cjs').getLastVerification(); } catch { /* keep null */ }
+
     const immutabilityEnforced = triggers.length >= 2;
     const problems = [];
     if (!immutabilityEnforced) problems.push('audit_logs immutability triggers missing');
@@ -186,13 +192,23 @@ function _checkAuditTrail() {
       problems.push('audit HMAC key came from the test-only override');
     }
 
+    // A detected break is an integrity incident, not a warning: the trail can
+    // no longer be relied on as evidence, and that must be visible wherever the
+    // health snapshot is read.
+    const chainBroken = Boolean(chainVerification && chainVerification.ok === false);
+    if (chainBroken) {
+      const orgs = chainVerification.broken.map((b) => `${b.orgId}:${b.failure}@${b.brokenAt}`).join(', ');
+      problems.push(`audit chain verification failed (${orgs})`);
+    }
+
     return {
-      status: problems.length === 0 ? 'ok' : 'warn',
+      status: chainBroken ? 'fail' : (problems.length === 0 ? 'ok' : 'warn'),
       immutabilityEnforced,
       immutabilityTriggers: triggers,
       hmacColumnPresent: hasHmacColumn,
       hmacKeyAvailable: hmacKey.available,
       hmacKeyOsProtected: hmacKey.osProtected,
+      chainVerification,
       ...(hmacKey.testOverrideRejected ? { testOverrideRejected: true } : {}),
       ...(hmacKey.testOverrideInUse ? { testOverrideInUse: true } : {}),
       ...(problems.length ? { error: problems.join('; ') } : {}),
