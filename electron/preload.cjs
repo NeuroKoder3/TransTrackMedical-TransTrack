@@ -32,6 +32,23 @@ function readSecurityPolicyFromArgv() {
 
 const securityPolicy = readSecurityPolicyFromArgv();
 
+/**
+ * Subscribe a renderer callback to a main-process broadcast.
+ *
+ * Every listener goes through here so two properties hold everywhere rather than
+ * per call site: the IpcRendererEvent is never handed to the renderer (it exposes
+ * `sender`, `ports` and `senderId`, which are a path back out of the isolated
+ * world), and the unsubscribe function removes the wrapper that was actually
+ * registered — passing the caller's own function to removeListener, as some of
+ * these did, leaves the listener attached forever.
+ */
+function subscribe(channel, callback) {
+  if (typeof callback !== 'function') return () => {};
+  const wrapped = (_event, ...args) => callback(...args);
+  ipcRenderer.on(channel, wrapped);
+  return () => ipcRenderer.removeListener(channel, wrapped);
+}
+
 // Prefer an explicit API URL from the shell env so Epic/remote mode works
 // even when Vite was started without VITE_TRANSTRACK_API_URL baked in.
 // Always expose transtrackConfig so the renderer can detect mode reliably.
@@ -366,11 +383,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Subscribe to the broadcast emitted by the protocol handler in main.cjs
     // after the IdP redirect completes. The callback receives
     // { ok, user?, sessionId?, error? }.
-    onCompleted: (callback) => {
-      const wrapped = (_event, payload) => callback(payload);
-      ipcRenderer.on('auth:ssoCompleted', wrapped);
-      return () => ipcRenderer.removeListener('auth:ssoCompleted', wrapped);
-    },
+    onCompleted: (callback) => subscribe('auth:ssoCompleted', callback),
   },
   
   // Session lifecycle events pushed by the main process.
@@ -378,30 +391,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // main process has already ended the session, so the renderer's only job is
   // to clear PHI from the screen. Payload: { reason, wasAuthenticated }.
   session: {
-    onLocked: (callback) => {
-      const wrapped = (_event, payload) => callback(payload);
-      ipcRenderer.on('session:locked', wrapped);
-      return () => ipcRenderer.removeListener('session:locked', wrapped);
-    },
+    onLocked: (callback) => subscribe('session:locked', callback),
   },
 
   // Menu event listeners
-  onMenuExport: (callback) => {
-    ipcRenderer.on('menu-export', callback);
-    return () => ipcRenderer.removeListener('menu-export', callback);
-  },
-  onMenuImport: (callback) => {
-    ipcRenderer.on('menu-import', callback);
-    return () => ipcRenderer.removeListener('menu-import', callback);
-  },
-  onBackupDatabase: (callback) => {
-    ipcRenderer.on('backup-database', (event, path) => callback(path));
-    return () => ipcRenderer.removeListener('backup-database', callback);
-  },
-  onViewAuditLogs: (callback) => {
-    ipcRenderer.on('view-audit-logs', callback);
-    return () => ipcRenderer.removeListener('view-audit-logs', callback);
-  },
+  onMenuExport: (callback) => subscribe('menu-export', callback),
+  onMenuImport: (callback) => subscribe('menu-import', callback),
+  onBackupDatabase: (callback) => subscribe('backup-database', callback),
+  onViewAuditLogs: (callback) => subscribe('view-audit-logs', callback),
   
   // Operational Risk Intelligence
   risk: {
@@ -424,7 +421,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Inactivation Prevention Action Queue + measured outcomes.
   // The action queue turns the assessment engine into a coordinator-ready
-  // ranked TODO list with concrete recommended interventions. Recorded
+  // ranked worklist with concrete recommended interventions. Recorded
   // interventions and their measured "after" assessments produce the
   // proof-of-prevention dataset for the manager dashboard / quarterly review.
   actionQueue: {

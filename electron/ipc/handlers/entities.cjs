@@ -80,6 +80,39 @@ const ENTITY_PERMISSION_MAP = {
   AdultHealthHistoryQuestionnaire: { view: PERMISSIONS.PATIENT_VIEW, create: PERMISSIONS.PATIENT_UPDATE, update: PERMISSIONS.PATIENT_UPDATE, delete: PERMISSIONS.PATIENT_DELETE },
 };
 
+/**
+ * Entity types whose bulk reads return whole PHI rows.
+ *
+ * `entity:get` already required a justification grant, but `entity:list` and
+ * `entity:filter` return `SELECT *` for every row in the org, so a role check
+ * alone let any holder of patient:view extract the entire patient population
+ * without a recorded reason. Bulk reads therefore require a grant too.
+ *
+ * The grant is taken over the sentinel entity id below rather than over a
+ * single record, so one justification covers the working session's list views
+ * (30 minutes, see PHI_GRANT_TTL_MS in services/accessControl.cjs) instead of
+ * forcing a coordinator to justify every page load. It is obtained through the
+ * same `access:authorizePhiAccess` IPC as a detail grant, which means the same
+ * checks apply: the caller must hold PATIENT_VIEW_PHI, the justification must
+ * be at least 10 characters, and the grant is written to
+ * access_justification_logs before any row is returned.
+ */
+const PHI_LIST_SCOPE_ID = '*';
+const PHI_BULK_READ_ENTITIES = new Set(['Patient']);
+
+function enforceBulkPhiGrant(currentUser, entityName) {
+  if (!PHI_BULK_READ_ENTITIES.has(entityName)) return;
+
+  const accessControl = require('../../services/accessControl.cjs');
+  if (accessControl.hasValidPhiGrant(currentUser.id, entityName, PHI_LIST_SCOPE_ID)) return;
+
+  throw new Error(
+    `PHI access justification required before bulk ${entityName} reads. ` +
+    `Request a list-scope grant for entity id "${PHI_LIST_SCOPE_ID}" with ` +
+    `the ${accessControl.PERMISSIONS.PATIENT_VIEW_PHI} permission first.`
+  );
+}
+
 function enforcePermission(currentUser, entityName, action) {
   const perms = ENTITY_PERMISSION_MAP[entityName];
   if (!perms) {
@@ -289,6 +322,7 @@ function register() {
     if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
     const { currentUser } = shared.getSessionState();
     enforcePermission(currentUser, entityName, 'view');
+    enforceBulkPhiGrant(currentUser, entityName);
     const tableName = shared.entityTableMap[entityName];
     if (!tableName) throw new Error(`Unknown entity: ${entityName}`);
     const rows = shared.listEntitiesByOrg(tableName, shared.getSessionOrgId(), orderBy, limit);
@@ -310,6 +344,7 @@ function register() {
     if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
     const { currentUser } = shared.getSessionState();
     enforcePermission(currentUser, entityName, 'view');
+    enforceBulkPhiGrant(currentUser, entityName);
     const tableName = shared.entityTableMap[entityName];
     if (!tableName) throw new Error(`Unknown entity: ${entityName}`);
     const orgId = shared.getSessionOrgId();
@@ -347,6 +382,17 @@ function register() {
     }
 
     const rows = db.prepare(query).all(...values);
+    if (entityName === 'Patient') {
+      shared.logAudit(
+        'filter',
+        entityName,
+        null,
+        null,
+        `Patient filter count=${rows.length} fields=${Object.keys(filters || {}).join(',')}`,
+        currentUser.email,
+        currentUser.role
+      );
+    }
     return rows
       .map(shared.parseJsonFields)
       .map((r) => redactSecretsForRenderer(tableName, r));

@@ -261,28 +261,38 @@ function register() {
     }
   });
 
-  // Login-page hints (never includes secrets). Used for first-launch UX and
-  // packaged vs developer messaging.
+  /**
+   * Login-page hints for an UNAUTHENTICATED caller.
+   *
+   * Everything returned here is readable by anyone who reaches the login screen,
+   * so the contents are limited to what the screen cannot render without:
+   * whether this is a packaged build (developer vs deployment messaging) and
+   * whether first-run setup is still pending (the one-time-token banner).
+   *
+   * Deliberately no longer returned:
+   *   • setupTokenPath — an absolute filesystem path to the file holding the
+   *     initial administrator password, handed to an unauthenticated caller.
+   *   • hasAdmin — tells an attacker whether the deployment has been set up and
+   *     therefore whether the setup token is still live.
+   *   • defaultAdminEmail — a username to spray against, published pre-auth.
+   *
+   * The renderer already knows the conventional install path and account name
+   * for its first-launch instructions; neither has to come from here, and
+   * neither should be confirmed to someone who has not signed in.
+   */
   ipcMain.handle('auth:loginHints', async () => {
     let setupTokenPresent = false;
-    let setupTokenPath = null;
     try {
       if (app && typeof app.getPath === 'function') {
-        setupTokenPath = path.join(app.getPath('userData'), 'INITIAL_ADMIN_PASSWORD.txt');
-        setupTokenPresent = fs.existsSync(setupTokenPath);
+        setupTokenPresent = fs.existsSync(
+          path.join(app.getPath('userData'), 'INITIAL_ADMIN_PASSWORD.txt')
+        );
       }
-    } catch { /* ignore */ }
-
-    const adminCount = db.prepare(
-      "SELECT COUNT(*) AS n FROM users WHERE role = 'admin' AND is_active = 1"
-    ).get()?.n || 0;
+    } catch { /* userData unavailable — treat setup as not pending */ }
 
     return {
       isPackaged: !!(app && app.isPackaged),
       setupTokenPresent,
-      setupTokenPath: setupTokenPresent ? setupTokenPath : null,
-      hasAdmin: adminCount > 0,
-      defaultAdminEmail: 'admin@transtrack.local',
     };
   });
 

@@ -11,7 +11,43 @@ const disasterRecovery = require('../../services/disasterRecovery.cjs');
 const complianceView = require('../../services/complianceView.cjs');
 const offlineReconciliation = require('../../services/offlineReconciliation.cjs');
 const supportBundle = require('../../services/supportBundle.cjs');
+const pathConfinement = require('../pathConfinement.cjs');
 const shared = require('../shared.cjs');
+
+/**
+ * File types a backup may be written as.
+ *
+ * Enforced on the write path because backupDatabase() securely wipes whatever
+ * already sits at the target before copying: without this, a target inside the
+ * application data directory could be aimed at `.transtrack-key` and destroy the
+ * encryption key rather than produce a backup.
+ */
+const BACKUP_EXTENSIONS = ['.db', '.sqlite', '.bak'];
+
+/**
+ * Record who took a diagnostics export and what it was allowed to contain.
+ *
+ * Named separately from the export itself so the trail distinguishes a routine
+ * bundle from one that carries free text, and so the operator's identity is on
+ * the record rather than inferred from a nearby sign-in.
+ */
+function auditFreeTextDiagnostics(action, currentUser, options) {
+  shared.logAudit(
+    action,
+    'System',
+    null,
+    null, // patientName — a support bundle is never scoped to one patient
+    JSON.stringify({
+      severity: options?.includeFreeText === true ? 'high' : 'informational',
+      operator: currentUser.email,
+      includeFreeText: options?.includeFreeText === true,
+      handleAsPhi: options?.includeFreeText === true,
+      confirmationProvided: Boolean(options?.freeTextConfirmation),
+    }),
+    currentUser.email,
+    currentUser.role,
+  );
+}
 
 function register() {
   const db = getDatabase();
@@ -57,13 +93,17 @@ function register() {
     return await disasterRecovery.createBackup({ ...options, createdBy: currentUser.email, orgId: shared.getSessionOrgId() });
   });
 
+  // The backup inventory names every copy of the database and where it lives on
+  // disk, and verification reads one. Both are operator functions: creating and
+  // restoring a backup were already admin-only, so leaving the inventory open to
+  // any authenticated account gave a map of the PHI at rest to everyone.
   ipcMain.handle('recovery:listBackups', async () => {
-    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
+    shared.requireAdmin('listing database backups');
     return disasterRecovery.listBackups();
   });
 
   ipcMain.handle('recovery:verifyBackup', async (event, backupId) => {
-    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
+    shared.requireAdmin('verifying a database backup');
     return disasterRecovery.verifyBackup(backupId);
   });
 
@@ -78,7 +118,7 @@ function register() {
   });
 
   ipcMain.handle('recovery:getStatus', async () => {
-    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
+    shared.requireAdmin('reading disaster-recovery status');
     return disasterRecovery.getRecoveryStatus();
   });
 
@@ -88,93 +128,107 @@ function register() {
   // so it is gated like a backup rather than like a read.
 
   ipcMain.handle('support:previewBundle', async (event, options) => {
-    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
-    const { currentUser } = shared.getSessionState();
-    if (!currentUser || currentUser.role !== 'admin') {
-      throw new Error('Admin access required for support diagnostics');
-    }
+    const currentUser = shared.requireAdmin('support diagnostics');
+
     // Returned to the renderer so an administrator can see exactly what would
-    // leave the machine before choosing to save it.
+    // leave the machine before choosing to save it. A preview in full-text mode
+    // materialises the same PHI, so it carries the same confirmation and the
+    // same audit record as the export.
+    const includeFreeText = options?.includeFreeText === true;
+    if (includeFreeText) {
+      auditFreeTextDiagnostics('support_bundle_previewed_with_phi', currentUser, options);
+    }
+
     return supportBundle.collectBundle({
-      includeFreeText: options?.includeFreeText === true,
+      includeFreeText,
+      freeTextConfirmation: options?.freeTextConfirmation,
+      operator: currentUser.email,
       maxLogLines: 200,
     });
   });
 
   ipcMain.handle('support:exportBundle', async (event, options) => {
-    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
-    const { currentUser } = shared.getSessionState();
-    if (!currentUser || currentUser.role !== 'admin') {
-      throw new Error('Admin access required for support diagnostics');
-    }
+    const currentUser = shared.requireAdmin('support diagnostics');
+    const includeFreeText = options?.includeFreeText === true;
 
-    const suggested = supportBundle.suggestFileName();
+    // Confirmation is checked before the save dialog opens so the operator is
+    // not asked where to put a file that will not be produced.
+    supportBundle.requireFreeTextAuthorization({
+      includeFreeText,
+      freeTextConfirmation: options?.freeTextConfirmation,
+      operator: currentUser.email,
+    });
+
+    const suggested = supportBundle.suggestFileName(new Date(), { includeFreeText });
     const { canceled, filePath } = await dialog.showSaveDialog({
-      title: 'Export support bundle',
+      title: includeFreeText
+        ? 'Export support bundle (CONTAINS PHI)'
+        : 'Export support bundle',
       defaultPath: suggested,
       filters: [{ name: 'Support bundle', extensions: ['json'] }],
     });
     if (canceled || !filePath) return { canceled: true };
 
-    const includeFreeText = options?.includeFreeText === true;
-    const result = supportBundle.writeBundle(filePath, { includeFreeText });
+    // Recorded BEFORE the file is written. In full-text mode this is a PHI
+    // disclosure, and a disclosure that cannot be evidenced must not happen —
+    // so the audit failure propagates rather than being swallowed as it was.
+    auditFreeTextDiagnostics(
+      includeFreeText ? 'support_bundle_exported_with_phi' : 'support_bundle_exported',
+      currentUser,
+      options
+    );
 
-    // A diagnostics export is a disclosure of system information and, in
-    // full-text mode, potentially of PHI. Both cases are auditable events.
-    try {
-      shared.logAudit(
-        'support_bundle_exported',
-        'System',
-        result.checksum.slice(0, 16),
-        null, // patientName — a support bundle is never scoped to a patient
-        JSON.stringify({
-          includeFreeText,
-          sizeBytes: result.sizeBytes,
-          handleAsPhi: includeFreeText,
-        }),
-        currentUser.email,
-        currentUser.role,
-      );
-    } catch { /* never fail the export because the audit write failed */ }
+    const result = supportBundle.writeBundle(filePath, {
+      includeFreeText,
+      freeTextConfirmation: options?.freeTextConfirmation,
+      operator: currentUser.email,
+    });
 
     return { canceled: false, ...result, includeFreeText };
   });
 
   // Compliance view
+  //
+  // The Compliance Center is a read-only surface for regulators and auditors.
+  // COMPLIANCE_VIEW and AUDIT_VIEW are held by admin and regulator only, which
+  // is what separates an auditor's read from a coordinator's — the previous
+  // session-only check gave every role the whole audit trail.
   ipcMain.handle('compliance:getSummary', async () => {
-    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
-    const { currentUser } = shared.getSessionState();
+    const currentUser = shared.requirePermission(
+      accessControl.PERMISSIONS.COMPLIANCE_VIEW, 'reading the compliance summary'
+    );
     complianceView.logRegulatorAccess(db, currentUser.id, currentUser.email, 'view_summary', 'Viewed compliance summary');
     return complianceView.getComplianceSummary(shared.getSessionOrgId());
   });
 
   ipcMain.handle('compliance:getAuditTrail', async (event, options) => {
-    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
-    const { currentUser } = shared.getSessionState();
-    if (!currentUser) throw new Error('Not authenticated');
+    const currentUser = shared.requirePermission(
+      accessControl.PERMISSIONS.AUDIT_VIEW, 'reading the audit trail'
+    );
     const orgId = shared.getSessionOrgId();
     complianceView.logRegulatorAccess(db, currentUser.id, currentUser.email, 'view_audit', 'Viewed audit trail');
     return complianceView.getAuditTrailForCompliance({ ...options, orgId });
   });
 
   ipcMain.handle('compliance:getDataCompleteness', async () => {
-    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
+    shared.requirePermission(
+      accessControl.PERMISSIONS.COMPLIANCE_VIEW, 'reading the data completeness report'
+    );
     return complianceView.getDataCompletenessReport(shared.getSessionOrgId());
   });
 
   ipcMain.handle('compliance:getValidationReport', async () => {
-    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
-    const { currentUser } = shared.getSessionState();
-    if (!currentUser) throw new Error('Not authenticated');
+    const currentUser = shared.requirePermission(
+      accessControl.PERMISSIONS.COMPLIANCE_VIEW, 'reading the validation report'
+    );
     const orgId = shared.getSessionOrgId();
     complianceView.logRegulatorAccess(db, currentUser.id, currentUser.email, 'view_validation', 'Viewed validation report');
     return complianceView.generateValidationReport(orgId);
   });
 
   ipcMain.handle('compliance:getAccessLogs', async (event, options) => {
-    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
-    const { currentUser } = shared.getSessionState();
-    if (!currentUser) throw new Error('Not authenticated');
+    // Who looked at which patient record and why — audit content, not clinical.
+    shared.requirePermission(accessControl.PERMISSIONS.AUDIT_VIEW, 'reading PHI access logs');
     const orgId = shared.getSessionOrgId();
     return complianceView.getAccessLogReport({ ...options, orgId });
   });
@@ -236,13 +290,17 @@ function register() {
   });
 
   ipcMain.handle('file:backupDatabase', async (event, targetPath) => {
-    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
-    const { currentUser } = shared.getSessionState();
-    if (!currentUser || currentUser.role !== 'admin') throw new Error('Admin access required for database backup');
+    const currentUser = shared.requireAdmin('backing up the database');
+
+    const confinedPath = pathConfinement.resolveConfinedPath(
+      targetPath || pathConfinement.defaultBackupPath(),
+      { purpose: 'backing up the database', extensions: BACKUP_EXTENSIONS }
+    );
+
     const { backupDatabase } = require('../../database/init.cjs');
-    await backupDatabase(targetPath);
+    await backupDatabase(confinedPath);
     shared.logAudit('backup', 'System', null, null, `Database backup created`, currentUser.email, currentUser.role);
-    return { success: true };
+    return { success: true, path: confinedPath };
   });
 
   // Excel export
@@ -425,18 +483,16 @@ function register() {
 
   // --- database restore ---
   ipcMain.handle('file:restoreDatabase', async (event, restorePath) => {
-    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
-
-    const { currentUser } = shared.getSessionState();
-    if (!currentUser || currentUser.role !== 'admin') {
-      throw new Error('Admin access required for database restore');
-    }
-
-    const fs = require('fs');
+    const currentUser = shared.requireAdmin('restoring the database');
 
     if (!restorePath) {
+      // Opened in the backup directory so the operator starts inside the
+      // allowlist rather than discovering the confinement as an error.
+      const roots = pathConfinement.getAllowedRoots();
+      const backupRoot = roots.find(r => r.label === 'backup directory');
       const { filePaths } = await dialog.showOpenDialog({
         title: 'Restore Database from Backup',
+        defaultPath: backupRoot ? backupRoot.dir : undefined,
         filters: [{ name: 'Database Files', extensions: ['db'] }],
         properties: ['openFile'],
       });
@@ -444,16 +500,20 @@ function register() {
       restorePath = filePaths[0];
     }
 
-    if (!fs.existsSync(restorePath)) {
-      throw new Error('Backup file not found');
-    }
+    // Applied to the dialog result as well as a renderer-supplied string: the
+    // dialog is driven by the same process that could be supplying the string,
+    // so it is not a stronger source of truth (finding L-5).
+    const confinedPath = pathConfinement.resolveConfinedPath(restorePath, {
+      purpose: 'restoring the database',
+      mustExist: true,
+    });
 
     shared.logAudit('restore', 'System', null, null,
-      `Database restore initiated from: ${path.basename(restorePath)}`,
+      `Database restore initiated from: ${path.basename(confinedPath)}`,
       currentUser.email, currentUser.role);
 
     const { restoreDatabaseFromBackup } = require('../../database/init.cjs');
-    return await restoreDatabaseFromBackup(restorePath);
+    return await restoreDatabaseFromBackup(confinedPath);
   });
 }
 
