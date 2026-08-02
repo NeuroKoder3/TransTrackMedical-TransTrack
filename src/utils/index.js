@@ -9,26 +9,38 @@ export function createPageUrl(pageName) {
   return `/${pageName}`;
 }
 
+/**
+ * Format a stored UTC date for clinical display (M-24).
+ * Always renders in UTC and appends a UTC marker so waitlist / specimen
+ * times are not shifted into the browser's local timezone.
+ */
 export function formatDate(date) {
   if (!date) return 'N/A';
   const d = new Date(date);
-  return d.toLocaleDateString('en-US', {
+  if (Number.isNaN(d.getTime())) return 'N/A';
+  const formatted = d.toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
+    timeZone: 'UTC',
   });
+  return `${formatted} UTC`;
 }
 
 export function formatDateTime(date) {
   if (!date) return 'N/A';
   const d = new Date(date);
-  return d.toLocaleString('en-US', {
+  if (Number.isNaN(d.getTime())) return 'N/A';
+  const formatted = d.toLocaleString('en-US', {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
+    timeZone: 'UTC',
+    hour12: true,
   });
+  return `${formatted} UTC`;
 }
 
 export function calculateAge(dateOfBirth) {

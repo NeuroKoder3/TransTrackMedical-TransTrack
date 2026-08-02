@@ -478,12 +478,12 @@ describe('entity facade', () => {
     }
   });
 
-  it('reports an unsupported entity as empty on read and refuses writes', async () => {
+  it('refuses unsupported entity reads and writes loudly (H-14)', async () => {
     const client = createRemoteClient();
     const entity = client.entities.SomethingUnsupported;
-    await expect(entity.list()).resolves.toEqual([]);
-    await expect(entity.filter({})).resolves.toEqual([]);
-    await expect(entity.get('x')).resolves.toBeNull();
+    await expect(entity.list()).rejects.toThrow(/not available in remote API mode/);
+    await expect(entity.filter({})).rejects.toThrow(/not available in remote API mode/);
+    await expect(entity.get('x')).rejects.toThrow(/not available in remote API mode/);
     await expect(entity.create({})).rejects.toThrow(/not available in remote API mode/);
     await expect(entity.update('x', {})).rejects.toThrow(/not available in remote API mode/);
     await expect(entity.delete('x')).rejects.toThrow(/not available in remote API mode/);
@@ -494,15 +494,10 @@ describe('entity facade', () => {
     expect(client.entities[Symbol.iterator]).toBeUndefined();
   });
 
-  it('warns rather than silently succeeding for an IPC-only function', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  it('throws rather than silently succeeding for an IPC-only function (H-14)', async () => {
     const client = createRemoteClient();
     await expect(client.functions.invoke('recalculatePriority', { id: 'p1' }))
-      .resolves.toEqual({ data: null });
-    expect(warn).toHaveBeenCalledWith(
-      expect.stringContaining('recalculatePriority'),
-      { id: 'p1' }
-    );
+      .rejects.toThrow(/not available in remote API mode/);
   });
 });
 

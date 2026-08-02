@@ -363,32 +363,57 @@ class RemoteClient {
           return browserEntityStore(entityName);
         }
 
+        const unavailable = (op) => {
+          throw new Error(
+            `${entityName}.${op} is not available in remote API mode. ` +
+            (entityName === 'Patient'
+              ? 'Use the patients HTTP API or the "Epic on FHIR" tab.'
+              : 'This entity requires the TransTrack desktop (offline) runtime.')
+          );
+        };
         return {
-          list: async () => [],
-          filter: async () => [],
-          get: async () => null,
-          create: async () => {
-            throw new Error(
-              `${entityName} is not available in remote API mode. ` +
-              'For live Epic import use the "Epic on FHIR" tab.'
-            );
-          },
-          update: async () => {
-            throw new Error(`${entityName} is not available in remote API mode.`);
-          },
-          delete: async () => {
-            throw new Error(`${entityName} is not available in remote API mode.`);
-          },
+          // H-14: do not silently return empty collections for unsupported
+          // entities — callers must see a hard failure, not a false empty set.
+          list: async () => unavailable('list'),
+          filter: async () => unavailable('filter'),
+          get: async () => unavailable('get'),
+          create: async () => unavailable('create'),
+          update: async () => unavailable('update'),
+          delete: async () => unavailable('delete'),
         };
       },
     }
   );
 
+  /**
+   * Desktop IPC functions that have a remote HTTP equivalent.
+   * Anything not listed here fails loudly (H-14) instead of returning null.
+   */
+  static REMOTE_FUNCTIONS = Object.freeze({
+    // Calculators are exposed on the HTTP API; map common IPC names.
+    calculateMeld: (client, params) => client.calculators.meld(params),
+    calculateMeldNa: (client, params) => client.calculators.meldNa(params),
+    calculateMeld3: (client, params) => client.calculators.meld3(params),
+    calculatePeld: (client, params) => client.calculators.peld(params),
+    calculateLas: (client, params) => client.calculators.las(params),
+    calculateKdpi: (client, params) => client.calculators.kdpi(params),
+    calculateEpts: (client, params) => client.calculators.epts(params),
+  });
+
   functions = {
     invoke: async (functionName, params) => {
-      // Local-only IPC functions (priority recalc, etc.) are not on the HTTP API yet.
-      console.warn(`[remoteClient] functions.invoke(${functionName}) not implemented remotely`, params);
-      return { data: null };
+      const mapped = RemoteClient.REMOTE_FUNCTIONS[functionName];
+      if (typeof mapped === 'function') {
+        const data = await mapped(this, params || {});
+        return { data };
+      }
+      // H-14: never silently succeed — priority recalc and similar must not
+      // leave stale scores without a visible failure in thin-client mode.
+      throw new Error(
+        `functions.invoke('${functionName}') is not available in remote API mode. ` +
+        'Use the TransTrack desktop application for this operation, or call the ' +
+        'corresponding HTTP endpoint when one exists.'
+      );
     },
   };
 }

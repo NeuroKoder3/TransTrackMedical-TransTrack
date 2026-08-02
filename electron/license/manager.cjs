@@ -28,7 +28,11 @@ const tiers = require('./tiers.cjs');
 const verifier = require('./verifier.cjs');
 const storage = require('./storage.cjs');
 const machineId = require('./machineId.cjs');
-const { LICENSE_PROTOCOL_VERSION, IS_DEV_KEY } = require('./publisherPublicKey.cjs');
+const {
+  LICENSE_PROTOCOL_VERSION,
+  IS_DEV_KEY,
+  assertPublisherKeyAllowed,
+} = require('./publisherPublicKey.cjs');
 
 const {
   BUILD_VERSION,
@@ -85,6 +89,20 @@ function _audit(eventType, info, details = {}) {
  */
 function _getState(force = false) {
   if (_cached && !force) return _cached;
+
+  // H-7: refuse to treat the app as licensed when a packaged binary still
+  // embeds the development publisher key. Unpackaged/dev builds are fine.
+  try {
+    assertPublisherKeyAllowed();
+  } catch (e) {
+    _cached = {
+      mode: 'invalid',
+      trial: null,
+      payload: null,
+      verification: { ok: false, code: e.code || 'DEV_PUBLISHER_KEY', message: e.message },
+    };
+    return _cached;
+  }
 
   const wire = storage.loadLicense();
   if (!wire) {

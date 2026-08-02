@@ -4,7 +4,7 @@
  * Provides the API interface using Electron IPC for local database operations.
  */
 
-import { withBulkPhiGrant } from '@/lib/phiAccessBroker';
+import { withBulkPhiGrant } from '../lib/phiAccessBroker.js';
 
 // mock client for browser dev — keeps hot-reload working without electron
 const mockClient = {

@@ -58,15 +58,34 @@ function getSessionOrgId() {
   return currentUser.org_id;
 }
 
+/**
+ * H-6: session entitlement must consult the license manager, not constants.
+ * Fail closed when the manager cannot be loaded.
+ */
 function getSessionTier() {
-  return 'enterprise';
+  try {
+    return require('../license/manager.cjs').getCurrentTier();
+  } catch {
+    return require('../license/tiers.cjs').LICENSE_TIER.EVALUATION;
+  }
 }
 
-function sessionHasFeature() {
-  return true;
+function sessionHasFeature(featureName) {
+  if (!featureName) return false;
+  try {
+    return !!require('../license/manager.cjs').checkFeature(featureName).enabled;
+  } catch {
+    return false;
+  }
 }
 
-function requireFeature() {
+function requireFeature(featureName) {
+  if (!sessionHasFeature(featureName)) {
+    const tier = getSessionTier();
+    throw new Error(
+      `Feature '${featureName}' is not available in your ${tier} tier. Please upgrade to access this feature.`
+    );
+  }
   return true;
 }
 

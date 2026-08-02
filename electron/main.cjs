@@ -81,7 +81,7 @@ const APP_INFO = {
   version: PKG_VERSION,
   description: 'Transplant Waitlist Management System (HIPAA Security Rule aligned, 21 CFR Part 11 architected)',
   author: 'TransTrack Medical Software',
-  designAlignment: ['HIPAA Security Rule', '21 CFR Part 11', 'AATB Standards'],
+  designAlignment: ['HIPAA Security Rule', '21 CFR Part 11'],
   certificationDisclaimer: 'Design alignment statements describe product controls only and are not certifications. SOC 2, HITRUST, and 21 CFR Part 11 validation must be performed by the deploying organization with qualified auditors.'
 };
 
@@ -386,7 +386,7 @@ function createMenu() {
               type: 'info',
               title: 'Compliance & Design Alignment',
               message: 'Regulatory Design Alignment',
-              detail: 'TransTrack is architected to support controls required by:\n\n• HIPAA Security Rule (45 CFR §164.308 / .310 / .312)\n• 21 CFR Part 11 - Electronic Records and Signatures\n• AATB - American Association of Tissue Banks Standards\n\nAll patient data is stored locally with AES-256 encryption. Audit trails are immutable and enforced at the database trigger level.\n\nNOTE: These are design-control statements, not certifications. SOC 2, HITRUST, 21 CFR Part 11 validation and any FDA determinations must be performed by the deploying organization with qualified auditors.'
+              detail: 'TransTrack is architected to support controls required by:\n\n• HIPAA Security Rule (45 CFR §164.308 / .310 / .312)\n• 21 CFR Part 11 - Electronic Records and Signatures\n\nAll patient data is stored locally with AES-256 encryption. Audit trails are immutable and enforced at the database trigger level.\n\nNOTE: These are design-control statements, not certifications. SOC 2, HITRUST, 21 CFR Part 11 validation and any FDA determinations must be performed by the deploying organization with qualified auditors.'
             });
           }
         },
@@ -595,6 +595,21 @@ app.whenReady().then(async () => {
     isDev,
     apiUrl: process.env.TRANSTRACK_API_URL || process.env.VITE_TRANSTRACK_API_URL || '(none — local IPC)',
   });
+
+  // H-7: packaged builds must not ship with the development publisher key.
+  try {
+    const { assertPublisherKeyAllowed, IS_DEV_KEY } = require('./license/publisherPublicKey.cjs');
+    assertPublisherKeyAllowed();
+    if (IS_DEV_KEY) {
+      logger.warn('Using development license publisher key (unpackaged / non-release build)');
+    }
+  } catch (publisherErr) {
+    logger.error('Publisher key gate failed', { error: publisherErr.message, code: publisherErr.code });
+    const { dialog } = require('electron');
+    dialog.showErrorBox('TransTrack license configuration error', publisherErr.message);
+    app.quit();
+    return;
+  }
 
   // Splash has no preload bridge — skip it in E2E so Playwright always
   // attaches to the main window that exposes electronAPI.

@@ -111,9 +111,6 @@ export default function ComplianceCenter() {
             <Badge variant="outline" className="text-green-600 border-green-300">
               FDA 21 CFR Part 11
             </Badge>
-            <Badge variant="outline" className="text-green-600 border-green-300">
-              AATB
-            </Badge>
           </div>
         </div>
 

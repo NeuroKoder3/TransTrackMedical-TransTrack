@@ -185,6 +185,39 @@ test('trial is reported as expired after duration elapses', () => {
   assert.strictEqual(s.daysRemaining, 0);
 });
 
+test('M-21: deleting the trial file does not reset the window', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-trial4-'));
+  process.env.TRANSTRACK_USERDATA_DIR = dir;
+  const s1 = storage.getTrialState();
+  fs.unlinkSync(path.join(dir, '.transtrack-trial'));
+  const s2 = storage.getTrialState(Date.now() + 2 * 86400e3);
+  assert.strictEqual(s1.startedAt, s2.startedAt);
+  assert.ok(s2.daysRemaining <= s1.daysRemaining);
+});
+
+test('M-21: clock rollback cannot extend the trial', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-trial5-'));
+  process.env.TRANSTRACK_USERDATA_DIR = dir;
+  const start = Date.now();
+  storage.getTrialState(start);
+  // Advance past expiry via high-water, then present an earlier wall clock.
+  const afterExpiry = start + (storage.TRIAL_DURATION_DAYS + 2) * 86400e3;
+  const expired = storage.getTrialState(afterExpiry);
+  assert.strictEqual(expired.expired, true);
+  const rolledBack = storage.getTrialState(start + 86400e3);
+  assert.strictEqual(rolledBack.expired, true);
+});
+
+test('H-7: packaged builds refuse the development publisher key', () => {
+  const { assertPublisherKeyAllowed, IS_DEV_KEY } = require('../electron/license/publisherPublicKey.cjs');
+  assert.strictEqual(IS_DEV_KEY, true);
+  assert.throws(
+    () => assertPublisherKeyAllowed({ packaged: true, allowDevPublisher: false }),
+    /development license publisher key/
+  );
+  assert.doesNotThrow(() => assertPublisherKeyAllowed({ packaged: false }));
+});
+
 (async () => {
   console.log('\nmanager — public surface');
 
@@ -251,6 +284,44 @@ test('trial is reported as expired after duration elapses', () => {
     manager.removeLicense();
     const info = manager.getLicenseInfo();
     assert.ok(info.mode === 'trial' || info.mode === 'trial_expired');
+  });
+
+  console.log('\nfeatureGate — enforcement (H-6)');
+
+  delete require.cache[require.resolve('../electron/license/featureGate.cjs')];
+  const featureGate = require('../electron/license/featureGate.cjs');
+
+  await atest('requireWriteAccess allows active trial', async () => {
+    manager._invalidate();
+    assert.doesNotThrow(() => featureGate.requireWriteAccess());
+  });
+
+  await atest('requireWriteAccess blocks trial_expired', async () => {
+    const dir2 = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-fg-'));
+    process.env.TRANSTRACK_USERDATA_DIR = dir2;
+    manager._invalidate();
+    // Seed an already-expired trial via the clock/trial files.
+    const started = new Date(Date.now() - (storage.TRIAL_DURATION_DAYS + 5) * 86400e3).toISOString();
+    fs.writeFileSync(path.join(dir2, '.transtrack-trial'), JSON.stringify({ startedAt: started }));
+    fs.writeFileSync(
+      path.join(dir2, '.transtrack-clock'),
+      JSON.stringify({ trialStartedAt: started, lastSeenAtMs: Date.now() })
+    );
+    manager._invalidate();
+    assert.throws(() => featureGate.requireWriteAccess(), /read-only|expired/i);
+  });
+
+  await atest('shared.requireFeature consults the license manager', async () => {
+    const shared = require('../electron/ipc/shared.cjs');
+    // Restore a usable userdata dir with active license from earlier tests.
+    const wire = signLicense(makePayload({ features: ['fhir_import'] }), privatePem);
+    const dir3 = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-shared-'));
+    process.env.TRANSTRACK_USERDATA_DIR = dir3;
+    manager._invalidate();
+    await manager.activateLicense(wire);
+    assert.strictEqual(shared.sessionHasFeature('fhir_import'), true);
+    assert.strictEqual(shared.sessionHasFeature('bulk_operations'), false);
+    assert.throws(() => shared.requireFeature('bulk_operations'), /not available/);
   });
 
   console.log(`\n${pass} passed, ${fail} failed`);

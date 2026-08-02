@@ -41,16 +41,18 @@ describe('formatDate / formatDateTime', () => {
     }
   });
 
-  it('formats an ISO date in the US clinical convention', () => {
-    // Anchored at midday UTC so the assertion does not depend on the runner's
-    // timezone pushing the date across a boundary.
-    expect(formatDate('2026-03-14T12:00:00Z')).toBe('Mar 14, 2026');
+  it('formats an ISO date in UTC with an explicit UTC marker (M-24)', () => {
+    // Near a timezone boundary: local rendering could shift the calendar day;
+    // UTC labelling must keep the stored day stable.
+    expect(formatDate('2026-03-14T01:00:00Z')).toBe('Mar 14, 2026 UTC');
+    expect(formatDate('2026-03-14T23:30:00Z')).toBe('Mar 14, 2026 UTC');
   });
 
-  it('includes a time component for a timestamp', () => {
+  it('includes a time component and UTC marker for a timestamp (M-24)', () => {
     const out = formatDateTime('2026-03-14T12:00:00Z');
     expect(out).toContain('Mar 14, 2026');
     expect(out).toMatch(/\d{1,2}:\d{2}\s?(AM|PM)/i);
+    expect(out.endsWith('UTC')).toBe(true);
   });
 });
 

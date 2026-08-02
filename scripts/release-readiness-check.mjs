@@ -190,6 +190,32 @@ await runStep('Build output emitted to dist/', 'mandatory', () => {
   return `${size} bytes`;
 });
 
+// H-7: commercial / packaged releases must not embed the development
+// publisher public key. Unset TRANSTRACK_PUBLISHER_PUBLIC_KEY at check time
+// so we evaluate the baked-in default from publisherPublicKey.cjs.
+await runStep('License publisher key is not the development key', isCommercialRelease ? 'mandatory' : 'optional', () => {
+  const prior = process.env.TRANSTRACK_PUBLISHER_PUBLIC_KEY;
+  try {
+    delete process.env.TRANSTRACK_PUBLISHER_PUBLIC_KEY;
+    // Clear require cache so the module re-reads env.
+    const modPath = resolve(repoRoot, 'electron/license/publisherPublicKey.cjs');
+    delete require.cache[require.resolve(modPath)];
+    const { IS_DEV_KEY, PUBLIC_KEY_BASE64 } = require(modPath);
+    if (IS_DEV_KEY) {
+      throw new Error(
+        'publisherPublicKey.cjs still embeds DEV_PUBLIC_KEY_BASE64. ' +
+        'Paste the production PUBLIC_KEY_BASE64 (see docs/LICENSING.md) before a for-sale release.'
+      );
+    }
+    return `production key (${PUBLIC_KEY_BASE64.slice(0, 8)}…)`;
+  } finally {
+    if (prior !== undefined) process.env.TRANSTRACK_PUBLISHER_PUBLIC_KEY = prior;
+    else delete process.env.TRANSTRACK_PUBLISHER_PUBLIC_KEY;
+    const modPath = resolve(repoRoot, 'electron/license/publisherPublicKey.cjs');
+    delete require.cache[require.resolve(modPath)];
+  }
+});
+
 // --- 6. Compliance artefact presence ----------------------------------------
 const requiredCompliance = [
   'docs/compliance/VALIDATION_PLAN.md',

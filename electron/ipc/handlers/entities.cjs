@@ -13,6 +13,7 @@ const { hasPermission, PERMISSIONS } = require('../../services/accessControl.cjs
 const { encryptField, isEncrypted } = require('../../services/secretEncryption.cjs');
 const electronicSignature = require('../../services/electronicSignature.cjs');
 const { assertValidEntity } = require('../../functions/validators.cjs');
+const featureGate = require('../../license/featureGate.cjs');
 
 /**
  * Columns that hold raw secrets we must transparently encrypt on write.
@@ -142,32 +143,19 @@ function register() {
 
     if (entityName === 'AuditLog') throw new Error('Audit logs cannot be created directly');
 
+    // H-6: refuse writes when trial/license is expired or invalid.
+    featureGate.requireWriteAccess();
+
     // License enforcement — refuse to create new Patient / User rows once
     // the licensed cap is reached. Reads and updates are always allowed
-    // (this matches the "fail safe, not silently lose data" stance).
+    // once the license is valid (fail safe: do not silently lose edits).
     if (entityName === 'Patient' || entityName === 'User') {
       const licenseManager = require('../../license/manager.cjs');
-      const info = licenseManager.getLicenseInfo();
-      if (info.mode === 'trial_expired' || info.mode === 'invalid') {
-        throw new Error(
-          info.mode === 'trial_expired'
-            ? 'Your trial period has ended. Please activate a TransTrack license in Settings → License to continue creating records.'
-            : 'License is invalid. Please contact your administrator. (' + (info.verificationError || 'unknown') + ')'
-        );
-      }
       const limitType = entityName === 'Patient' ? 'patients' : 'users';
-      // Count existing rows for this org (cheap; SQLite COUNT is O(1) on
-      // an indexed column for small N).
       const tbl = entityName === 'Patient' ? 'patients' : 'users';
       const { getDatabase } = require('../../database/init.cjs');
       const current = getDatabase().prepare(`SELECT COUNT(*) AS n FROM ${tbl} WHERE org_id = ?`).get(orgId)?.n || 0;
-      const check = licenseManager.checkLimit(limitType, current);
-      if (!check.withinLimit) {
-        throw new Error(
-          `License limit reached: your tier allows up to ${check.limit} ${limitType}. ` +
-          `Upgrade your license in Settings → License or contact your account manager.`
-        );
-      }
+      featureGate.requireWithinLimit(limitType, current);
     }
 
     const id = data.id || uuidv4();
@@ -247,6 +235,9 @@ function register() {
 
     if (entityName === 'AuditLog') throw new Error('Audit logs cannot be modified');
 
+    // H-6: refuse writes when trial/license is expired or invalid.
+    featureGate.requireWriteAccess();
+
     const existingEntity = shared.getEntityByIdAndOrg(tableName, id, orgId);
     if (!existingEntity) throw new Error(`${entityName} not found or access denied`);
 
@@ -305,6 +296,9 @@ function register() {
     const orgId = shared.getSessionOrgId();
 
     if (entityName === 'AuditLog') throw new Error('Audit logs cannot be deleted');
+
+    // H-6: refuse writes when trial/license is expired or invalid.
+    featureGate.requireWriteAccess();
 
     const entity = shared.getEntityByIdAndOrg(tableName, id, orgId);
     if (!entity) throw new Error(`${entityName} not found or access denied`);

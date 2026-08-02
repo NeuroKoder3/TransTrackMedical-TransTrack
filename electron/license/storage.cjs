@@ -10,8 +10,10 @@
  * Trial mode: when there is no license file, we transparently fall back
  * to a "trial" state that lasts TRIAL_DURATION_DAYS from the recorded
  * trial_started_at timestamp (which is created on first call). Once
- * expired, the trial cannot be reset by re-running the app (the file is
- * append-only-ish; we never erase the trial timestamp).
+ * expired, the trial cannot be reset by deleting the trial file or by
+ * rolling the system clock back — a companion high-water clock file
+ * retains the earliest trial start and the latest observed wall time
+ * (M-21).
  */
 
 'use strict';
@@ -40,10 +42,51 @@ function _trialPath() {
   return path.join(_userDataDir(), '.transtrack-trial');
 }
 
-// All filesystem helpers below avoid the existsSync()-then-act pattern that
-// CodeQL flags as `js/file-system-race`. We attempt the operation directly
-// and treat ENOENT as the negative result. This eliminates the TOCTOU window
-// and is what Node's own docs recommend.
+function _clockPath() {
+  return path.join(_userDataDir(), '.transtrack-clock');
+}
+
+function _readJson(filePath) {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch (err) {
+    if (err && err.code !== 'ENOENT') {
+      /* corrupt; treat as missing */
+    }
+    return null;
+  }
+}
+
+function _writeJson(filePath, obj) {
+  const dir = path.dirname(filePath);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(filePath, JSON.stringify(obj), { mode: 0o600 });
+  try { fs.chmodSync(filePath, 0o600); } catch { /* windows */ }
+}
+
+/**
+ * Monotonic wall-clock observation used for trial expiry and license
+ * soft-expiry. Returns max(nowMs, previouslyObserved) so a clock
+ * rollback cannot extend entitlement (M-21).
+ */
+function observeMonotonicNow(nowMs = Date.now()) {
+  const clock = _readJson(_clockPath()) || {};
+  const prior = Number(clock.lastSeenAtMs);
+  const effective = Number.isFinite(prior) ? Math.max(nowMs, prior) : nowMs;
+  const next = {
+    ...clock,
+    lastSeenAtMs: effective,
+  };
+  _writeJson(_clockPath(), next);
+  return effective;
+}
+
+function getMonotonicNow(nowMs = Date.now()) {
+  const clock = _readJson(_clockPath()) || {};
+  const prior = Number(clock.lastSeenAtMs);
+  if (Number.isFinite(prior) && prior > nowMs) return prior;
+  return nowMs;
+}
 
 function loadLicense() {
   const p = _licensePath();
@@ -77,42 +120,60 @@ function deleteLicense() {
 }
 
 /**
- * Trial state — { startedAt: ISO, expiresAt: ISO, daysRemaining: number, expired: boolean }
+ * Trial state — { startedAt, expiresAt, daysRemaining, expired, durationDays }
  * Always returns an object; creates the trial file on first call so subsequent
- * calls give a deterministic answer.
+ * calls give a deterministic answer. Deleting the trial file does not reset
+ * the window when the high-water clock still records trialStartedAt (M-21).
  */
 function getTrialState(nowMs = Date.now()) {
-  const p = _trialPath();
   const dir = _userDataDir();
   fs.mkdirSync(dir, { recursive: true });
 
-  let startedAt;
-  try {
-    const obj = JSON.parse(fs.readFileSync(p, 'utf8'));
-    if (obj && typeof obj.startedAt === 'string' && !isNaN(Date.parse(obj.startedAt))) {
-      startedAt = obj.startedAt;
-    }
-  } catch (err) {
-    // ENOENT (no trial yet) and parse errors both fall through to "create new"
-    if (err && err.code !== 'ENOENT') {
-      /* file corrupt; rewrite */
-    }
+  const clock = _readJson(_clockPath()) || {};
+  const effectiveNow = observeMonotonicNow(nowMs);
+
+  let startedAt = null;
+  const trialObj = _readJson(_trialPath());
+  if (trialObj && typeof trialObj.startedAt === 'string' && !isNaN(Date.parse(trialObj.startedAt))) {
+    startedAt = trialObj.startedAt;
+  }
+
+  // Anti-reset: if the trial file was deleted, restore from the clock file.
+  if (!startedAt && typeof clock.trialStartedAt === 'string' && !isNaN(Date.parse(clock.trialStartedAt))) {
+    startedAt = clock.trialStartedAt;
+    _writeJson(_trialPath(), { startedAt });
+  }
+
+  // Prefer the earliest known start (never let a rewritten trial file move
+  // the start forward).
+  if (
+    startedAt &&
+    typeof clock.trialStartedAt === 'string' &&
+    !isNaN(Date.parse(clock.trialStartedAt)) &&
+    Date.parse(clock.trialStartedAt) < Date.parse(startedAt)
+  ) {
+    startedAt = clock.trialStartedAt;
+    _writeJson(_trialPath(), { startedAt });
   }
 
   if (!startedAt) {
-    startedAt = new Date(nowMs).toISOString();
-    fs.writeFileSync(p, JSON.stringify({ startedAt }), { mode: 0o600 });
-    try { fs.chmodSync(p, 0o600); } catch { /* windows */ }
+    startedAt = new Date(effectiveNow).toISOString();
+    _writeJson(_trialPath(), { startedAt });
   }
+
+  _writeJson(_clockPath(), {
+    lastSeenAtMs: effectiveNow,
+    trialStartedAt: startedAt,
+  });
 
   const startMs = Date.parse(startedAt);
   const expiresMs = startMs + TRIAL_DURATION_DAYS * DAY_MS;
-  const daysRemaining = Math.ceil((expiresMs - nowMs) / DAY_MS);
+  const daysRemaining = Math.ceil((expiresMs - effectiveNow) / DAY_MS);
   return {
     startedAt,
     expiresAt: new Date(expiresMs).toISOString(),
     daysRemaining: Math.max(0, daysRemaining),
-    expired: nowMs > expiresMs,
+    expired: effectiveNow > expiresMs,
     durationDays: TRIAL_DURATION_DAYS,
   };
 }
@@ -122,5 +183,7 @@ module.exports = {
   storeLicense,
   deleteLicense,
   getTrialState,
+  observeMonotonicNow,
+  getMonotonicNow,
   TRIAL_DURATION_DAYS,
 };

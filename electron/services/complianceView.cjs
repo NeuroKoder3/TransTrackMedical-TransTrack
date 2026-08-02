@@ -68,7 +68,7 @@ function getComplianceSummary(orgId) {
     auditActivity: auditStats,
     systemInfo: {
       version: (() => { try { return require('electron').app.getVersion(); } catch { return require('../../package.json').version; } })(),
-      complianceStandards: ['HIPAA', 'FDA 21 CFR Part 11', 'AATB'],
+      complianceStandards: ['HIPAA', 'FDA 21 CFR Part 11'],
     },
   };
 }
@@ -260,7 +260,6 @@ function generateValidationReport(orgId) {
     items: [
       { check: 'HIPAA Technical Safeguards', status: 'IMPLEMENTED', details: 'Encryption, access controls, audit trails' },
       { check: 'FDA 21 CFR Part 11', status: 'IMPLEMENTED', details: 'Electronic records, audit trails, user authentication' },
-      { check: 'AATB Standards', status: 'IMPLEMENTED', details: 'Donor/recipient tracking, traceability' },
     ],
   });
   
