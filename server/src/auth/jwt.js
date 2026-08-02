@@ -49,4 +49,17 @@ function verify(token, secret, opts = {}) {
   return body;
 }
 
-module.exports = { sign, verify };
+/**
+ * Audience for the short-lived MFA-enrolment token (M-26).
+ *
+ * It used to be signed and verified with no audience at all, so any token
+ * this server issues under the same issuer satisfied the check and only the
+ * `purpose` claim separated an enrolment grant from a session. Giving it a
+ * distinct audience means an access token can never be presented as an
+ * enrolment token, or the reverse.
+ */
+function mfaEnrollAudience(baseAudience) {
+  return `${baseAudience}:mfa-enroll`;
+}
+
+module.exports = { sign, verify, mfaEnrollAudience };
