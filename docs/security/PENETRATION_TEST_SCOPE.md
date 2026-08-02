@@ -264,5 +264,7 @@ Vendor proposals shall break down:
 
 ---
 
-*To request a quote against this SOW, email Trans_Track@outlook.com with
-subject `PEN TEST QUOTE — TransTrack v____ — <vendor name>`.*
+*To request a quote against this SOW, email `security@transtrack.example` with
+subject `PEN TEST QUOTE — TransTrack v____ — <vendor name>`. That address is a
+role-based placeholder and is not yet provisioned; see residual risk RR-15 in
+[`../compliance/RESIDUAL_RISK.md`](../compliance/RESIDUAL_RISK.md).*

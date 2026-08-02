@@ -405,8 +405,11 @@ If critical issues are found post-deployment:
 
 ## Support
 
-- Email: Trans_Track@outlook.com
-- Documentation: See `docs/` directory in the installation
-- Emergency: Follow incident response procedures in `INCIDENT_RESPONSE.md`
+- Technical support: `support@transtrack.example`
+- Security disclosure: `security@transtrack.example` — see [`../SECURITY.md`](../SECURITY.md#reporting-a-security-issue)
+- Both are role-based placeholders that are not yet provisioned; see residual risk RR-15
+- Operational procedures: [`../RUNBOOK.md`](../RUNBOOK.md)
+- Documentation: See the `docs/` directory in the installation
+- Emergency: Follow the incident response procedures in [`INCIDENT_RESPONSE.md`](INCIDENT_RESPONSE.md)
 
 **Deploy Only After All Checklist Items Are Complete**

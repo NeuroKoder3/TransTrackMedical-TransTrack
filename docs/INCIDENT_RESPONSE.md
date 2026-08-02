@@ -167,7 +167,8 @@ FOLLOW-UP ITEMS:
 |------|---------|-------------|
 | Incident Response Lead | [Designated Person] | 24/7 |
 | HIPAA Privacy Officer | [Designated Person] | Business hours + on-call |
-| IT Security | Trans_Track@outlook.com | Business hours |
+| Site IT Security | [Designated Person] | Business hours |
+| Vendor Security (TransTrack) | `security@transtrack.example` — SLA and escalation path in [`../SECURITY.md`](../SECURITY.md#reporting-a-security-issue). Placeholder, not yet provisioned; see RR-15 | Per the published SLA |
 | Legal Counsel | [Designated Firm] | Business hours |
 | HHS OCR Breach Portal | https://ocrportal.hhs.gov/ocr/breach/wizard_breach.jsf | 24/7 |
 

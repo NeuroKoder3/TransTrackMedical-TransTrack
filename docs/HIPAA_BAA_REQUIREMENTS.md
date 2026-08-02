@@ -49,8 +49,13 @@ A compliant BAA with TransTrack must include:
 ## Contact
 
 To request a BAA or discuss compliance requirements:
-- Email: Trans_Track@outlook.com
+- Email: `support@transtrack.example`
 - Subject: "BAA Request - [Organization Name]"
+
+That address is a role-based placeholder on the reserved `.example` domain and
+is not yet provisioned; provisioning it is a prerequisite for commercial
+release, tracked as residual risk RR-15 in
+[`compliance/RESIDUAL_RISK.md`](compliance/RESIDUAL_RISK.md).
 
 ---
 

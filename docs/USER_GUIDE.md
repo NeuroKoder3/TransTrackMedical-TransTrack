@@ -445,7 +445,8 @@ Access the full aHHQ analysis in the **aHHQ Status** tab.
 ## Support
 
 For technical support or feature requests:
-- Email: Trans_Track@outlook.com
+- Email: `support@transtrack.example` (role-based placeholder, not yet provisioned — see residual risk RR-15)
+- Security issues: follow [`../SECURITY.md`](../SECURITY.md#reporting-a-security-issue) rather than emailing support
 - Documentation: https://github.com/NeuroKoder3/TransTrackMedical-TransTrack
 
 ---
