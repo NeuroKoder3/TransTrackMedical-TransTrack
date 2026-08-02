@@ -81,10 +81,19 @@ export function readEmbeddedSignature(filePath) {
 /**
  * Ask Windows whether the signature is valid and who signed it.
  *
- * @returns {{ available: false } | { available: true, status: string, subject: string|null, valid: boolean }}
+ * Returns `available: false` — with a reason — whenever no verdict was
+ * obtained, rather than inventing a placeholder status. The distinction is not
+ * academic: a missing verdict means "this machine could not tell us", and
+ * reporting that as "not valid" would condemn a correctly signed artifact
+ * because of something about the build machine.
+ *
+ * @returns {{ available: false, reason: string }
+ *          | { available: true, status: string, kind: string, subject: string|null, valid: boolean }}
  */
 export function verifyAuthenticode(filePath) {
-  if (process.platform !== 'win32') return { available: false };
+  if (process.platform !== 'win32') {
+    return { available: false, reason: `Get-AuthenticodeSignature does not exist on ${process.platform}` };
+  }
 
   const ps = spawnSync(
     'powershell',
@@ -100,11 +109,19 @@ export function verifyAuthenticode(filePath) {
     { encoding: 'utf8' },
   );
 
-  if (ps.error || typeof ps.stdout !== 'string') return { available: false };
+  if (ps.error) {
+    return { available: false, reason: `could not run powershell: ${ps.error.message}` };
+  }
 
-  const status = /STATUS=(.*)/.exec(ps.stdout)?.[1]?.trim() || 'Unknown';
-  const kind = /KIND=(.*)/.exec(ps.stdout)?.[1]?.trim() || 'Unknown';
-  const subjectRaw = /SUBJECT=(.*)/.exec(ps.stdout)?.[1]?.trim() || '';
+  const stdout = typeof ps.stdout === 'string' ? ps.stdout : '';
+  const status = /STATUS=(.+)/.exec(stdout)?.[1]?.trim();
+  if (!status) {
+    const why = (ps.stderr || '').trim().split(/\r?\n/)[0] || `powershell exited ${ps.status}`;
+    return { available: false, reason: `Get-AuthenticodeSignature returned no verdict (${why})` };
+  }
+
+  const kind = /KIND=(.+)/.exec(stdout)?.[1]?.trim() || 'Unknown';
+  const subjectRaw = /SUBJECT=(.+)/.exec(stdout)?.[1]?.trim() || '';
 
   return {
     available: true,
@@ -124,56 +141,62 @@ export function inspectWindowsArtifact(filePath) {
   if (!existsSync(filePath)) throw new Error(`artifact not found: ${filePath}`);
 
   const embedded = readEmbeddedSignature(filePath);
-  const authenticode = verifyAuthenticode(filePath);
+  const os = verifyAuthenticode(filePath);
 
-  if (authenticode.available) {
-    // Windows is authoritative on validity, so ask it first rather than
-    // inferring from the file layout.
-    if (!authenticode.valid) {
-      return {
-        signed: false,
-        assurance: 'none',
-        detail: `Authenticode status is ${authenticode.status}, not Valid`,
-      };
-    }
+  // An installer must carry its signature inside the file. Windows reports
+  // catalog-signed binaries as Valid — notepad.exe is the canonical example —
+  // but a catalog lives on the machine that installed it and cannot travel with
+  // a download, so it is worthless as evidence at the receiving site.
+  if (!embedded.present) {
+    const catalog = os.available && os.valid;
+    return {
+      signed: false,
+      assurance: 'none',
+      detail: catalog
+        ? `signature is ${os.kind}-based, not embedded in the file. A distributed ` +
+          `installer must carry an embedded Authenticode signature, because a ` +
+          `catalog signature does not travel with the download`
+        : 'no Authenticode signature is embedded in the executable',
+    };
+  }
 
-    // Valid, but is the signature actually part of the file? Windows reports
-    // catalog-signed system binaries as Valid even though nothing is embedded —
-    // notepad.exe is the canonical example. A catalog lives on the machine that
-    // installed it, so it cannot travel with a download: an installer we hand a
-    // hospital must carry its signature inside the file.
-    if (!embedded.present) {
-      return {
-        signed: false,
-        assurance: 'none',
-        detail:
-          `signature is ${authenticode.kind}-based, not embedded in the file. ` +
-          `A distributed installer must carry an embedded Authenticode signature, ` +
-          `because a catalog signature does not travel with the download`,
-      };
-    }
+  if (!os.available) {
+    return {
+      signed: true,
+      assurance: 'embedded',
+      detail: `signature present (${embedded.size} bytes); validity not checked — ${os.reason}`,
+    };
+  }
 
-    const who = authenticode.subject
-      ? authenticode.subject.split(',')[0].replace(/^CN=/, '').trim()
+  if (os.valid) {
+    const who = os.subject
+      ? os.subject.split(',')[0].replace(/^CN=/, '').trim()
       : 'unknown signer';
     return { signed: true, assurance: 'valid', detail: `Valid — signed by ${who}` };
   }
 
-  // Not on Windows: the PE certificate table is the only evidence available.
-  if (!embedded.present) {
+  // UnknownError is Windows saying it could not reach a conclusion, not that
+  // the signature is bad — most often a revocation check that needs network the
+  // build machine does not have. Every other non-Valid status is a conclusion:
+  // NotSigned when the certificate table holds no usable PKCS#7, HashMismatch
+  // when the file changed after signing, NotTrusted when the chain was built
+  // and rejected. Those are rejections; this one is a downgrade to the same
+  // assurance a non-Windows host gives.
+  if (os.status === 'UnknownError') {
     return {
-      signed: false,
-      assurance: 'none',
-      detail: 'no Authenticode signature is embedded in the executable',
+      signed: true,
+      assurance: 'embedded',
+      detail:
+        `signature present (${embedded.size} bytes) but Windows could not complete ` +
+        `trust evaluation (UnknownError) — commonly an offline revocation check. ` +
+        `Confirm on a networked host before distributing`,
     };
   }
 
   return {
-    signed: true,
-    assurance: 'embedded',
-    detail:
-      `signature present (${embedded.size} bytes); validity not checked ` +
-      `because Get-AuthenticodeSignature is unavailable on ${process.platform}`,
+    signed: false,
+    assurance: 'none',
+    detail: `Authenticode status is ${os.status}, not Valid`,
   };
 }
 

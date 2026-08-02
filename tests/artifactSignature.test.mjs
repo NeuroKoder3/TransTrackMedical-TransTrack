@@ -22,6 +22,7 @@ import { join } from 'node:path';
 
 import {
   readEmbeddedSignature,
+  verifyAuthenticode,
   inspectWindowsArtifact,
 } from '../scripts/verify-artifact-signature.mjs';
 
@@ -151,16 +152,42 @@ test('on Windows, a fixture with a fake certificate table is rejected as invalid
     console.log('      (skipped off Windows)');
     return;
   }
-  // The table points at filler, not a PKCS#7 blob, so Windows must not call it
-  // Valid. This is the case the PE-only check cannot catch.
+  // The table points at filler, not a PKCS#7 blob. Windows answers NotSigned —
+  // a conclusion, not an inability to reach one — so this must be rejected even
+  // though a certificate table is present. It is the case the PE-only check
+  // cannot catch.
   const p = fixture('verdict-fake.exe', makePe({ certOffset: 0x300, certSize: 0x40 }));
   const r = inspectWindowsArtifact(p);
   assert.strictEqual(r.signed, false, 'a forged certificate table must not pass on Windows');
 });
 
+console.log('\nWhen the OS cannot reach a verdict');
+
+test('an absent Windows verdict is reported as unavailable, not as invalid', () => {
+  // A build machine that cannot complete a revocation check, or a PowerShell
+  // that fails to start, says nothing about the artifact. Treating silence as
+  // "not valid" would fail a correctly signed release for a reason that has
+  // nothing to do with the file — which is exactly what happened on a hosted
+  // runner the first time this suite ran there.
+  const v = verifyAuthenticode(join(SANDBOX, 'absent.exe'));
+  if (v.available) {
+    // The file does not exist, so a verdict here can only be a negative one.
+    assert.notStrictEqual(v.status, undefined);
+    assert.strictEqual(v.valid, false);
+  } else {
+    assert.ok(v.reason, 'unavailability must carry a reason the operator can act on');
+  }
+});
+
 console.log('\nReal binaries (Windows only)');
 
-test('a genuinely signed executable is accepted with full assurance', () => {
+/** True when this machine can actually evaluate a trust chain. */
+function osVerdictWorks() {
+  const v = verifyAuthenticode(process.execPath);
+  return v.available && v.valid;
+}
+
+test('a genuinely signed executable is accepted', () => {
   if (process.platform !== 'win32') {
     console.log('      (skipped off Windows)');
     return;
@@ -168,7 +195,17 @@ test('a genuinely signed executable is accepted with full assurance', () => {
   // node.exe carries an embedded Authenticode signature.
   const r = inspectWindowsArtifact(process.execPath);
   assert.strictEqual(r.signed, true, `expected ${process.execPath} to be signed: ${r.detail}`);
-  assert.strictEqual(r.assurance, 'valid');
+
+  if (osVerdictWorks()) {
+    assert.strictEqual(r.assurance, 'valid');
+  } else {
+    // Some build environments cannot validate a chain at all. The verifier must
+    // still find the signature and must say plainly that it did not confirm
+    // trust, rather than claiming either more or less than it knows.
+    assert.strictEqual(r.assurance, 'embedded');
+    assert.match(r.detail, /not checked|could not complete/);
+    console.log('      (trust evaluation unavailable here — checked the degraded path instead)');
+  }
 });
 
 test('a catalog-signed system binary is rejected for distribution', () => {
@@ -176,7 +213,7 @@ test('a catalog-signed system binary is rejected for distribution', () => {
     console.log('      (skipped off Windows)');
     return;
   }
-  const notepad = 'C:\\Windows\\System32\\notepad.exe';
+  const notepad = join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'notepad.exe');
   if (!existsSync(notepad)) {
     console.log('      (skipped — notepad.exe not present)');
     return;
@@ -184,9 +221,11 @@ test('a catalog-signed system binary is rejected for distribution', () => {
   // Windows reports this Valid, but the signature lives in a system catalog
   // rather than in the file. A catalog cannot travel with a download, so an
   // installer signed only this way would arrive at a customer unverifiable.
+  // This holds whether or not the OS verdict is available, because the
+  // deciding fact — nothing embedded in the file — is read from the file.
   const r = inspectWindowsArtifact(notepad);
   assert.strictEqual(r.signed, false, 'catalog-only signing must not satisfy the release gate');
-  assert.match(r.detail, /not embedded/);
+  assert.match(r.detail, /not embedded|no Authenticode signature is embedded/);
 });
 
 rmSync(SANDBOX, { recursive: true, force: true });
