@@ -111,26 +111,36 @@ test.describe('TransTrack E2E', () => {
     ).toBeGreaterThan(0);
     await submitButton.first().click();
 
-    // Then clear the first-run gates over the bridge so the session the next
-    // test needs is fully unrestricted. The seed code in
-    // electron/database/init.cjs consumes TRANSTRACK_INITIAL_ADMIN_PASSWORD,
-    // which beforeAll passes in, so this is deterministic on a developer
-    // machine and in CI alike — the workflow test below can therefore assert
-    // unconditionally instead of only when the session happened to work.
+    // Form submit already established a session. Restricted sessions reject a
+    // second auth:login (only password/MFA/logout channels are allow-listed),
+    // so clear first-run gates against the existing session instead of logging
+    // in again. Seed uses TRANSTRACK_INITIAL_ADMIN_PASSWORD from beforeAll.
+    await window.waitForFunction(
+      async () => {
+        try {
+          const me = await window.electronAPI.auth.me();
+          return !!(me && me.id);
+        } catch {
+          return false;
+        }
+      },
+      { timeout: 30000 },
+    );
+
     const { totpCode } = require('../../electron/services/mfa.cjs');
     const rotatedPassword = `${E2E_ADMIN_PASSWORD}_Rotated1!`;
 
     const login = await window.evaluate(async ({ password, next }) => {
       try {
         let active = password;
-        const first = await window.electronAPI.auth.login({
-          email: 'admin@transtrack.local',
-          password: active,
-        });
-        if (!first || (!first.success && !first.user && !first.mfa_required)) {
-          return { ok: false, error: `login rejected: ${JSON.stringify(first)}` };
+        const me0 = await window.electronAPI.auth.me();
+        if (!me0?.id) {
+          return { ok: false, error: 'no session after form login' };
         }
-        if (first.mustChangePassword || first.user?.must_change_password) {
+        if (
+          me0.must_change_password ||
+          me0.session_restrictions?.includes('password_change')
+        ) {
           await window.electronAPI.auth.changePassword({
             currentPassword: active,
             newPassword: next,
@@ -140,7 +150,6 @@ test.describe('TransTrack E2E', () => {
         const me = await window.electronAPI.auth.me();
         const needsMfaEnroll = !!(
           me?.session_restrictions?.includes('mfa_enroll') ||
-          first.mfaEnrollmentRequired ||
           (me?.mfa_required && !me?.mfa_enrolled) ||
           (me?.role === 'admin' && !me?.mfa_enrolled)
         );
