@@ -101,7 +101,10 @@ jobs:
   snyk:
     name: Snyk Vulnerability Scan
     runs-on: ubuntu-latest
-    if: github.event_name != 'schedule'
+    # Previously skipped on the weekly schedule. That is the run that matters
+    # most — it catches an advisory published against code that has not changed —
+    # and with the status job no longer treating a skip as a pass, skipping here
+    # would report a weekly failure instead.
     steps:
       - uses: actions/checkout@v7
 
@@ -289,9 +292,9 @@ jobs:
             // A skipped scan is NOT a passing scan (finding M-18): this used to
             // map 'skipped' to 'success', so deleting the job, or any condition
             // that stopped it running, silently produced a green scan status.
-            // The job itself is now unconditional on push/PR — it falls back to
-            // the committed audit gate when no Snyk token exists — so anything
-            // other than 'success' is reported as a failure.
+            // The job now runs on every trigger and falls back to the committed
+            // audit gate when no Snyk token exists, so anything other than
+            // 'success' is a real failure.
             const result = '${{ needs.snyk.result }}';
             const state = result === 'success' ? 'success' : 'failure';
             const sha = context.payload.pull_request
