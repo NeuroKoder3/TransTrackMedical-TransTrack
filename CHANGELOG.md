@@ -7,6 +7,27 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added — Azure Artifact Signing
+
+- **`TRANSTRACK_SIGN_MODE=azure`.** Microsoft's cloud signing service, roughly
+  $10/month, with no certificate to buy, no hardware token, and no annual
+  re-issue. `signtool` loads `Azure.CodeSigning.Dlib.dll`, which authenticates
+  to Azure and has the signature produced server-side, so no private key is
+  ever on the build machine. The release workflow detects the mode from the
+  secrets present and installs the client tools on the runner.
+- Two behaviours worth knowing rather than discovering. Artifact Signing
+  certificates are valid for **three days**, so the signer always timestamps
+  against Microsoft's authority — an untimestamped installer verifies for three
+  days and then starts failing on customer machines with nothing about the file
+  having changed. And `DefaultAzureCredential`'s chain includes a browser
+  prompt that would hang a headless build, so the signer narrows the chain to
+  the service principal when one is present, and otherwise excludes only the
+  browser so federated identity still works.
+- The two common Azure failures both surface from `signtool` as a generic
+  `SignerSign()` error. A 403 now says it is probably a region mismatch or a
+  missing signer role; a dlib load failure now says it is probably a missing
+  .NET 8 runtime or an x64/x86 mismatch.
+
 ### Fixed — release signing
 
 - **A release build can no longer emit an unsigned artifact.** Both

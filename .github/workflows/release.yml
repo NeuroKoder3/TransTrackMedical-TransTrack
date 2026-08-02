@@ -11,14 +11,19 @@ name: Release (commercial)
 # enforces "no unsigned binary is ever published to customers".
 #
 # Required repository secrets:
-#   Windows (one of two modes):
-#     a) SSL.com eSigner (preferred — cloud HSM, no local cert):
+#   Windows (one of three modes, auto-detected by the preflight job):
+#     a) Azure Artifact Signing (preferred — no certificate to buy, no token):
+#          AZURE_SIGNING_ENDPOINT  region URI, e.g. https://eus.codesigning.azure.net
+#          AZURE_SIGNING_ACCOUNT   Artifact Signing account name
+#          AZURE_SIGNING_PROFILE   certificate profile name
+#          AZURE_TENANT_ID / AZURE_CLIENT_ID / AZURE_CLIENT_SECRET
+#     b) SSL.com eSigner (cloud HSM, for a traditional CA certificate):
 #          ESIGNER_USERNAME
 #          ESIGNER_PASSWORD
 #          ESIGNER_CREDENTIAL_ID
 #          ESIGNER_TOTP_SECRET
-#        and TRANSTRACK_SIGN_MODE=ssl_esigner in env
-#     b) Legacy PFX file:
+#        plus the ESIGNER_TOOL_URL variable so CodeSignTool can be installed
+#     c) PFX file:
 #          CSC_LINK                base64 .pfx
 #          CSC_KEY_PASSWORD        pfx password
 #   macOS:
@@ -91,13 +96,18 @@ jobs:
         env:
           CSC_LINK: ${{ secrets.CSC_LINK }}
           ESIGNER_USERNAME: ${{ secrets.ESIGNER_USERNAME }}
+          AZURE_SIGNING_ACCOUNT: ${{ secrets.AZURE_SIGNING_ACCOUNT }}
         run: |
+          # Precedence matches the signer's own auto-detect, so the mode chosen
+          # here and the mode the signer would pick can never disagree.
           if [ -n "$ESIGNER_USERNAME" ]; then
             echo "windows_mode=ssl_esigner" >> $GITHUB_OUTPUT
+          elif [ -n "$AZURE_SIGNING_ACCOUNT" ]; then
+            echo "windows_mode=azure" >> $GITHUB_OUTPUT
           elif [ -n "$CSC_LINK" ]; then
             echo "windows_mode=pfx" >> $GITHUB_OUTPUT
           else
-            echo "::error::No Windows code-signing credentials present. Set ESIGNER_* or CSC_LINK secrets before tagging a release."
+            echo "::error::No Windows code-signing credentials present. Set AZURE_SIGNING_*, ESIGNER_* or CSC_LINK secrets before tagging a release."
             exit 1
           fi
 
@@ -135,6 +145,15 @@ jobs:
       # CodeSignTool is not present on the runner image; the step below installs
       # it here. Overridable for self-hosted runners that pre-provision it.
       ESIGNER_TOOL_PATH: ${{ vars.ESIGNER_TOOL_PATH || 'D:\CodeSignTool\CodeSignTool.bat' }}
+      AZURE_SIGNING_ENDPOINT: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
+      AZURE_SIGNING_ACCOUNT: ${{ secrets.AZURE_SIGNING_ACCOUNT }}
+      AZURE_SIGNING_PROFILE: ${{ secrets.AZURE_SIGNING_PROFILE }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+      # The client tools installer puts the dlib here. Overridable for
+      # self-hosted runners that provision it elsewhere.
+      AZURE_SIGNING_DLIB: ${{ vars.AZURE_SIGNING_DLIB || 'C:\Program Files\Microsoft\Azure Artifact Signing Client Tools\bin\x64\Azure.CodeSigning.Dlib.dll' }}
       CSC_LINK: ${{ secrets.CSC_LINK }}
       CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
     steps:
@@ -173,6 +192,27 @@ jobs:
           }
         env:
           ESIGNER_TOOL_URL: ${{ vars.ESIGNER_TOOL_URL }}
+
+      # The dlib, the .NET 8 runtime and a new-enough signtool all have to be
+      # present before signtool can talk to Azure, and none of them are on the
+      # runner image. The client tools MSI installs all three together.
+      - name: Install Azure Artifact Signing client tools
+        if: needs.preflight.outputs.windows_mode == 'azure'
+        shell: pwsh
+        run: |
+          if (Test-Path $env:AZURE_SIGNING_DLIB) {
+            Write-Host "Artifact Signing dlib already present at $env:AZURE_SIGNING_DLIB"
+            exit 0
+          }
+          winget install -e --id Microsoft.Azure.ArtifactSigningClientTools `
+            --accept-source-agreements --accept-package-agreements --disable-interactivity
+          if (-not (Test-Path $env:AZURE_SIGNING_DLIB)) {
+            Write-Host "::error::Client tools installed but $env:AZURE_SIGNING_DLIB does not exist."
+            Write-Host "::error::Set the AZURE_SIGNING_DLIB repository variable to the actual path of x64\Azure.CodeSigning.Dlib.dll."
+            Get-ChildItem -Recurse -Filter 'Azure.CodeSigning.Dlib.dll' 'C:\Program Files' -ErrorAction SilentlyContinue |
+              ForEach-Object { Write-Host $_.FullName }
+            exit 1
+          }
 
       - name: Install npm dependencies
         run: npm ci
@@ -253,19 +293,25 @@ jobs:
 
   gate:
     name: Commercial release gate (--for-sale)
-    needs: [build-windows, build-macos]
+    needs: [preflight, build-windows, build-macos]
     runs-on: ubuntu-latest
     env:
       TRANSTRACK_RELEASE_CHANNEL: public
       # The signing-mode env vars are set so the gate's environment check
       # reports them as configured even though we don't actually re-sign
-      # here — the artifacts were signed in the matrix jobs above.
-      TRANSTRACK_SIGN_MODE: ssl_esigner
+      # here — the artifacts were signed in the matrix jobs above. The mode is
+      # taken from preflight rather than hardcoded, so the gate reports on the
+      # mode that actually signed the artifacts.
+      TRANSTRACK_SIGN_MODE: ${{ needs.preflight.outputs.windows_mode }}
       ESIGNER_USERNAME: ${{ secrets.ESIGNER_USERNAME }}
       ESIGNER_PASSWORD: ${{ secrets.ESIGNER_PASSWORD }}
       ESIGNER_CREDENTIAL_ID: ${{ secrets.ESIGNER_CREDENTIAL_ID }}
       ESIGNER_TOTP_SECRET: ${{ secrets.ESIGNER_TOTP_SECRET }}
       ESIGNER_TOOL_PATH: '/usr/local/bin/codesigntool'
+      AZURE_SIGNING_ENDPOINT: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
+      AZURE_SIGNING_ACCOUNT: ${{ secrets.AZURE_SIGNING_ACCOUNT }}
+      AZURE_SIGNING_PROFILE: ${{ secrets.AZURE_SIGNING_PROFILE }}
+      AZURE_SIGNING_DLIB: '/usr/local/lib/Azure.CodeSigning.Dlib.dll'
       APPLE_ID: ${{ secrets.APPLE_ID }}
       APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}

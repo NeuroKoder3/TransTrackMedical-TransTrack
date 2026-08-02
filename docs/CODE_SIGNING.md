@@ -73,7 +73,7 @@ not an engineering one.
 
 | Option | Indicative cost | Notes |
 |---|---|---|
-| **Azure Artifact Signing** (formerly Trusted Signing) | ~$10/month | Microsoft's recommended route for non-Store distribution. No hardware token, CI-native. Organisations in US/Canada/EU/UK; individuals US/Canada only. **Not yet implemented in `sign-win.cjs`** — needs a new mode. |
+| **Azure Artifact Signing** (formerly Trusted Signing) | ~$10/month | Microsoft's recommended route for non-Store distribution. No hardware token, no annual re-issue, CI-native. Organisations in US/Canada/EU/UK; individuals US/Canada only. Implemented as `azure` mode. |
 | **OV certificate** (Sectigo, DigiCert, Certum, SSL.com) | ~$150–300/yr | Same SmartScreen behaviour as EV. Works with `pfx` mode, or with a cloud HSM via `ssl_esigner`. |
 | **EV certificate** | ~$400–700/yr | Choose only if a customer's procurement process demands it. |
 | Apple Developer Program (Organization) | $99/yr | Required for notarization; no alternative. |
@@ -97,19 +97,98 @@ Two constraints worth knowing before you commit:
 ### Modes supported
 
 `scripts/sign-win.cjs` is the electron-builder hook that signs every
-Windows artifact. It supports three modes selected by the
+Windows artifact. It supports four modes selected by the
 `TRANSTRACK_SIGN_MODE` environment variable:
 
 | Mode           | Use case                                                         | Required env vars |
 |----------------|------------------------------------------------------------------|-------------------|
-| `ssl_esigner`  | Recommended for CI/CD. SSL.com eSigner cloud HSM (no USB token). | `ESIGNER_USERNAME`, `ESIGNER_PASSWORD`, `ESIGNER_CREDENTIAL_ID`, `ESIGNER_TOTP_SECRET`, `ESIGNER_TOOL_PATH` |
-| `pfx`          | Local builds with a software-protected `.pfx` file.              | `CSC_LINK` (path **or** base64 content), `CSC_KEY_PASSWORD` |
+| `azure`        | Recommended. Azure Artifact Signing — no certificate to buy.     | `AZURE_SIGNING_ENDPOINT`, `AZURE_SIGNING_ACCOUNT`, `AZURE_SIGNING_PROFILE`, `AZURE_SIGNING_DLIB`, plus `AZURE_TENANT_ID` / `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET` |
+| `ssl_esigner`  | A traditional CA certificate held in SSL.com's cloud HSM.        | `ESIGNER_USERNAME`, `ESIGNER_PASSWORD`, `ESIGNER_CREDENTIAL_ID`, `ESIGNER_TOTP_SECRET`, `ESIGNER_TOOL_PATH` |
+| `pfx`          | A `.pfx` you already hold; internal and test builds.             | `CSC_LINK` (path **or** base64 content), `CSC_KEY_PASSWORD` |
 | `skip`         | Unsigned development builds. Never use for release.              | (none) |
 
 If `TRANSTRACK_SIGN_MODE` is **unset**, the script auto-detects in the
-order `ssl_esigner` → `pfx` → `skip`. When a mode is named explicitly but its
-variables are incomplete, the signer fails immediately and names the missing
-variable rather than falling through to `skip`.
+order `ssl_esigner` → `azure` → `pfx` → `skip`. When a mode is named explicitly
+but its variables are incomplete, the signer fails immediately and names the
+missing variable rather than falling through to `skip`.
+
+### Azure Artifact Signing (recommended)
+
+Microsoft signs on your behalf against a certificate you never possess. There
+is no `.pfx`, no USB token, no yearly re-issue, and no private key on the build
+machine — `signtool` loads a library that authenticates to Azure and the
+signature is produced server-side.
+
+Eligibility is the one thing to check before committing: your organisation must
+have been verifiable for **three years or more**. Newer organisations, and
+individuals, can enrol but the certificate subject shows an unverified identity.
+
+**1. Set up the Azure resources.** In the portal, create an Artifact Signing
+account, complete identity validation, and create a certificate profile of type
+*Public Trust*. Note the region — the endpoint URI must match it, and a mismatch
+surfaces as an opaque 403 during signing.
+
+| Region | Endpoint |
+|---|---|
+| East US | `https://eus.codesigning.azure.net` |
+| West US 2 | `https://wus2.codesigning.azure.net` |
+| West US 3 | `https://wus3.codesigning.azure.net` |
+| West Central US | `https://wcus.codesigning.azure.net` |
+| North Europe | `https://neu.codesigning.azure.net` |
+| West Europe | `https://weu.codesigning.azure.net` |
+
+(Full list in [Microsoft's integration guide](https://learn.microsoft.com/en-us/azure/artifact-signing/how-to-signing-integrations).)
+
+**2. Create a service principal for CI.** Register an application in Entra ID,
+create a client secret, and grant it the **Trusted Signing Certificate Profile
+Signer** role on the Artifact Signing account. Without that role assignment
+signing fails with a 403 that looks identical to a wrong endpoint.
+
+**3. Install the client tools on the signing machine.** One MSI supplies the
+dlib, the .NET 8 runtime, and a new-enough `signtool`:
+
+```powershell
+winget install -e --id Microsoft.Azure.ArtifactSigningClientTools
+```
+
+The release workflow does this automatically when `azure` mode is selected.
+
+**4. Set the environment:**
+
+```text
+TRANSTRACK_SIGN_MODE=azure
+AZURE_SIGNING_ENDPOINT=https://eus.codesigning.azure.net
+AZURE_SIGNING_ACCOUNT=<Artifact Signing account name>
+AZURE_SIGNING_PROFILE=<certificate profile name>
+AZURE_SIGNING_DLIB=C:\Program Files\Microsoft\Azure Artifact Signing Client Tools\bin\x64\Azure.CodeSigning.Dlib.dll
+AZURE_TENANT_ID=<Entra tenant id>
+AZURE_CLIENT_ID=<app registration client id>
+AZURE_CLIENT_SECRET=<client secret>
+```
+
+Two things worth understanding about how this mode behaves.
+
+**Timestamping is not optional.** Artifact Signing certificates are valid for
+**three days**. A signature survives past that only because a timestamp proves
+it was made while the certificate was live. The signer always timestamps against
+Microsoft's authority (`http://timestamp.acs.microsoft.com`). Override
+`SIGN_TIMESTAMP_URL` only if you know why; an installer signed without a
+timestamp verifies for three days and then begins failing on customer machines
+with nothing about the file having changed.
+
+**The credential chain is narrowed deliberately.** `DefaultAzureCredential`
+tries a series of credential sources in order, one of which opens a browser. On
+a headless build that hangs rather than fails. When a service principal is
+present in the environment the signer excludes every other source; with
+federated identity (GitHub OIDC, managed identity) it keeps the chain but still
+excludes the browser.
+
+If signing fails, the two common causes are both reported as a generic
+`SignerSign()` error by `signtool`, so the signer adds a hint: a **403** is
+almost always a region mismatch or a missing role assignment, and a **dlib load
+failure** is almost always a missing .NET 8 runtime or an x64/x86 mismatch
+between `signtool` and the dlib. Note that the 20348 Windows SDK does not work
+with this dlib; you need 10.0.2261.755 or newer.
 
 ### Cloud HSM via SSL.com eSigner
 
@@ -283,19 +362,36 @@ accepted) and `notepad.exe` (catalog-signed, must be rejected).
 
 ## CI
 
-`.github/workflows/release.yml` builds and signs on tag push. The relevant
-environment for the Windows job:
+`.github/workflows/release.yml` builds and signs on tag push. A `preflight` job
+picks the mode from whichever secrets are present, using the same precedence as
+the signer's own auto-detect, and fails the release if none are. For Azure the
+repository secrets are:
+
+```text
+AZURE_SIGNING_ENDPOINT
+AZURE_SIGNING_ACCOUNT
+AZURE_SIGNING_PROFILE
+AZURE_TENANT_ID
+AZURE_CLIENT_ID
+AZURE_CLIENT_SECRET
+```
+
+The workflow installs the client tools on the runner and sets
+`AZURE_SIGNING_DLIB` to the default install path; override it with an
+`AZURE_SIGNING_DLIB` repository *variable* if you use a self-hosted runner that
+provisions it elsewhere.
+
+For eSigner instead:
 
 ```yaml
 env:
   TRANSTRACK_RELEASE_CHANNEL: public          # makes signing mandatory
-  TRANSTRACK_SIGN_MODE:      ${{ vars.TRANSTRACK_SIGN_MODE || 'ssl_esigner' }}
   ESIGNER_USERNAME:          ${{ secrets.ESIGNER_USERNAME }}
   ESIGNER_PASSWORD:          ${{ secrets.ESIGNER_PASSWORD }}
   ESIGNER_CREDENTIAL_ID:     ${{ secrets.ESIGNER_CREDENTIAL_ID }}
   ESIGNER_TOTP_SECRET:       ${{ secrets.ESIGNER_TOTP_SECRET }}
-  ESIGNER_TOOL_URL:          ${{ secrets.ESIGNER_TOOL_URL }}
-  ESIGNER_TOOL_PATH:         ${{ vars.ESIGNER_TOOL_PATH || 'C:\CodeSignTool\CodeSignTool.bat' }}
+  ESIGNER_TOOL_URL:          ${{ vars.ESIGNER_TOOL_URL }}
+  ESIGNER_TOOL_PATH:         ${{ vars.ESIGNER_TOOL_PATH || 'D:\CodeSignTool\CodeSignTool.bat' }}
 ```
 
 and for macOS:
@@ -319,15 +415,14 @@ un-notarized artifact fails there even if the hooks somehow did not.
 
 ## What to do first
 
-If you have not bought anything yet, the shortest path to a signed Windows
-installer is **Azure Artifact Signing** at roughly $10/month, with no hardware
-token and no annual re-issue. It needs a new mode in `sign-win.cjs` (the Azure
-signing tool has a different invocation than CodeSignTool) — that is a small,
-self-contained piece of work, not a blocker.
+Use **Azure Artifact Signing**. It is roughly $10/month, needs no certificate
+purchase, no hardware token, and no annual re-issue, and it is implemented as
+`azure` mode. The setup is four steps and is written out above; the only thing
+to verify before committing is the three-year organisation age requirement.
 
-If you want to ship with what is already implemented, buy an **OV certificate
-with cloud HSM signing** (SSL.com eSigner is what `ssl_esigner` mode targets)
-and skip EV unless a customer asks for it in writing.
+Fall back to an **OV certificate with cloud HSM signing** (`ssl_esigner`) if you
+are not eligible for Artifact Signing. Skip EV unless a customer asks for it in
+writing.
 
 macOS has no equivalent decision: Apple Developer Program Organization
 enrolment at $99/year, and the D-U-N-S number takes about two weeks, so start

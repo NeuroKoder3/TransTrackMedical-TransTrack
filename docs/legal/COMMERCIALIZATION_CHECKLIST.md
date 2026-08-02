@@ -86,7 +86,7 @@ the four required GitHub Actions secrets.
 
 | Cert                                   | Vendor                                        | Cost          | Mode                               |
 | -------------------------------------- | --------------------------------------------- | ------------- | ---------------------------------- |
-| Windows — Azure Artifact Signing       | Microsoft                                     | ~$10/mo       | *not yet implemented in the signer* |
+| Windows — Azure Artifact Signing       | Microsoft                                     | ~$10/mo       | `TRANSTRACK_SIGN_MODE=azure`       |
 | Windows OV Code Signing (cloud HSM)    | SSL.com eSigner / DigiCert KeyLocker          | ~$150–300/yr  | `TRANSTRACK_SIGN_MODE=ssl_esigner` |
 | Windows OV/EV Code Signing (USB token) | DigiCert / Sectigo / SSL.com (hardware token) | ~$300–$700/yr | `TRANSTRACK_SIGN_MODE=pfx`         |
 | Apple Developer Program (Organization) | Apple                                         | $99/yr        | `APPLE_*` secrets                  |
@@ -96,11 +96,12 @@ Microsoft has since removed that behaviour — EV and OV now give the same
 first-download experience, and reputation accrues per file hash either way. Buy
 EV only if a customer's procurement process names it.
 
-**Recommendation:** Azure Artifact Signing is the cheapest and least
-operationally painful route, but needs a new mode in `scripts/sign-win.cjs`
-(small, self-contained). To ship with what exists today, buy an OV certificate
-with cloud-HSM signing — `ssl_esigner` mode works out of the box with the
-existing CI workflow and avoids the lost-USB-token failure mode.
+**Recommendation:** Azure Artifact Signing. Cheapest, no certificate purchase,
+no hardware token, no annual re-issue, and implemented as `azure` mode with the
+release workflow installing the client tools automatically. Check one thing
+before committing: the organisation must have been verifiable for three years
+or more. If it is not, buy an OV certificate with cloud-HSM signing —
+`ssl_esigner` mode — which avoids the lost-USB-token failure mode.
 
 Note that since June 2023 the CA/Browser Forum requires *all* code signing
 private keys, OV included, to live in hardware. A copyable `.pfx` is no longer
@@ -110,6 +111,15 @@ signing.
 ### GitHub Actions secrets to set (settings → secrets and variables → actions)
 
 ```
+Azure Artifact Signing (recommended):
+AZURE_SIGNING_ENDPOINT   (region URI — must match the account's region)
+AZURE_SIGNING_ACCOUNT
+AZURE_SIGNING_PROFILE
+AZURE_TENANT_ID
+AZURE_CLIENT_ID
+AZURE_CLIENT_SECRET
+
+or SSL.com eSigner:
 ESIGNER_USERNAME
 ESIGNER_PASSWORD
 ESIGNER_CREDENTIAL_ID

@@ -322,6 +322,15 @@ await runStep('Windows code-signing configured (any supported mode)', signingSev
     }
     return 'ssl_esigner mode';
   }
+  if (mode === 'azure') {
+    // AZURE_SIGNING_DLIB is deliberately not required here. It is a path on the
+    // Windows machine that did the signing, and this gate runs on Linux, where
+    // demanding it would fail a correctly configured release.
+    for (const k of ['AZURE_SIGNING_ENDPOINT', 'AZURE_SIGNING_ACCOUNT', 'AZURE_SIGNING_PROFILE']) {
+      if (!process.env[k]) throw new Error(`${k} not set`);
+    }
+    return 'azure mode (Artifact Signing)';
+  }
   if (mode === 'pfx' || (process.env.CSC_LINK && process.env.CSC_KEY_PASSWORD)) {
     if (!process.env.CSC_LINK || !process.env.CSC_KEY_PASSWORD) {
       throw new Error('CSC_LINK / CSC_KEY_PASSWORD missing');
@@ -332,6 +341,10 @@ await runStep('Windows code-signing configured (any supported mode)', signingSev
       process.env.ESIGNER_CREDENTIAL_ID && process.env.ESIGNER_TOTP_SECRET &&
       process.env.ESIGNER_TOOL_PATH) {
     return 'ssl_esigner mode (auto-detected)';
+  }
+  if (process.env.AZURE_SIGNING_ENDPOINT && process.env.AZURE_SIGNING_ACCOUNT &&
+      process.env.AZURE_SIGNING_PROFILE) {
+    return 'azure mode (auto-detected)';
   }
   throw new Error('no code-signing credentials in environment');
 });

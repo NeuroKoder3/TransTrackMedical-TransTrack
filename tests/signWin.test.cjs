@@ -39,6 +39,9 @@ function test(name, fn) {
 const SIGNING_ENV_KEYS = (k) =>
   k.startsWith('ESIGNER_') ||
   k.startsWith('CSC_') ||
+  k.startsWith('AZURE_') ||
+  k === 'GITHUB_RUN_ID' ||
+  k === 'SIGNTOOL_EXE' ||
   k === 'TRANSTRACK_SIGN_MODE' ||
   k === 'TRANSTRACK_RELEASE_CHANNEL' ||
   k === 'TRANSTRACK_REQUIRE_SIGNING' ||
@@ -180,6 +183,132 @@ test('pfx mode names both missing variables at once', async () => {
       return true;
     });
   });
+});
+
+test('azure mode names every missing variable at once', async () => {
+  await withSigner({ TRANSTRACK_SIGN_MODE: 'azure' }, async (sign) => {
+    await assert.rejects(() => sign('C:/tmp/file.exe'), (e) => {
+      for (const k of ['AZURE_SIGNING_ENDPOINT', 'AZURE_SIGNING_ACCOUNT',
+                       'AZURE_SIGNING_PROFILE', 'AZURE_SIGNING_DLIB']) {
+        assert.match(e.message, new RegExp(k));
+      }
+      return true;
+    });
+  });
+});
+
+console.log('\n=== Azure Artifact Signing ===');
+
+const AZURE_ENV = Object.freeze({
+  TRANSTRACK_SIGN_MODE: 'azure',
+  AZURE_SIGNING_ENDPOINT: 'https://eus.codesigning.azure.net',
+  AZURE_SIGNING_ACCOUNT: 'transtrack-signing',
+  AZURE_SIGNING_PROFILE: 'transtrack-public',
+  AZURE_TENANT_ID: 'tenant-1',
+  AZURE_CLIENT_ID: 'client-1',
+  AZURE_CLIENT_SECRET: 'secret-1',
+});
+
+test('auto-detect selects azure when its variables are present', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-dlib-'));
+  const dlib = path.join(dir, 'Azure.CodeSigning.Dlib.dll');
+  fs.writeFileSync(dlib, 'not a real dll');
+  try {
+    const env = { ...AZURE_ENV, AZURE_SIGNING_DLIB: dlib };
+    delete env.TRANSTRACK_SIGN_MODE;
+    await withSigner(env, async (mod) => {
+      assert.strictEqual(mod.__testing__._autoDetectMode(), 'azure');
+    });
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('esigner still wins auto-detect when both are configured', async () => {
+  // Ordering matters for anyone migrating: a half-removed eSigner
+  // configuration should not silently take precedence by accident, so the
+  // precedence is asserted rather than left to reading the function.
+  await withSigner(
+    {
+      ESIGNER_USERNAME: 'u', ESIGNER_PASSWORD: 'p', ESIGNER_CREDENTIAL_ID: 'c',
+      ESIGNER_TOTP_SECRET: 'JBSWY3DPEHPK3PXP', ESIGNER_TOOL_PATH: 'C:/tool.bat',
+      AZURE_SIGNING_ENDPOINT: 'https://eus.codesigning.azure.net',
+      AZURE_SIGNING_ACCOUNT: 'a', AZURE_SIGNING_PROFILE: 'p',
+      AZURE_SIGNING_DLIB: 'C:/dlib.dll',
+    },
+    async (mod) => {
+      assert.strictEqual(mod.__testing__._autoDetectMode(), 'ssl_esigner');
+    },
+  );
+});
+
+test('a missing dlib is reported with the command that installs it', async () => {
+  await withSigner(
+    { ...AZURE_ENV, AZURE_SIGNING_DLIB: 'C:/definitely/not/here/Azure.CodeSigning.Dlib.dll' },
+    async (sign) => {
+      await assert.rejects(() => sign('C:/tmp/file.exe'), (e) => {
+        assert.match(e.message, /AZURE_SIGNING_DLIB not found/);
+        assert.match(e.message, /winget install/);
+        return true;
+      });
+    },
+  );
+});
+
+test('metadata names the account, profile and endpoint the dlib will use', async () => {
+  const m = exposed._buildAzureMetadata({ ...AZURE_ENV });
+  assert.strictEqual(m.Endpoint, 'https://eus.codesigning.azure.net');
+  assert.strictEqual(m.CodeSigningAccountName, 'transtrack-signing');
+  assert.strictEqual(m.CertificateProfileName, 'transtrack-public');
+});
+
+test('a service principal narrows the credential chain to exactly one', async () => {
+  // DefaultAzureCredential walks a chain. On a build machine the others cannot
+  // succeed, and the interactive browser can hang a headless run outright.
+  const m = exposed._buildAzureMetadata({ ...AZURE_ENV });
+  assert.ok(Array.isArray(m.ExcludeCredentials));
+  assert.ok(m.ExcludeCredentials.includes('InteractiveBrowserCredential'));
+  assert.ok(m.ExcludeCredentials.includes('ManagedIdentityCredential'));
+  assert.ok(m.ExcludeCredentials.includes('AzureCliCredential'));
+});
+
+test('federated identity keeps its chain but never the browser', async () => {
+  // GitHub OIDC and managed identity are legitimate and need the rest of the
+  // chain; excluding everything would break them.
+  const env = { ...AZURE_ENV };
+  delete env.AZURE_CLIENT_SECRET;
+  const m = exposed._buildAzureMetadata(env);
+  assert.deepStrictEqual(m.ExcludeCredentials, ['InteractiveBrowserCredential']);
+});
+
+test('a correlation id is carried through when the build supplies one', async () => {
+  const explicit = exposed._buildAzureMetadata({ ...AZURE_ENV, AZURE_SIGNING_CORRELATION_ID: 'run-9' });
+  assert.strictEqual(explicit.CorrelationId, 'run-9');
+
+  const fromCi = exposed._buildAzureMetadata({ ...AZURE_ENV, GITHUB_RUN_ID: '30726011240' });
+  assert.strictEqual(fromCi.CorrelationId, '30726011240');
+
+  assert.ok(!('CorrelationId' in exposed._buildAzureMetadata({ ...AZURE_ENV })));
+});
+
+test('the Azure timestamp authority is the Microsoft one', async () => {
+  // Artifact Signing certificates live three days. Without a timestamp the
+  // installer verifies for three days and then starts failing on customer
+  // machines, with nothing about the file having changed — so the default must
+  // never quietly become a generic CA's timestamp server.
+  assert.strictEqual(exposed.AZURE_TIMESTAMP_URL, 'http://timestamp.acs.microsoft.com');
+});
+
+test('a 403 is explained as a region or role problem', async () => {
+  const hint = exposed._azureHint('SignerSign() failed. (403) Forbidden');
+  assert.match(hint, /region/);
+  assert.match(hint, /Signer.*role|role/);
+});
+
+test('a dlib load failure is explained as runtime or architecture', async () => {
+  const hint = exposed._azureHint('could not load Azure.CodeSigning.Dlib.dll');
+  assert.match(hint, /\.NET 8/);
+  assert.match(hint, /x64|architecture/);
 });
 
 console.log('\n=== signing-required detection ===');
