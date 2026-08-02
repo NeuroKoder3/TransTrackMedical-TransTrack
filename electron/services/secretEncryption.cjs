@@ -35,6 +35,22 @@ const ENC_PREFIX = 'enc:v1:';
 let _appSecretCached = null;
 
 /**
+ * True when this build must not fall back to an unprotected key file.
+ *
+ * Same condition as getEncryptionKey() in database/init.cjs: a packaged build,
+ * or an explicit NODE_ENV=production. Kept local rather than imported because
+ * this module is deliberately free of database dependencies and is loaded by
+ * migrations that run before the database is open.
+ */
+function isProductionBuild() {
+  try {
+    const { app } = require('electron');
+    if (app && app.isPackaged) return true;
+  } catch { /* plain Node — not packaged by definition */ }
+  return process.env.NODE_ENV === 'production';
+}
+
+/**
  * The "field encryption master secret" is a 32-byte value derived from
  * the SQLCipher DEK if available, otherwise a dedicated file in
  * userData with mode 0o600 (and safeStorage-wrapped when possible).
@@ -94,11 +110,32 @@ function _getMasterSecret() {
     return null;
   }
 
+  /**
+   * Persist the field-encryption master.
+   *
+   * FAIL-CLOSED on packaged/production builds: without safeStorage the master
+   * would go to disk in cleartext next to the database it protects, which
+   * removes the entire defense-in-depth property this module exists for — an
+   * attacker holding the .db file, .transtrack-key and .transtrack-field-key
+   * would then have everything. database/init.cjs already refuses to create a
+   * plaintext database key under the same condition; this mirrors it exactly so
+   * the two cannot diverge.
+   *
+   * Development and plain-Node test runs continue with the 0o600 file, as
+   * before, since there is often no keyring daemon on those machines.
+   */
   function _writeKey(buf) {
     const hex = buf.toString('hex');
     if (safeAvailable) {
       fs.writeFileSync(keyPath, safeStorage.encryptString(hex), { mode: 0o600 });
     } else {
+      if (isProductionBuild()) {
+        throw new Error(
+          'Cannot create the field encryption key: OS keychain (safeStorage) is unavailable. ' +
+          'TransTrack requires DPAPI/Keychain/libsecret in production. ' +
+          'Plaintext key files are not permitted.'
+        );
+      }
       fs.writeFileSync(keyPath, hex, { mode: 0o600 });
     }
     try { fs.chmodSync(keyPath, 0o600); } catch { /* windows */ }

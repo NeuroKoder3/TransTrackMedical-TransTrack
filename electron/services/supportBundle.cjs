@@ -44,8 +44,12 @@
  * the level/timing/sequence of log events.
  *
  * `includeFreeText: true` opts in to full message bodies for a deep
- * investigation. That is a deliberate operator decision, the bundle records that
- * it was taken, and in that mode the bundle must be handled as PHI.
+ * investigation. Because that mode can carry PHI out of the safeguarded
+ * environment, a boolean flag is not enough to select it: the caller must also
+ * present FREE_TEXT_CONFIRMATION_TOKEN and name the operator taking
+ * responsibility. A UI that passes options straight through, or a caller that
+ * sets the flag by accident, gets an error rather than a PHI-bearing file. See
+ * requireFreeTextAuthorization below.
  */
 
 'use strict';
@@ -63,6 +67,42 @@ const DEFAULT_LOG_LINES = 500;
 
 /** Marker left in place of a withheld free-text value. */
 const OMITTED = '[FREE_TEXT_OMITTED]';
+
+/**
+ * Second confirmation required to produce a PHI-bearing bundle.
+ *
+ * A constant string rather than a boolean, so that selecting the mode is an
+ * explicit act somebody had to type: `includeFreeText: true` can arrive from a
+ * forwarded options object, a remembered preference or a mis-wired checkbox,
+ * and none of those should be able to put patient names in a file destined for
+ * a support ticket. The value states its own consequence.
+ */
+const FREE_TEXT_CONFIRMATION_TOKEN = 'INCLUDE-PHI-FREE-TEXT';
+
+/**
+ * Decide whether this call may include free text, failing closed.
+ *
+ * @param {object} options  includeFreeText, freeTextConfirmation, operator
+ * @returns {boolean}
+ * @throws  when free text is requested without confirmation or an operator
+ */
+function requireFreeTextAuthorization(options = {}) {
+  if (options.includeFreeText !== true) return false;
+
+  if (options.freeTextConfirmation !== FREE_TEXT_CONFIRMATION_TOKEN) {
+    throw new Error(
+      'A support bundle containing free text may include patient identifiers. ' +
+      `Pass freeTextConfirmation="${FREE_TEXT_CONFIRMATION_TOKEN}" to confirm this is intended.`
+    );
+  }
+  if (!options.operator || typeof options.operator !== 'string') {
+    throw new Error(
+      'A support bundle containing free text must name the operator requesting it, ' +
+      'so the disclosure can be attributed in the audit trail.'
+    );
+  }
+  return true;
+}
 
 /**
  * Field names whose values are operator- or developer-authored prose. Prose can
@@ -210,6 +250,7 @@ function assembleBundle(input = {}) {
     environment = null,
     notes = null,
     includeFreeText = false,
+    operator = null,
   } = input;
 
   if (!generatedAt) throw new Error('assembleBundle: generatedAt is required');
@@ -242,6 +283,18 @@ function assembleBundle(input = {}) {
   return {
     bundleVersion: BUNDLE_VERSION,
     generatedAt,
+    // First key after the version, in upper case, so that anyone who opens the
+    // file — or greps it, or previews it in a ticket — sees the classification
+    // before they see any content. `null` in the default mode rather than a
+    // reassuring string: absence of a warning is the safe default only when the
+    // format guarantees it, which is exactly what redactionPolicy states below.
+    PHI_WARNING: includeFreeText
+      ? 'THIS BUNDLE MAY CONTAIN PROTECTED HEALTH INFORMATION. Free-text log ' +
+        'messages and error strings are included verbatim at operator request ' +
+        'and may name patients. Handle, transmit and dispose of this file under ' +
+        'the same controls as the clinical database.'
+      : null,
+    requestedBy: operator,
     // Stated in the artefact so a recipient does not have to ask, and so a
     // reviewer can audit the claim against this module.
     redactionPolicy: {
@@ -297,6 +350,10 @@ function serializeBundle(bundle) {
  * that section to an error string rather than fail the whole export.
  */
 function collectBundle(options = {}) {
+  // Before anything is read: an unconfirmed free-text request must not produce
+  // a bundle at all, not merely a bundle with free text stripped.
+  const includeFreeText = requireFreeTextAuthorization(options);
+
   const now = options.now instanceof Date ? options.now : new Date();
   const safe = (label, fn) => {
     try { return fn(); } catch (e) { return { unavailable: e?.message || String(e), section: label }; }
@@ -372,7 +429,8 @@ function collectBundle(options = {}) {
     logLines: Array.isArray(logLines) ? logLines : [],
     environment,
     notes: options.notes ?? null,
-    includeFreeText: options.includeFreeText === true,
+    includeFreeText,
+    operator: options.operator ?? null,
   });
 }
 
@@ -394,18 +452,31 @@ function writeBundle(destPath, options = {}) {
     checksum,
     sizeBytes: Buffer.byteLength(json, 'utf8'),
     generatedAt: bundle.generatedAt,
+    containsFreeText: bundle.logTail.freeTextIncluded,
+    handleAsPhi: bundle.redactionPolicy.handleAsPhi,
   };
 }
 
-/** Conventional filename for a bundle, safe on every supported platform. */
-function suggestFileName(now = new Date()) {
-  return `transtrack-support-${now.toISOString().replace(/[:.]/g, '-')}.json`;
+/**
+ * Conventional filename for a bundle, safe on every supported platform.
+ *
+ * A PHI-bearing bundle says so in its name: the file will be renamed, attached
+ * to a ticket and forwarded by people who never open it, and the name is the
+ * only classification that survives that journey.
+ */
+function suggestFileName(now = new Date(), options = {}) {
+  const stamp = now.toISOString().replace(/[:.]/g, '-');
+  return options.includeFreeText === true
+    ? `transtrack-support-PHI-${stamp}.json`
+    : `transtrack-support-${stamp}.json`;
 }
 
 module.exports = {
   BUNDLE_VERSION,
   DEFAULT_LOG_LINES,
   OMITTED,
+  FREE_TEXT_CONFIRMATION_TOKEN,
+  requireFreeTextAuthorization,
   FREE_TEXT_KEYS,
   isFreeTextKey,
   withholdFreeText,
