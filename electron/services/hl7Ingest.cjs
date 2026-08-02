@@ -18,6 +18,8 @@
  * for both UI display and audit logging.
  */
 
+const { assertValidEntity } = require('../functions/validators.cjs');
+
 'use strict';
 
 const { v4: uuidv4 } = require('uuid');
@@ -58,6 +60,9 @@ function buildPatientInsert({ orgId, parsedPatient, createdBy }) {
 }
 
 function insertPatient(db, row) {
+  // C-4: HL7 v2 is an unauthenticated-at-the-application-layer ingestion path
+  // and must clear the same clinical validation as interactive entry.
+  assertValidEntity('Patient', row, 'HL7 ingest create');
   db.prepare(`
     INSERT INTO patients
       (id, org_id, patient_id, first_name, last_name, date_of_birth,
@@ -86,6 +91,7 @@ function updatePatientDemographics(db, existing, parsedPatient, updatedBy) {
   }
   const keys = Object.keys(fields);
   if (keys.length === 0) return { updated: false, fields: [] };
+  assertValidEntity('Patient', fields, 'HL7 ingest update');
 
   const setClause = keys.map(k => `${k} = @${k}`).join(', ');
   fields.id = existing.id;

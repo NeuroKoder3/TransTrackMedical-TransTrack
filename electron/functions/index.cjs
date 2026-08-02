@@ -1,6 +1,7 @@
 // Business logic functions (priority calc, donor matching, FHIR, etc.)
 
 const { v4: uuidv4 } = require('uuid');
+const { assertValidEntity } = require('./validators.cjs');
 
 async function calculatePriorityAdvanced(params, context) {
   const { db, currentUser, logAudit } = context;
@@ -656,16 +657,26 @@ async function importFHIRData(params, context) {
         if (resource.resourceType === 'Patient') {
           const patientId = uuidv4();
           const name = resource.name?.[0] || {};
-          
+          const row = {
+            patient_id: resource.identifier?.[0]?.value || `FHIR-${Date.now()}`,
+            first_name: name.given?.[0] || 'Unknown',
+            last_name: name.family || 'Unknown',
+            date_of_birth: resource.birthDate,
+          };
+          // C-4: imported records clear the same clinical validation as
+          // interactive entry. A failure here increments recordsFailed and is
+          // reported per-entry rather than aborting the whole bundle.
+          assertValidEntity('Patient', row, 'FHIR import');
+
           db.prepare(`
             INSERT INTO patients (id, patient_id, first_name, last_name, date_of_birth, created_by)
             VALUES (?, ?, ?, ?, ?, ?)
           `).run(
             patientId,
-            resource.identifier?.[0]?.value || `FHIR-${Date.now()}`,
-            name.given?.[0] || 'Unknown',
-            name.family || 'Unknown',
-            resource.birthDate,
+            row.patient_id,
+            row.first_name,
+            row.last_name,
+            row.date_of_birth,
             currentUser.email
           );
           
@@ -1255,6 +1266,11 @@ async function fhirWebhook(params, context) {
           const email = fhirPatient.telecom?.find(t => t.system === 'email')?.value || null;
 
           const orgId = currentUser.org_id || 'SYSTEM';
+          assertValidEntity(
+            'Patient',
+            { patient_id: patientIdValue, first_name: firstName, last_name: lastName, date_of_birth: dob, email },
+            'FHIR webhook'
+          );
           const existing = db.prepare('SELECT * FROM patients WHERE patient_id = ? AND org_id = ?').all(patientIdValue, orgId);
 
           if (existing.length > 0) {

@@ -12,6 +12,7 @@ const shared = require('../shared.cjs');
 const { hasPermission, PERMISSIONS } = require('../../services/accessControl.cjs');
 const { encryptField, isEncrypted } = require('../../services/secretEncryption.cjs');
 const electronicSignature = require('../../services/electronicSignature.cjs');
+const { assertValidEntity } = require('../../functions/validators.cjs');
 
 /**
  * Columns that hold raw secrets we must transparently encrypt on write.
@@ -139,6 +140,10 @@ function register() {
     const id = data.id || uuidv4();
     delete data.org_id;
     const safeData = shared.filterToAllowedColumns(tableName, data);
+    // C-4: clinical range/domain validation at the persistence boundary. The
+    // renderer form is not a trust boundary — IPC, import and ingestion all
+    // arrive here.
+    assertValidEntity(entityName, safeData, 'create');
     applyEncryptionToWrite(tableName, id, safeData);
     const entityData = shared.sanitizeForSQLite({ ...safeData, id, org_id: orgId, created_by: currentUser.email });
 
@@ -214,6 +219,7 @@ function register() {
 
     const now = new Date().toISOString();
     const safeData = shared.filterToAllowedColumns(tableName, data);
+    assertValidEntity(entityName, safeData, 'update');
     applyEncryptionToWrite(tableName, id, safeData);
     const entityData = shared.sanitizeForSQLite({ ...safeData, updated_by: currentUser.email, updated_at: now });
 

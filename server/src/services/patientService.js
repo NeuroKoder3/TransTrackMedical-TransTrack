@@ -1,6 +1,9 @@
 'use strict';
 
 const audit = require('./auditService');
+// Single clinical-validation authority, shared with the desktop tier so the
+// two deployment modes cannot enforce different rules (C-4).
+const { assertValidEntity } = require('../../../electron/functions/validators.cjs');
 
 const PATIENT_COLUMNS = [
   'id', 'org_id', 'mrn', 'patient_id', 'first_name', 'last_name', 'middle_name',
@@ -67,6 +70,8 @@ async function getByMrn(client, ctx, mrn) {
 }
 
 async function create(client, ctx, input) {
+  // C-4: same clinical validation authority as the desktop tier.
+  assertValidEntity('Patient', input, 'REST create');
   const cols = ['org_id', 'created_by', 'updated_by'];
   const vals = [ctx.orgId, ctx.userId || null, ctx.userId || null];
   for (const k of Object.keys(input)) {
@@ -90,6 +95,7 @@ async function create(client, ctx, input) {
 }
 
 async function update(client, ctx, id, input) {
+  assertValidEntity('Patient', input, 'REST update');
   const sets = [];
   const vals = [];
   for (const k of Object.keys(input)) {
