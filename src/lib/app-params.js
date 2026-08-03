@@ -11,7 +11,7 @@ export const appParams = {
   appName: 'TransTrack',
   version: __APP_VERSION__,
   isOffline: true,
-  compliance: ['HIPAA', 'FDA 21 CFR Part 11', 'AATB'],
+  compliance: ['HIPAA', 'FDA 21 CFR Part 11'],
 };
 
 // Check if running in Electron

@@ -48,7 +48,7 @@ function register() {
       name: 'TransTrack',
       version: getAppVersion(),
       isPackaged,
-      designAlignment: ['HIPAA Security Rule', '21 CFR Part 11', 'AATB Standards'],
+      designAlignment: ['HIPAA Security Rule', '21 CFR Part 11'],
       certificationDisclaimer: 'Design alignment statements describe product controls only and are not certifications.',
       encryptionEnabled: isEncryptionEnabled(),
     };

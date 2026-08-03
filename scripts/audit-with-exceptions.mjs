@@ -23,10 +23,23 @@
  * Accepted findings are always printed. Nothing is suppressed from the report;
  * only the exit code is affected.
  *
+ * This is the ONLY vulnerability allowlist in the repository. There used to be a
+ * second one — a hardcoded `ALLOWED` set in scripts/production-audit.mjs, which
+ * is what CI actually ran (finding M-19). Two allowlists drift, and the one on
+ * the CI path was the one with no reviewBy expiry check, so an accepted
+ * advisory could be inherited indefinitely without anyone re-deciding it. That
+ * script has been removed and CI runs this gate.
+ *
+ * Each npm workspace in the repository is audited separately because they have
+ * separate lockfiles. An exception declares which workspace it applies to via
+ * its optional `scope` field ("root" by default); an exception written for one
+ * workspace does not silently cover the other.
+ *
  * Usage:
  *   node scripts/audit-with-exceptions.mjs
  *   node scripts/audit-with-exceptions.mjs --json      # machine-readable summary
  *   node scripts/audit-with-exceptions.mjs --severity=high
+ *   node scripts/audit-with-exceptions.mjs --scope=server
  */
 
 import { spawnSync } from 'node:child_process';
@@ -42,6 +55,24 @@ const SEVERITY_ORDER = ['info', 'low', 'moderate', 'high', 'critical'];
 const args = process.argv.slice(2);
 const asJson = args.includes('--json');
 const severityArg = args.find((a) => a.startsWith('--severity='));
+const scopeArg = args.find((a) => a.startsWith('--scope='));
+
+/**
+ * npm workspaces with their own lockfile, and therefore their own audit.
+ * `dir` is relative to the repository root.
+ */
+const SCOPES = {
+  root: { dir: '.', label: 'desktop application' },
+  server: { dir: 'server', label: 'multi-tenant server' },
+};
+
+const DEFAULT_SCOPE = 'root';
+const scope = scopeArg ? scopeArg.split('=')[1] : DEFAULT_SCOPE;
+if (!SCOPES[scope]) {
+  console.error(`\naudit-with-exceptions: unknown scope "${scope}". Known: ${Object.keys(SCOPES).join(', ')}\n`);
+  process.exit(2);
+}
+const auditCwd = resolve(repoRoot, SCOPES[scope].dir);
 
 const useColor = process.stdout.isTTY && !process.env.NO_COLOR && !asJson;
 const c = useColor
@@ -93,11 +124,20 @@ function loadExceptions() {
     if (Number.isNaN(Date.parse(e.reviewBy))) {
       throw new Error(`exception ${e.advisory}: reviewBy "${e.reviewBy}" is not a parseable date`);
     }
+    if (e.scope !== undefined && !SCOPES[e.scope]) {
+      throw new Error(
+        `exception ${e.advisory}: unknown scope "${e.scope}". Known: ${Object.keys(SCOPES).join(', ')}`,
+      );
+    }
   });
 
   return {
     severityThreshold: parsed.severityThreshold || 'moderate',
-    exceptions: list,
+    // An entry without an explicit scope belongs to the desktop application,
+    // which is what every entry meant before the server was audited by this
+    // gate. Scoping is applied here so the decision logic below only ever sees
+    // exceptions that could legitimately cover the workspace being audited.
+    exceptions: list.filter((e) => (e.scope || DEFAULT_SCOPE) === scope),
   };
 }
 
@@ -105,7 +145,7 @@ function loadExceptions() {
 
 function runAudit() {
   const r = spawnSync('npm', ['audit', '--omit=dev', '--json'], {
-    cwd: repoRoot, stdio: 'pipe', shell: process.platform === 'win32',
+    cwd: auditCwd, stdio: 'pipe', shell: process.platform === 'win32',
     maxBuffer: 32 * 1024 * 1024,
   });
 
@@ -241,6 +281,7 @@ function main() {
   const stale = exceptions.filter((e) => !matchedAdvisories.has(e.advisory));
 
   const summary = {
+    scope,
     threshold,
     totalFindings: allFindings.length,
     atOrAboveThreshold: findings.length,
@@ -269,6 +310,7 @@ function main() {
   }
 
   console.log(c.b('\nDependency vulnerability gate (production dependencies)'));
+  console.log(`  scope: ${scope} — ${SCOPES[scope].label} (${SCOPES[scope].dir})`);
   console.log(`  severity threshold: ${threshold}`);
   console.log(`  findings at/above threshold: ${findings.length}\n`);
 
@@ -299,7 +341,7 @@ function main() {
   console.log('');
   if (summary.ok) {
     const suffix = accepted.length > 0 ? ` (${accepted.length} documented exception(s))` : '';
-    console.log(c.g(`PASS — no unresolved vulnerabilities at ${threshold}+${suffix}`));
+    console.log(c.g(`PASS — no unresolved vulnerabilities at ${threshold}+ in scope "${scope}"${suffix}`));
     process.exit(0);
   }
 

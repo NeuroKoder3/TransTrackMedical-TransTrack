@@ -30,6 +30,14 @@ const schema = z.object({
 
   DATABASE_URL: z.string().url().or(z.string().startsWith('postgres')),
   PGSSL: z.enum(['disable', 'require', 'verify-full']).default('disable'),
+  // PEM bundle used to verify the PostgreSQL server certificate. When empty
+  // the Node default trust store is used. Both `require` and `verify-full`
+  // verify the chain (M-13); they differ only in hostname checking.
+  PGSSL_CA_FILE: z.string().optional().default(''),
+  // Escape hatch for a server presenting a certificate that cannot be
+  // verified. Named for what it does, refused in production, and never
+  // implied by PGSSL=require.
+  PGSSL_ALLOW_UNVERIFIED: envBool.default(false),
   PG_POOL_MAX: z.coerce.number().int().positive().default(20),
   PG_IDLE_TIMEOUT_MS: z.coerce.number().int().nonnegative().default(30000),
 
@@ -76,8 +84,15 @@ const schema = z.object({
   SSO_UNKNOWN_ROLE_POLICY: z.enum(['deny', 'default_user']).default('default_user'),
 
   HL7_MLLP_ENABLED: envBool.default(true),
-  HL7_MLLP_HOST: z.string().default('0.0.0.0'),
+  // The MLLP listener has no transport authentication unless mutual TLS is
+  // configured, so it binds loopback by default (H-9). Operators that front
+  // it with an interface engine on another host must widen this explicitly.
+  HL7_MLLP_HOST: z.string().default('127.0.0.1'),
   HL7_MLLP_PORT: z.coerce.number().int().min(0).default(2575),
+  // Resource bounds for the listener (H-9).
+  HL7_MLLP_MAX_MESSAGE_BYTES: z.coerce.number().int().positive().default(1024 * 1024),
+  HL7_MLLP_IDLE_TIMEOUT_MS: z.coerce.number().int().positive().default(30000),
+  HL7_MLLP_MAX_CONNECTIONS: z.coerce.number().int().positive().default(64),
   HL7_MLLP_TLS_CERT_FILE: z.string().optional().default(''),
   HL7_MLLP_TLS_KEY_FILE: z.string().optional().default(''),
   HL7_MLLP_TLS_CA_FILE: z.string().optional().default(''),
@@ -96,6 +111,33 @@ const schema = z.object({
   CORS_ALLOWED_ORIGINS: z.string().optional().default(''),
   SUBSCRIPTION_DISPATCH_MS: z.coerce.number().int().positive().default(5000),
   SMART_DEFAULT_ACCESS_TTL_SECONDS: z.coerce.number().int().positive().default(3600),
+
+  // ---------------------------------------------------------------------------
+  // SMART/OIDC ID token signing (M-26).
+  //
+  // ID tokens are signed asymmetrically and the public half is published at
+  // /.well-known/jwks.json, so relying parties never need — and never receive
+  // — a server secret. Point SMART_ID_TOKEN_KEY_FILE at a PEM private key
+  // (RSA for RS256, EC P-256 for ES256). Production refuses to mint an ID
+  // token without one; development falls back to an ephemeral key pair that
+  // is regenerated on every boot.
+  // ---------------------------------------------------------------------------
+  SMART_ID_TOKEN_KEY_FILE: z.string().optional().default(''),
+  SMART_ID_TOKEN_ALG: z.enum(['RS256', 'ES256']).default('RS256'),
+  SMART_ID_TOKEN_KID: z.string().optional().default('transtrack-id-token-1'),
+  SMART_ID_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(3600),
+
+  // ---------------------------------------------------------------------------
+  // CDS Hooks invocation audit (H-12).
+  //
+  // The invocation audit stores a PHI-free summary by default. Raw request and
+  // response payloads carry patient context and prefetched FHIR resources, so
+  // capturing them creates a second unredacted PHI store; it is opt-in, the
+  // rows record that they were captured, and captured payloads are given an
+  // explicit expiry that operators must actually enforce.
+  // ---------------------------------------------------------------------------
+  CDS_CAPTURE_RAW_PAYLOADS: envBool.default(false),
+  CDS_RAW_PAYLOAD_RETENTION_DAYS: z.coerce.number().int().positive().default(7),
 
   // Epic on FHIR integration (optional). When EPIC_SANDBOX_CLIENT_ID and
   // EPIC_PRIVATE_KEY_FILE are set, /integrations/epic/import accepts the
@@ -133,6 +175,35 @@ const schema = z.object({
   SMTP_FROM: z.string().optional().default(''),
 });
 
+/**
+ * Placeholder secrets that have shipped in .env.example / docker-compose.yml
+ * or that are otherwise guessable (M-15). They satisfy the 32-byte length
+ * floor while being fully predictable, so length alone cannot be the only
+ * check. Matching is case-insensitive and substring-based so that
+ * "dev-jwt-secret-change-me-aaaa..." is caught by "change-me".
+ */
+const PLACEHOLDER_SECRET_MARKERS = Object.freeze([
+  'change-me', 'changeme', 'change_me', 'replace-me', 'replaceme', 'replace_me',
+  'dev-jwt-secret', 'dev-secret', 'devsecret', 'insecure', 'placeholder',
+  'example-secret', 'not-a-secret', 'password', 'secret-secret', 'transtrack-dev',
+  'xxxxxxxx', '00000000', '12345678',
+]);
+
+/**
+ * Both shipped defaults reach the 32-byte floor by padding with a repeated
+ * character ("...-aaaaaaaaaaaa"). A run of eight or more identical characters
+ * is filler, not entropy; randomly generated secrets do not produce one.
+ */
+const FILLER_RUN = /(.)\1{7,}/;
+
+function isPredictableSecret(value) {
+  if (typeof value !== 'string' || value === '') return true;
+  const lower = value.toLowerCase();
+  if (PLACEHOLDER_SECRET_MARKERS.some((marker) => lower.includes(marker))) return true;
+  if (FILLER_RUN.test(value)) return true;
+  return false;
+}
+
 function load() {
   const parsed = schema.safeParse(process.env);
   if (!parsed.success) {
@@ -160,6 +231,23 @@ function load() {
     );
   }
 
+  // M-13: an unverified TLS connection to the database is an accepted risk
+  // for a developer poking at a self-signed instance and nothing more.
+  if (cfg.NODE_ENV === 'production' && cfg.PGSSL_ALLOW_UNVERIFIED) {
+    throw new Error(
+      'PGSSL_ALLOW_UNVERIFIED is not allowed in production. Supply the server CA ' +
+      'via PGSSL_CA_FILE and use PGSSL=verify-full.'
+    );
+  }
+
+  // M-15: refuse to run in production on a secret anyone can look up.
+  if (cfg.NODE_ENV === 'production' && isPredictableSecret(cfg.JWT_SECRET)) {
+    throw new Error(
+      'JWT_SECRET is a known placeholder or otherwise predictable value and is refused in ' +
+      'production. Generate one with: openssl rand -base64 48'
+    );
+  }
+
   if (cfg.SAML_ENABLED && (!cfg.SAML_ENTRY_POINT || !cfg.SAML_IDP_CERT)) {
     throw new Error('SAML_ENABLED=true requires SAML_ENTRY_POINT and SAML_IDP_CERT');
   }
@@ -170,4 +258,4 @@ function load() {
   return Object.freeze(cfg);
 }
 
-module.exports = { load };
+module.exports = { load, isPredictableSecret };

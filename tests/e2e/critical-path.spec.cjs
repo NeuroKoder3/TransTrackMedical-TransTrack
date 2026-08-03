@@ -13,13 +13,13 @@
  *   6. Restore from the backup     (recovery.restoreBackup)
  *
  * The test runs against the packaged Electron renderer and exercises the
- * full IPC bridge end-to-end. All steps are tolerant of an environment
- * that does not have a fully provisioned admin (the backup/verify/restore
- * IPC calls are skipped with a console warning rather than failing the
- * suite, because backup tooling depends on a writable userData path that
- * may be locked down in some CI runners). When the steps DO execute, the
- * assertions are strict — a regression in the IPC bridge or the recovery
- * pipeline will fail this test loudly.
+ * full IPC bridge end-to-end. Every step is a hard assertion: the app is
+ * launched with its own userData directory under os.tmpdir() and seeds its
+ * own administrator, so there is no environment in which a missing audit
+ * row or an unverified backup is legitimate. Steps 3 and 5 previously
+ * downgraded those two outcomes to console.warn, which let a total loss of
+ * audit capture and a no-op backup verification pass as green (finding
+ * M-23); they now fail.
  *
  * Prerequisites:
  *   npm install --save-dev @playwright/test
@@ -311,50 +311,59 @@ test.describe('TransTrack — Critical Path (login → patient → audit → bac
   // STEP 3 — Verify the audit log captured the create
   // -----------------------------------------------------------------------
   test('Step 3 — verify the audit log contains the patient-create entry', async () => {
-    const audit = await window.evaluate(async (patientId) => {
+    // Step 2 must have produced an id for this step to mean anything; without
+    // it the assertions below would degrade into "some audit row exists".
+    expect(ctx.patientId).toBeTruthy();
+
+    const audit = await window.evaluate(async () => {
       try {
-        // Prefer the filter API to scope to the just-created record.
+        // Scoped to Patient rows: entity:create calls logAudit('create',
+        // 'Patient', id, ...) in electron/ipc/handlers/entities.cjs, so the
+        // row this test looks for is written on the same code path as the
+        // record itself. A create that is not evidenced is a control failure.
         if (window.electronAPI?.entities?.AuditLog?.filter) {
           const rows = await window.electronAPI.entities.AuditLog.filter(
             { entity_type: 'Patient' },
             '-created_at',
             50,
           );
-          return { ok: true, rows: rows || [] };
+          return { ok: true, surface: 'entities.AuditLog.filter', rows: rows || [] };
         }
-        if (window.electronAPI?.entities?.AuditLog?.list) {
-          const rows = await window.electronAPI.entities.AuditLog.list(
-            '-created_at',
-            50,
-          );
-          return { ok: true, rows: rows || [] };
-        }
-        // Compliance-view fallback
-        if (window.electronAPI?.compliance?.getAuditTrail) {
-          const r = await window.electronAPI.compliance.getAuditTrail({});
-          return { ok: true, rows: (r && r.rows) || [] };
-        }
-        return { ok: false, error: 'no audit-log surface on bridge' };
+        return { ok: false, error: 'no entities.AuditLog.filter surface on bridge' };
       } catch (e) {
         return { ok: false, error: String(e && e.message ? e.message : e) };
       }
-    }, ctx.patientId);
+    });
 
     if (!audit.ok) {
       throw new Error(`[critical-path] audit-log surface MUST be available: ${audit.error}`);
     }
 
-    expect(audit).toBeDefined();
     expect(Array.isArray(audit.rows)).toBe(true);
-    // We expect the audit pipeline to be writing rows; the strict assertion
-    // is that *some* audit rows exist (not necessarily our specific create
-    // row, since some IPC handlers attribute audit entries to the org/system
-    // user when no human session is active).
-    if (audit.rows.length === 0) {
-      console.warn(
-        '[critical-path] audit log returned 0 rows — acceptable in a hermetic test environment with no live user session, but a regression in production audit capture would fail this assertion.',
-      );
-    }
+
+    // 21 CFR Part 11 / HIPAA §164.312(b): the creation of a PHI record must be
+    // attributable in the audit trail. This previously only console.warn'd on
+    // an empty result, which meant a total loss of audit capture — the single
+    // most serious regression this suite can detect — passed silently.
+    expect(
+      audit.rows.length,
+      'audit log returned no Patient rows: the create in Step 2 was not evidenced',
+    ).toBeGreaterThan(0);
+
+    const createRow = audit.rows.find(
+      (r) => r && r.entity_id === ctx.patientId && String(r.action).includes('create'),
+    );
+    expect(
+      createRow,
+      `no audit row with action "create" for patient ${ctx.patientId}; ` +
+        `actions seen: ${audit.rows.map((r) => `${r.action}:${r.entity_id}`).join(', ')}`,
+    ).toBeTruthy();
+
+    // Attribution and tamper-evidence: an unattributed or unchained row is not
+    // usable as evidence, so a row that exists but lacks either is a failure.
+    expect(createRow.entity_type).toBe('Patient');
+    expect(createRow.user_email).toBeTruthy();
+    expect(createRow.record_hash).toBeTruthy();
   });
 
   // -----------------------------------------------------------------------
@@ -442,21 +451,27 @@ test.describe('TransTrack — Critical Path (login → patient → audit → bac
     expect(result.ok).toBe(true);
 
     const raw = result.raw || {};
-    const verifiedFields = [
-      raw.checksumVerified,
-      raw.integrityCheckPassed,
-      raw.restoreTestPassed,
-      raw.valid,
-      raw.ok,
-      raw.success,
-      raw.verified,
-    ];
-    const hasAnyVerifiedFlag = verifiedFields.some((f) => f === true);
-    if (!hasAnyVerifiedFlag) {
-      console.warn(
-        '[critical-path] verifyBackup returned without an explicit verified flag; raw payload:',
-        JSON.stringify(raw).slice(0, 400),
-      );
+    const payload = JSON.stringify(raw).slice(0, 600);
+
+    // disasterRecovery.verifyBackup() returns exactly one of two shapes: a
+    // failure ({ valid: false, error }) or a success carrying all three
+    // verification flags. Accepting "no flag present" — as this step used to —
+    // meant a verifyBackup that silently stopped checking anything still
+    // passed, which is the opposite of what a backup-integrity control is for.
+    expect(raw.valid, `verifyBackup did not report valid: ${payload}`).toBe(true);
+    expect(raw.checksumVerified, `checksum not verified: ${payload}`).toBe(true);
+    expect(raw.integrityCheckPassed, `SQLite integrity check not run: ${payload}`).toBe(true);
+    expect(raw.restoreTestPassed, `restore test not run: ${payload}`).toBe(true);
+
+    // The restore test opens the backup and counts rows in the tables a
+    // recovery actually depends on; an empty stats object means the read-back
+    // never happened.
+    expect(raw.stats, `verifyBackup returned no table statistics: ${payload}`).toBeTruthy();
+    for (const table of ['patients', 'users', 'audit_logs', 'organizations']) {
+      expect(
+        typeof raw.stats[table],
+        `verifyBackup did not read back table "${table}": ${payload}`,
+      ).toBe('number');
     }
   });
 

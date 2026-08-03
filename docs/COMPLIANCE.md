@@ -1,8 +1,35 @@
 # TransTrack Compliance Documentation
 
+| Document ID | TT-COMP-001 |
+| --- | --- |
+| Version | 2.0 |
+| Status | Approved |
+| Effective date | 2026-08-02 |
+| Applies to | TransTrack 1.3.0 |
+| Owner | Quality Assurance Officer |
+
 ## Regulatory Compliance Overview
 
-TransTrack is designed and built to meet the requirements of major healthcare regulatory bodies. This document outlines the compliance features implemented in the application.
+This document describes the compliance-relevant features implemented in
+TransTrack. It is a description of product capability, not an attestation.
+
+Two framework mappings exist and are maintained as controlled documents:
+
+| Framework | Controlled mapping | What the claim means |
+|---|---|---|
+| HIPAA Security Rule | [`compliance/HIPAA_SECURITY_RULE_MAPPING.md`](compliance/HIPAA_SECURITY_RULE_MAPPING.md) | TransTrack provides technical safeguards a covered entity can rely on. Compliance itself is the covered entity's determination about its own practices and cannot be a property of software. |
+| FDA 21 CFR Part 11 | [`compliance/PART_11_CONTROL_MAPPING.md`](compliance/PART_11_CONTROL_MAPPING.md) | Design controls, applicable only where the organization elects to treat TransTrack records as Part 11 records. Known gaps are stated in that mapping. |
+
+**No AATB conformance is claimed.** Earlier revisions of this document contained
+a section asserting alignment with AATB (American Association of Tissue Banks)
+standards. No AATB control mapping ever existed behind it, and TransTrack is a
+solid-organ waitlist and coordination tool rather than a tissue-bank system. The
+section has been withdrawn rather than retrospectively constructed. A deploying
+tissue bank requiring AATB alignment must perform that mapping itself.
+
+For the validation status of this release, see
+[`compliance/VALIDATION_SUMMARY_REPORT.md`](compliance/VALIDATION_SUMMARY_REPORT.md):
+vendor software verification is executed; site IQ/OQ/PQ are not.
 
 ---
 
@@ -29,9 +56,9 @@ TransTrack is designed and built to meet the requirements of major healthcare re
    - Logs retained for minimum 6 years per HIPAA requirements
 
 4. **Transmission Security**
-   - No data transmitted over network in offline mode
-   - All operations performed locally on encrypted database
-   - CSP (Content Security Policy) headers prevent external data transmission
+   - All core operations are performed locally against the encrypted database; no network connection is required
+   - CSP (Content Security Policy) headers prevent the renderer from initiating external requests
+   - Optional egress paths exist and are off by default: remote log sink, SIEM forwarder, the early-access server tier, and GitHub Releases auto-update. The logger redacts PHI at the sink and the SIEM forwarder refuses plaintext transport unless explicitly overridden. See [`../SECURITY.md`](../SECURITY.md#network-egress) and residual risk RR-12
 
 ### Administrative Safeguards
 
@@ -92,36 +119,41 @@ TransTrack is designed and built to meet the requirements of major healthcare re
 
 ---
 
-## AATB (American Association of Tissue Banks) Standards
+## Donor and recipient record management
 
-### Donor Information Management
+The capabilities below were previously presented under an "AATB Standards"
+heading. They are real product capabilities, but they were never mapped to any
+AATB standard clause, so they are described here as what they are — record
+management features — with the unsupported framework claim removed.
 
-1. **Donor Identification**
+### Donor information management
+
+1. **Donor identification**
    - Unique donor identification numbers
-   - Complete donor demographic tracking
+   - Donor demographic tracking
    - Donor consent documentation support
 
-2. **Donor Screening**
+2. **Donor screening**
    - Medical history tracking
    - Laboratory result storage
    - Risk assessment documentation
 
 3. **Traceability**
-   - Complete chain of custody
-   - Donor to recipient tracking
-   - Outcome tracking capabilities
+   - Chain-of-custody records
+   - Donor-to-recipient linkage
+   - Outcome tracking
 
-### Recipient Management
+### Recipient management
 
-1. **Waitlist Management**
-   - Priority scoring algorithms
+1. **Waitlist management**
+   - Internal operational prioritization (not allocation)
    - Status tracking
    - Outcome documentation
 
-2. **Matching Documentation**
+2. **Matching documentation**
    - Compatibility assessments
    - Match decision documentation
-   - Allocation tracking
+   - Local match records — allocation itself occurs in OPTN/UNet
 
 ---
 
@@ -130,9 +162,11 @@ TransTrack is designed and built to meet the requirements of major healthcare re
 ### Priority Calculation
 
 1. **Medical Urgency Scoring**
-   - MELD score integration for liver
-   - LAS score integration for lung
-   - Customizable weighting algorithms
+   - MELD, MELD-Na and MELD 3.0 for liver. PELD is **unavailable** — TransTrack fails closed pending a verifiable OPTN Policy 9.1.E Table 9-1 source (residual risk RR-01)
+   - For lung, the **TransTrack Lung Triage Index (TTLI)** — an internal, expert-set 0–100 triage indicator. It is **not** the OPTN Lung Allocation Score and not the Composite Allocation Score, and it is flagged `isPublishedInstrument: false` on every result (residual risk RR-07)
+   - KDPI/KDRI and EPTS with percentile maps that are piecewise approximations of the OPTN tables, flagged as approximations on every result (residual risk RR-03)
+   - Customizable weighting for internal worklist ordering only
+   - Constant provenance for every calculator is recorded in [`compliance/CLINICAL_SOURCES.md`](compliance/CLINICAL_SOURCES.md)
 
 2. **Time on Waitlist**
    - Accurate date tracking
@@ -390,11 +424,20 @@ This feature is:
 
 ## Regulatory Contact Information
 
-For compliance questions or to report issues:
+External regulators:
 
 **FDA Medical Device Reporting**: 1-800-FDA-1088
 **HHS OCR (HIPAA)**: https://www.hhs.gov/hipaa/
-**AATB**: https://www.aatb.org/
+
+Vendor:
+
+| Purpose | Address |
+|---|---|
+| Security vulnerability disclosure | `security@transtrack.example` — see [`../SECURITY.md`](../SECURITY.md#reporting-a-security-issue) |
+| Compliance and validation questions | `support@transtrack.example` |
+
+Both are role-based placeholders that are not yet provisioned; see residual risk
+**RR-15**.
 
 ---
 
@@ -402,8 +445,11 @@ For compliance questions or to report issues:
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 1.0.0 | 2026-01-23 | Initial release |
+| 1.0.0 | 2026-01-23 | Initial release. |
+| 2.0 | 2026-08-02 | Withdrew the AATB Standards section and the AATB claim in the overview, neither of which had a control mapping behind it (finding M-17 item 3). Corrected the transmission-security claim to enumerate the optional egress paths (M-17 item 2). Corrected the calculator descriptions: PELD unavailable, TTLI is not the OPTN LAS, KDPI/EPTS percentiles are approximations (M-17 item 11). Replaced the consumer webmail contact with role-based addresses (L-13). Added document control header and links to the executed validation package. | Quality Assurance Officer |
 
 ---
 
-*This document is part of the TransTrack regulatory compliance package. For full validation documentation, contact TransTrack Medical Software.*
+*This document is part of the TransTrack regulatory compliance package. The
+full validation package is in [`compliance/`](compliance/); start with
+[`compliance/VALIDATION_SUMMARY_REPORT.md`](compliance/VALIDATION_SUMMARY_REPORT.md).*

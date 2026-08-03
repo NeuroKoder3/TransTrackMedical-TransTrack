@@ -12,6 +12,28 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
+const Database = require('better-sqlite3-multiple-ciphers');
+const { createTestDataDir } = require('../scripts/test-temp-dir.cjs');
+
+// Several checks below execute production modules rather than reading their
+// source. Those modules resolve paths through Electron's `app`, so stub it
+// before anything requires them. userData points at a scratch directory under
+// os.tmpdir() that is removed when this process exits.
+const scratchDir = createTestDataDir('compliance');
+const mockApp = { getPath: () => scratchDir, isPackaged: false };
+require.cache[require.resolve('electron')] = {
+  id: 'electron',
+  filename: 'electron',
+  loaded: true,
+  exports: {
+    app: mockApp,
+    ipcMain: { handle: () => {} },
+    dialog: {},
+    crashReporter: { start: () => {} },
+    safeStorage: { isEncryptionAvailable: () => false },
+  },
+};
 
 let passed = 0;
 let failed = 0;
@@ -34,11 +56,86 @@ function test(name, fn) {
 // ============================================================================
 console.log('Suite 1: HIPAA Technical Safeguards');
 
-test('Database encryption module exists', () => {
-  assert(fs.existsSync(path.join(__dirname, '..', 'electron', 'database', 'init.cjs')));
-  const content = fs.readFileSync(path.join(__dirname, '..', 'electron', 'database', 'init.cjs'), 'utf8');
-  assert(content.includes("cipher = 'sqlcipher'"), 'Must use SQLCipher');
-  assert(content.includes('AES-256'), 'Must document AES-256 encryption');
+// §164.312(a)(2)(iv) — Encryption at rest.
+//
+// This check used to grep electron/database/init.cjs for the strings
+// "cipher = 'sqlcipher'" and "AES-256" (finding M-23). A commented-out pragma,
+// a pragma applied to the wrong handle, or a profile that silently fell back to
+// the library's default KDF all satisfied it, while the one thing the control
+// actually claims — that PHI is unreadable in the file on disk — went untested.
+// It now writes a patient surname through the real cipher profile and reads the
+// bytes back off the filesystem.
+const dbInit = require('../electron/database/init.cjs');
+
+test('PHI written through the production cipher profile is unreadable on disk', () => {
+  const key = crypto.randomBytes(32).toString('hex');
+  const dbPath = path.join(scratchDir, 'compliance-encrypted.db');
+  const surname = 'Okonkwo';
+
+  const seed = new Database(dbPath);
+  dbInit.applyCipherPragmas(seed, key);
+  seed.exec('CREATE TABLE patients (id TEXT PRIMARY KEY, last_name TEXT)');
+  seed.prepare('INSERT INTO patients (id, last_name) VALUES (?, ?)').run('p1', surname);
+  seed.close();
+
+  const onDisk = fs.readFileSync(dbPath);
+  assert(
+    !onDisk.includes(Buffer.from(surname, 'utf8')),
+    'the patient surname is readable in the database file — PHI is not encrypted at rest',
+  );
+  assert(
+    !onDisk.subarray(0, 16).equals(Buffer.from('SQLite format 3\0', 'utf8')),
+    'the database file carries the plaintext SQLite header',
+  );
+
+  const handle = new Database(dbPath);
+  try {
+    dbInit.applyCipherPragmas(handle, key);
+
+    const result = dbInit.verifyDatabaseEncryption(handle, dbPath);
+    assert(result.verified, `encryption verification failed: ${result.problems.join('; ')}`);
+    assert.strictEqual(result.checks.cipher, 'sqlcipher', 'Must use SQLCipher');
+    assert.strictEqual(result.checks.kdfIterations, 256000, 'Must use 256000 PBKDF2 iterations');
+    assert.strictEqual(result.checks.fileHeaderEncrypted, true);
+    assert.strictEqual(result.checks.cipherSaltPresent, true);
+
+    // The value is still recoverable with the key — encryption, not corruption.
+    assert.strictEqual(
+      handle.prepare('SELECT last_name FROM patients WHERE id = ?').get('p1').last_name,
+      surname,
+    );
+
+    dbInit.applyEncryptionVerification(handle, dbPath);
+    const status = dbInit.getEncryptionStatus();
+    assert.strictEqual(status.algorithm, 'AES-256-CBC', 'Must report AES-256 encryption');
+    assert.strictEqual(status.keyDerivation, 'PBKDF2-HMAC-SHA512');
+    assert.strictEqual(status.compliant, true);
+    assert.strictEqual(status.standard, 'HIPAA');
+  } finally {
+    try { handle.close(); } catch { /* already closed by a fail-closed path */ }
+  }
+});
+
+test('A plaintext database is never reported as HIPAA compliant', () => {
+  const dbPath = path.join(scratchDir, 'compliance-plaintext.db');
+  const seed = new Database(dbPath);
+  seed.exec('CREATE TABLE patients (id TEXT PRIMARY KEY)');
+  seed.close();
+
+  const handle = new Database(dbPath);
+  try {
+    // No cipher pragmas — exactly what a mis-provisioned installation looks like.
+    const result = dbInit.applyEncryptionVerification(handle, dbPath);
+    assert.strictEqual(result.verified, false, 'a plaintext database must not verify');
+
+    const status = dbInit.getEncryptionStatus();
+    assert.strictEqual(status.enabled, false);
+    assert.strictEqual(status.compliant, false);
+    assert.strictEqual(status.standard, 'non-compliant');
+    assert(status.verification.problems.length > 0, 'the status must carry the evidence');
+  } finally {
+    try { handle.close(); } catch { /* already closed by a fail-closed path */ }
+  }
 });
 
 test('Audit log immutability triggers defined', () => {
@@ -60,28 +157,57 @@ test('Audit log schema includes required fields', () => {
   }
 });
 
+// The three checks below used to grep electron/ipc/shared.cjs for the strings
+// "minLength: 12", "SESSION_DURATION_MS" and "MAX_LOGIN_ATTEMPTS" (the class of
+// weakness in finding M-23: a commented-out constant, or one that is defined and
+// never consulted, satisfies a substring search). They now execute the exported
+// validator and read the exported constants.
+const shared = require('../electron/ipc/shared.cjs');
+
 test('Password requirements meet NIST guidelines', () => {
-  const content = fs.readFileSync(path.join(__dirname, '..', 'electron', 'ipc', 'shared.cjs'), 'utf8');
-  assert(content.includes('minLength: 12'), 'Minimum password length must be 12');
-  assert(content.includes('requireUppercase'), 'Must require uppercase');
-  assert(content.includes('requireSpecial'), 'Must require special characters');
+  const rejected = {
+    'too short': 'Ab!1defg',
+    'no uppercase': 'abcdefgh1!xyz',
+    'no lowercase': 'ABCDEFGH1!XYZ',
+    'no digit': 'Abcdefgh!xyzQ',
+    'no special character': 'Abcdefgh1xyzQ',
+  };
+  for (const [why, password] of Object.entries(rejected)) {
+    const result = shared.validatePasswordStrength(password);
+    assert.strictEqual(result.valid, false, `a password with ${why} must be rejected`);
+    assert(result.errors.length > 0, `rejecting for ${why} must say why`);
+  }
+
+  // An empty or absent credential must never be treated as acceptable.
+  for (const empty of ['', null, undefined]) {
+    assert.strictEqual(shared.validatePasswordStrength(empty).valid, false);
+  }
+
+  const ok = shared.validatePasswordStrength('Str0ng!Passphrase9');
+  assert.strictEqual(ok.valid, true, `a compliant password was rejected: ${ok.errors.join('; ')}`);
+  assert.strictEqual(ok.errors.length, 0);
 });
 
 test('Session expiration is configured', () => {
-  const content = fs.readFileSync(path.join(__dirname, '..', 'electron', 'ipc', 'shared.cjs'), 'utf8');
-  assert(content.includes('SESSION_DURATION_MS'), 'Must define session duration');
-  const match = content.match(/SESSION_DURATION_MS\s*=\s*(\d+)/);
-  if (match) {
-    const hours = parseInt(match[1]) / (1000 * 60 * 60);
-    assert(hours <= 12, `Session must expire within 12 hours (currently ${hours}h)`);
-  }
+  const hours = shared.SESSION_DURATION_MS / (1000 * 60 * 60);
+  assert(Number.isFinite(hours) && hours > 0, 'Must define an absolute session duration');
+  assert(hours <= 12, `Session must expire within 12 hours (currently ${hours}h)`);
+
+  const idleMinutes = shared.IDLE_TIMEOUT_MS / (1000 * 60);
+  assert(Number.isFinite(idleMinutes) && idleMinutes > 0, 'Must define an idle timeout');
+  assert(idleMinutes <= 30, `Idle timeout must be 30 minutes or less (currently ${idleMinutes}m)`);
 });
 
 test('Account lockout is implemented', () => {
-  const content = fs.readFileSync(path.join(__dirname, '..', 'electron', 'ipc', 'shared.cjs'), 'utf8');
-  assert(content.includes('MAX_LOGIN_ATTEMPTS'), 'Must define max login attempts');
-  assert(content.includes('LOCKOUT_DURATION_MS'), 'Must define lockout duration');
-  assert(content.includes('checkAccountLockout'), 'Must implement lockout check');
+  assert(
+    Number.isInteger(shared.MAX_LOGIN_ATTEMPTS) && shared.MAX_LOGIN_ATTEMPTS > 0 && shared.MAX_LOGIN_ATTEMPTS <= 10,
+    `Max login attempts must be between 1 and 10 (currently ${shared.MAX_LOGIN_ATTEMPTS})`,
+  );
+  const lockoutMinutes = shared.LOCKOUT_DURATION_MS / (1000 * 60);
+  assert(lockoutMinutes >= 15, `Lockout must last at least 15 minutes (currently ${lockoutMinutes}m)`);
+  assert.strictEqual(typeof shared.checkAccountLockout, 'function', 'Lockout must be enforced, not only configured');
+  assert.strictEqual(typeof shared.recordFailedLogin, 'function');
+  assert.strictEqual(typeof shared.clearFailedLogins, 'function');
 });
 
 // ============================================================================
@@ -123,11 +249,18 @@ test('Audit trail captures WHO, WHAT, WHEN', () => {
 });
 
 test('Audit logs are append-only (no update/delete exports)', () => {
-  const content = fs.readFileSync(path.join(__dirname, '..', 'electron', 'ipc', 'shared.cjs'), 'utf8');
-  const logAuditFn = content.substring(content.indexOf('function logAudit'));
-  assert(logAuditFn.includes('INSERT INTO audit_logs'), 'logAudit must only INSERT');
+  // logAudit delegates to the single chained writer in services/auditChain.cjs,
+  // so the append-only property has to be asserted where the SQL now lives.
+  const shared = fs.readFileSync(path.join(__dirname, '..', 'electron', 'ipc', 'shared.cjs'), 'utf8');
+  const logAuditFn = shared.substring(shared.indexOf('function logAudit'));
+  assert(logAuditFn.includes('appendAuditRecord'), 'logAudit must write through the chained writer');
   assert(!logAuditFn.includes('UPDATE audit_logs'), 'logAudit must never UPDATE');
   assert(!logAuditFn.includes('DELETE FROM audit_logs'), 'logAudit must never DELETE');
+
+  const writer = fs.readFileSync(path.join(__dirname, '..', 'electron', 'services', 'auditChain.cjs'), 'utf8');
+  assert(writer.includes('INSERT INTO audit_logs'), 'the chained writer must INSERT audit rows');
+  assert(!writer.includes('UPDATE audit_logs'), 'the chained writer must never UPDATE');
+  assert(!writer.includes('DELETE FROM audit_logs'), 'the chained writer must never DELETE');
 });
 
 // ============================================================================
@@ -268,12 +401,32 @@ test('Rate limiter module exists', () => {
 // ============================================================================
 console.log('\nSuite 8: Structured Logging');
 
-test('Error logger with sensitive data redaction', () => {
-  const content = fs.readFileSync(path.join(__dirname, '..', 'electron', 'ipc', 'errorLogger.cjs'), 'utf8');
-  assert(content.includes('SENSITIVE_KEYS'), 'Must define sensitive keys for redaction');
-  assert(content.includes('password'), 'Must redact passwords');
-  assert(content.includes('ssn'), 'Must redact SSN');
-  assert(content.includes('[REDACTED]'), 'Must replace with [REDACTED]');
+test('Error logger redacts sensitive data in what it writes to disk', () => {
+  // Executed rather than grepped, for the same reason as the encryption check
+  // above: the presence of the word "password" in a source file is not evidence
+  // that a password never reaches the log.
+  const errorLogger = require('../electron/ipc/errorLogger.cjs');
+  const log = errorLogger.createLogger('compliance-test');
+
+  const marker = `compliance-${crypto.randomBytes(6).toString('hex')}`;
+  log.error('write failed', new Error('disk full'), {
+    marker,
+    password: 'PlaintextPw!1',
+    ssn: '123-45-6789',
+  });
+
+  const logged = fs.readdirSync(errorLogger.LOG_DIR)
+    .map((f) => fs.readFileSync(path.join(errorLogger.LOG_DIR, f), 'utf8'))
+    .join('\n')
+    .split('\n')
+    .filter((line) => line.includes(marker));
+
+  assert(logged.length > 0, 'the logger wrote nothing to disk');
+  const entry = JSON.parse(logged[logged.length - 1]);
+  assert.strictEqual(entry.password, '[REDACTED]', 'Must redact passwords');
+  assert.strictEqual(entry.ssn, '[REDACTED]', 'Must redact SSN');
+  assert(!logged.join('\n').includes('PlaintextPw!1'), 'password value must not reach the log');
+  assert(!logged.join('\n').includes('123-45-6789'), 'SSN value must not reach the log');
 });
 
 test('Log rotation is configured', () => {

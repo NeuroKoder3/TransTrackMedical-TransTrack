@@ -13,16 +13,25 @@
  *
  * For local testing against Mirth Connect, the listener can run plaintext
  * by leaving the cert/key paths empty (DEV ONLY).
+ *
+ * The listener is unauthenticated at the transport level unless mutual TLS
+ * is configured, so it defaults to binding loopback only (HL7_MLLP_HOST) and
+ * applies three resource bounds (H-9):
+ *
+ *   HL7_MLLP_MAX_MESSAGE_BYTES  cap on the unterminated frame buffer
+ *   HL7_MLLP_IDLE_TIMEOUT_MS    per-connection idle / incomplete-frame timeout
+ *   HL7_MLLP_MAX_CONNECTIONS    concurrent connection cap
  */
 
 const fs = require('fs');
 const net = require('net');
 const tls = require('tls');
-const { MllpFramer, frame } = require('./mllp');
+const { MllpFramer, MllpFrameTooLargeError, frame } = require('./mllp');
 const { parseMessage, buildAck } = require('./messageParser');
 const vendorProfileService = require('../services/vendorProfileService');
 const ingestMod = require('./ingest');
-const { getPool } = require('../db/pool');
+const { getPool, withTransaction } = require('../db/pool');
+const { SYSTEM_ORG_ID } = require('../db/systemOrg');
 
 function start({ config, logger }) {
   if (!config.HL7_MLLP_ENABLED) {
@@ -54,6 +63,10 @@ function start({ config, logger }) {
     logger.info('HL7 MLLP running plaintext (test environment)');
   }
 
+  const maxMessageBytes = config.HL7_MLLP_MAX_MESSAGE_BYTES;
+  const idleTimeoutMs = config.HL7_MLLP_IDLE_TIMEOUT_MS;
+  const maxConnections = config.HL7_MLLP_MAX_CONNECTIONS;
+
   function handleSocket(socket) {
     const peer = {
       address: socket.remoteAddress,
@@ -64,9 +77,31 @@ function start({ config, logger }) {
     };
     logger.info({ peer }, 'mllp peer connected');
 
-    const framer = new MllpFramer();
+    // Drop a connection that stalls mid-frame (or idles between frames)
+    // rather than holding its buffer indefinitely.
+    socket.setTimeout(idleTimeoutMs);
+    socket.on('timeout', () => {
+      logger.warn({ peer, idleTimeoutMs }, 'mllp peer idle timeout; closing connection');
+      socket.destroy();
+    });
+
+    const framer = new MllpFramer({ maxMessageBytes });
     socket.on('data', async (chunk) => {
-      const messages = framer.push(chunk);
+      let messages;
+      try {
+        messages = framer.push(chunk);
+      } catch (e) {
+        if (e instanceof MllpFrameTooLargeError) {
+          // Log the bound that was breached, never the bytes: an
+          // unterminated frame may contain partial PHI.
+          logger.warn({ peer, bufferedBytes: e.bufferedBytes, maxMessageBytes: e.maxBytes },
+            'mllp frame exceeded maximum buffered size; destroying connection');
+        } else {
+          logger.warn({ peer, err: e.message }, 'mllp framing error; destroying connection');
+        }
+        socket.destroy();
+        return;
+      }
       for (const raw of messages) {
         // First pass: parse without vendor profile to extract sending_app.
         let parsed;
@@ -78,23 +113,15 @@ function start({ config, logger }) {
           socket.write(frame(nack));
           continue;
         }
-        const resolvedOrg = await resolveOrgFromSendingApp(parsed.sending_app);
+        const resolvedOrg = await resolveOrgFromSendingApp(parsed.sending_app, parsed.sending_facility);
         const orgId = resolvedOrg || config.HL7_DEFAULT_ORG_ID || null;
         if (!orgId) {
           logger.warn({ sendingApp: parsed.sending_app, msgId: parsed.message_control_id },
             'rejecting message: no org mapping and no HL7_DEFAULT_ORG_ID');
-          try {
-            const pool = getPool();
-            await pool.query(
-              `INSERT INTO hl7_dead_letters
-                 (raw_message, sending_app, sending_facility, message_type,
-                  trigger_event, message_control_id, error_reason, peer_address, transport)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'mllp')`,
-              [raw, parsed.sending_app, parsed.sending_facility, parsed.message_type,
-               parsed.trigger_event, parsed.message_control_id,
-               'No org mapping for sending application', peer?.address || null]
-            );
-          } catch { /* best-effort dead-letter */ }
+          await quarantineDeadLetter({
+            raw, parsed, peer, logger,
+            reason: 'No org mapping for sending application',
+          });
           const nack = buildAck(parsed, 'AR', 'No org mapping for sending application');
           socket.write(frame(nack));
           continue;
@@ -136,13 +163,24 @@ function start({ config, logger }) {
     ? tls.createServer(tlsOpts, handleSocket)
     : net.createServer(handleSocket);
 
+  // Node stops accepting once maxConnections is reached and closes the
+  // surplus socket, so a peer cannot exhaust file descriptors.
+  server.maxConnections = maxConnections;
+
   server.listen(config.HL7_MLLP_PORT, config.HL7_MLLP_HOST, () => {
     logger.info({
       host: config.HL7_MLLP_HOST,
       port: config.HL7_MLLP_PORT,
       tls: !!useTls,
       mtls: !!useTls && tlsOpts.requestCert,
+      maxMessageBytes,
+      idleTimeoutMs,
+      maxConnections,
     }, 'mllp listener started');
+    if (!useTls && config.HL7_MLLP_HOST !== '127.0.0.1' && config.HL7_MLLP_HOST !== 'localhost') {
+      logger.warn({ host: config.HL7_MLLP_HOST },
+        'mllp listener is reachable off-host without TLS or peer authentication');
+    }
   });
 
   server.on('error', (err) => logger.error({ err }, 'mllp listener error'));
@@ -150,22 +188,64 @@ function start({ config, logger }) {
 }
 
 /**
- * Resolve org_id from the hl7_sending_apps table by exact match on
- * sending_app. Falls back to HL7_DEFAULT_ORG_ID if configured.
+ * Resolve org_id from the hl7_sending_apps table.
+ *
+ * Two keys are tried, most specific first:
+ *   1. "<sending_app>|<sending_facility>" — lets one application name be
+ *      routed to different tenants per facility (MSH-3 + MSH-4).
+ *   2. "<sending_app>" — the plain MSH-3 mapping.
+ *
+ * This runs before any tenant context exists, so the query is unscoped; the
+ * mllp_routing_lookup_hl7_sending_apps policy (migration 010) permits exactly
+ * this SELECT and nothing else.
  */
-async function resolveOrgFromSendingApp(sendingApp) {
+async function resolveOrgFromSendingApp(sendingApp, sendingFacility) {
   if (!sendingApp) return null;
+  const keys = [];
+  if (sendingFacility) keys.push(`${sendingApp}|${sendingFacility}`);
+  keys.push(sendingApp);
   try {
     const r = await getPool().query(
-      `SELECT org_id FROM hl7_sending_apps
-       WHERE sending_app = $1 AND is_active = TRUE
-       LIMIT 1`,
-      [sendingApp]
+      `SELECT sending_app, org_id FROM hl7_sending_apps
+       WHERE sending_app = ANY($1::text[]) AND is_active = TRUE`,
+      [keys]
     );
-    return r.rows[0]?.org_id || null;
+    for (const key of keys) {
+      const hit = r.rows.find((row) => row.sending_app === key);
+      if (hit) return hit.org_id;
+    }
+    return null;
   } catch {
     return null;
   }
 }
 
-module.exports = { start, resolveOrgFromSendingApp };
+/**
+ * File an unroutable message in the dead-letter quarantine (M-27).
+ *
+ * The row is attributed to the reserved system organisation rather than
+ * being written with a NULL org_id: NULL rows are invisible to every tenant
+ * policy but also unowned, so nothing ever reclaims or expires them. The
+ * reserved org has no members, so the quarantined PHI stays unreadable
+ * through the API while remaining attributable to a concrete owner.
+ */
+async function quarantineDeadLetter({ raw, parsed, peer, logger, reason }) {
+  try {
+    await withTransaction({ orgId: SYSTEM_ORG_ID }, async (client) => {
+      await client.query(
+        `INSERT INTO hl7_dead_letters
+           (org_id, raw_message, sending_app, sending_facility, message_type,
+            trigger_event, message_control_id, error_reason, peer_address, transport)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'mllp')`,
+        [SYSTEM_ORG_ID, raw, parsed.sending_app, parsed.sending_facility,
+         parsed.message_type, parsed.trigger_event, parsed.message_control_id,
+         reason, peer?.address || null]
+      );
+    });
+  } catch (e) {
+    logger.error({ err: e.message, msgId: parsed.message_control_id },
+      'failed to quarantine unroutable hl7 message');
+  }
+}
+
+module.exports = { start, resolveOrgFromSendingApp, quarantineDeadLetter };

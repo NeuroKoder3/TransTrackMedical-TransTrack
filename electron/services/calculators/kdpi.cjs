@@ -24,45 +24,35 @@
  *   KDPI         = percentile of KDRI_MEDIAN within the OPTN reference cohort
  *                  (computed by table lookup against the published mapping)
  *
- * The percentile mapping table is a published OPTN dataset that is updated
- * annually. Rather than embedding a copy that would silently go stale, we
- * compute KDRI_MEDIAN here and approximate KDPI using the reference scaling
- * factor and the cumulative-distribution approximation published in the OPTN
- * Calculator Programmer's Guide (a 5-piece linear approximation). For
- * decision-grade KDPI, customers should consult the OPTN calculator and
- * record the value directly.
+ * The median-KDRI scaling factor and the KDRI-to-KDPI percentile mapping are
+ * OPTN-owned data republished annually. Finding H-10 recorded that embedding
+ * them as literals guaranteed silent divergence. They now live in the
+ * provenanced reference table `optn-kdpi` (see ./referenceData.cjs): every
+ * result names the source revision it was computed against, an overdue review
+ * marks the result `stale`, and an absent table produces no score at all.
  *
  * Output is a *reference value*. Allocation occurs in UNet.
  *
  * Citation: Rao PS et al. Transplantation 2009; OPTN Policy 8.5.A.
+ * Controlled-source id SRC-OPTN-P8.
  */
 
 'use strict';
 
-// Reference scaling factor — KDRI_MEDIAN at published reference cohort.
-// Updated annually by OPTN; review before each release.
-const KDRI_MEDIAN_SCALING_FACTOR = 1.32; // 2022 reference cohort.
+const referenceData = require('./referenceData.cjs');
 
-// 5-segment piecewise linear approximation of the KDRI_MEDIAN → KDPI(%) map.
-// Based on the OPTN Calculator Programmer's Guide (2022 reference cohort).
-// Anchors: (KDRI, KDPI%)
-const KDPI_ANCHORS = [
-  [0.50, 0],
-  [0.85, 25],
-  [1.00, 50],
-  [1.30, 75],
-  [1.65, 90],
-  [2.50, 100],
-];
-
-function isPositiveNumber(v) {
+/**
+ * Donor demographics are non-negative; a zero age is implausible for a
+ * deceased donor and is rejected separately below (finding L-11).
+ */
+function isNonNegativeNumber(v) {
   return typeof v === 'number' && Number.isFinite(v) && v >= 0;
 }
 
-function kdriToKdpi(kdriMedian) {
-  for (let i = 0; i < KDPI_ANCHORS.length - 1; i++) {
-    const [x0, y0] = KDPI_ANCHORS[i];
-    const [x1, y1] = KDPI_ANCHORS[i + 1];
+function kdriToKdpi(kdriMedian, anchors) {
+  for (let i = 0; i < anchors.length - 1; i++) {
+    const [x0, y0] = anchors[i];
+    const [x1, y1] = anchors[i + 1];
     if (kdriMedian <= x1) {
       const t = (kdriMedian - x0) / (x1 - x0);
       return Math.max(0, Math.min(100, Math.round(y0 + t * (y1 - y0))));
@@ -95,9 +85,35 @@ function calculateKDPI(input) {
   if (missing.length) {
     return { kdri: null, kdpi: null, reason: 'INSUFFICIENT_DATA', missing, formula: 'KDPI' };
   }
-  if (!isPositiveNumber(input.age_years) || !isPositiveNumber(input.height_cm) ||
-      !isPositiveNumber(input.weight_kg) || !isPositiveNumber(input.creatinine_mg_dl)) {
+  if (!isNonNegativeNumber(input.age_years) || !isNonNegativeNumber(input.height_cm) ||
+      !isNonNegativeNumber(input.weight_kg) || !isNonNegativeNumber(input.creatinine_mg_dl)) {
     return { kdri: null, kdpi: null, reason: 'INVALID_INPUTS', missing, formula: 'KDPI' };
+  }
+  // L-11: a deceased-donor age of 0 is not a plausible KDRI input. The Rao
+  // model's age spline is anchored at 40 and extrapolates nonsensically at 0,
+  // so accept it only as a genuine measured value above zero.
+  if (input.age_years <= 0 || input.height_cm <= 0 || input.weight_kg <= 0 || input.creatinine_mg_dl <= 0) {
+    return {
+      kdri: null,
+      kdpi: null,
+      reason: 'INVALID_INPUTS',
+      invalid: ['age_years', 'height_cm', 'weight_kg', 'creatinine_mg_dl'].filter(
+        (f) => !(input[f] > 0)
+      ),
+      formula: 'KDPI',
+    };
+  }
+
+  const table = referenceData.loadTable(referenceData.TABLE_IDS.KDPI);
+  if (!table.available) {
+    return {
+      kdri: null,
+      kdpi: null,
+      reason: table.reason,
+      message: table.message,
+      formula: 'KDPI',
+      source: { sourceId: 'SRC-OPTN-P8', status: table.status },
+    };
   }
 
   const age = input.age_years;
@@ -125,8 +141,9 @@ function calculateKDPI(input) {
   }
 
   const kdriRao = Math.exp(xb);
-  const kdriMedian = kdriRao / KDRI_MEDIAN_SCALING_FACTOR;
-  const kdpi = kdriToKdpi(kdriMedian);
+  const kdriMedian = kdriRao / table.data.kdriMedianScalingFactor;
+  const kdpi = kdriToKdpi(kdriMedian, table.data.mapping);
+  const source = referenceData.provenanceOf(table);
 
   return {
     kdri_rao: Number(kdriRao.toFixed(3)),
@@ -135,7 +152,16 @@ function calculateKDPI(input) {
     formula: 'KDPI',
     inputs: input,
     citation: 'Rao PS et al. Transplantation 2009;88:231-236; OPTN Policy 8.5.A.',
-    disclaimer: 'Reference value only. KDPI percentile is approximated. The decision-grade KDPI must be obtained from the OPTN Calculator. Do not use for allocation.',
+    source,
+    disclaimer:
+      'Reference value only. The KDPI percentile is derived from a piecewise ' +
+      'approximation of the OPTN mapping table; the decision-grade KDPI must be ' +
+      'obtained from the OPTN Calculator. Do not use for allocation.' +
+      (source.stale
+        ? ` WARNING: the OPTN reference table in use (revision ${source.sourceRevision}) ` +
+          `passed its review date ${source.reviewBy} ${source.daysOverdue} day(s) ago and may ` +
+          `no longer match the current OPTN cohort.`
+        : ''),
   };
 }
 

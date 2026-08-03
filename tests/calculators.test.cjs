@@ -10,7 +10,7 @@
 
 const assert = require('assert');
 const {
-  calculateMELD, calculateMELDNa, calculateMELD3, calculatePELD,
+  calculateMELD, calculateMELDNa, calculateMELD3, calculatePELD, calculatePELDLegacy2016,
   calculateLAS, calculateKDPI, calculateEPTS,
 } = require('../electron/services/calculators/index.cjs');
 
@@ -112,22 +112,25 @@ test('MELD-Na: insufficient data when sodium missing', () => {
 
 console.log('\n=== MELD 3.0 ===');
 
-test('MELD 3.0: requires sex and albumin', () => {
+test('MELD 3.0: requires sex, albumin and age', () => {
   const r = calculateMELD3({ creatinine_mg_dl: 1, bilirubin_mg_dl: 1, inr: 1, sodium_meq_l: 137 });
   assert.strictEqual(r.score, null);
   assert.ok(r.missing.includes('sex'));
   assert.ok(r.missing.includes('albumin_g_dl'));
+  // Age selects between the adult and adolescent equations, which differ by
+  // more than a point at identical labs, so it is a required input.
+  assert.ok(r.missing.includes('age_years'));
 });
 
 test('MELD 3.0: female bonus increases score vs male, all else equal', () => {
-  const inputs = { creatinine_mg_dl: 1.5, bilirubin_mg_dl: 4.0, inr: 1.8, sodium_meq_l: 130, albumin_g_dl: 2.5 };
+  const inputs = { creatinine_mg_dl: 1.5, bilirubin_mg_dl: 4.0, inr: 1.8, sodium_meq_l: 130, albumin_g_dl: 2.5, age_years: 45 };
   const m = calculateMELD3({ ...inputs, sex: 'male' });
   const f = calculateMELD3({ ...inputs, sex: 'female' });
   assert.ok(f.score >= m.score, `expected female (${f.score}) >= male (${m.score})`);
 });
 
 test('MELD 3.0: caps at 40', () => {
-  const r = calculateMELD3({ creatinine_mg_dl: 4, bilirubin_mg_dl: 100, inr: 100, sodium_meq_l: 125, albumin_g_dl: 1.5, sex: 'female' });
+  const r = calculateMELD3({ creatinine_mg_dl: 4, bilirubin_mg_dl: 100, inr: 100, sodium_meq_l: 125, albumin_g_dl: 1.5, sex: 'female', age_years: 45 });
   assert.strictEqual(r.score, 40);
 });
 
@@ -139,17 +142,26 @@ test('PELD: rejects when age >= 12', () => {
   assert.strictEqual(r.reason, 'PELD_NOT_APPLICABLE');
 });
 
-test('PELD: gives age bonus for <1 year', () => {
+test('PELD: refuses to score without the controlled OPTN coefficient table', () => {
+  // OPTN replaced PELD with PELD-Cr on 2023-07-13. Serving the superseded
+  // equation under the PELD label would hand a clinician a number that no
+  // longer matches OPTN, so the calculator fails closed instead.
+  const r = calculatePELD({ bilirubin_mg_dl: 5, inr: 2, albumin_g_dl: 2, creatinine_mg_dl: 0.6, age_years: 5, growth_failure: false });
+  assert.strictEqual(r.score, null);
+  assert.strictEqual(r.reason, 'REFERENCE_DATA_UNAVAILABLE');
+});
+
+test('PELD legacy: gives age bonus for <1 year', () => {
   const inputs = { bilirubin_mg_dl: 5, inr: 2, albumin_g_dl: 2, growth_failure: false };
-  const infant = calculatePELD({ ...inputs, age_years: 0.5 });
-  const older = calculatePELD({ ...inputs, age_years: 5 });
+  const infant = calculatePELDLegacy2016({ ...inputs, age_years: 0.5 });
+  const older = calculatePELDLegacy2016({ ...inputs, age_years: 5 });
   assert.ok(infant.score > older.score);
 });
 
-test('PELD: gives growth-failure bonus', () => {
+test('PELD legacy: gives growth-failure bonus', () => {
   const inputs = { bilirubin_mg_dl: 5, inr: 2, albumin_g_dl: 2, age_years: 5 };
-  const without = calculatePELD({ ...inputs, growth_failure: false });
-  const withGF = calculatePELD({ ...inputs, growth_failure: true });
+  const without = calculatePELDLegacy2016({ ...inputs, growth_failure: false });
+  const withGF = calculatePELDLegacy2016({ ...inputs, growth_failure: true });
   assert.ok(withGF.score > without.score);
 });
 

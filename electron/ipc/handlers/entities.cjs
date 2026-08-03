@@ -12,6 +12,8 @@ const shared = require('../shared.cjs');
 const { hasPermission, PERMISSIONS } = require('../../services/accessControl.cjs');
 const { encryptField, isEncrypted } = require('../../services/secretEncryption.cjs');
 const electronicSignature = require('../../services/electronicSignature.cjs');
+const { assertValidEntity } = require('../../functions/validators.cjs');
+const featureGate = require('../../license/featureGate.cjs');
 
 /**
  * Columns that hold raw secrets we must transparently encrypt on write.
@@ -79,6 +81,39 @@ const ENTITY_PERMISSION_MAP = {
   AdultHealthHistoryQuestionnaire: { view: PERMISSIONS.PATIENT_VIEW, create: PERMISSIONS.PATIENT_UPDATE, update: PERMISSIONS.PATIENT_UPDATE, delete: PERMISSIONS.PATIENT_DELETE },
 };
 
+/**
+ * Entity types whose bulk reads return whole PHI rows.
+ *
+ * `entity:get` already required a justification grant, but `entity:list` and
+ * `entity:filter` return `SELECT *` for every row in the org, so a role check
+ * alone let any holder of patient:view extract the entire patient population
+ * without a recorded reason. Bulk reads therefore require a grant too.
+ *
+ * The grant is taken over the sentinel entity id below rather than over a
+ * single record, so one justification covers the working session's list views
+ * (30 minutes, see PHI_GRANT_TTL_MS in services/accessControl.cjs) instead of
+ * forcing a coordinator to justify every page load. It is obtained through the
+ * same `access:authorizePhiAccess` IPC as a detail grant, which means the same
+ * checks apply: the caller must hold PATIENT_VIEW_PHI, the justification must
+ * be at least 10 characters, and the grant is written to
+ * access_justification_logs before any row is returned.
+ */
+const PHI_LIST_SCOPE_ID = '*';
+const PHI_BULK_READ_ENTITIES = new Set(['Patient']);
+
+function enforceBulkPhiGrant(currentUser, entityName) {
+  if (!PHI_BULK_READ_ENTITIES.has(entityName)) return;
+
+  const accessControl = require('../../services/accessControl.cjs');
+  if (accessControl.hasValidPhiGrant(currentUser.id, entityName, PHI_LIST_SCOPE_ID)) return;
+
+  throw new Error(
+    `PHI access justification required before bulk ${entityName} reads. ` +
+    `Request a list-scope grant for entity id "${PHI_LIST_SCOPE_ID}" with ` +
+    `the ${accessControl.PERMISSIONS.PATIENT_VIEW_PHI} permission first.`
+  );
+}
+
 function enforcePermission(currentUser, entityName, action) {
   const perms = ENTITY_PERMISSION_MAP[entityName];
   if (!perms) {
@@ -108,37 +143,28 @@ function register() {
 
     if (entityName === 'AuditLog') throw new Error('Audit logs cannot be created directly');
 
+    // H-6: refuse writes when trial/license is expired or invalid.
+    featureGate.requireWriteAccess();
+
     // License enforcement — refuse to create new Patient / User rows once
     // the licensed cap is reached. Reads and updates are always allowed
-    // (this matches the "fail safe, not silently lose data" stance).
+    // once the license is valid (fail safe: do not silently lose edits).
     if (entityName === 'Patient' || entityName === 'User') {
       const licenseManager = require('../../license/manager.cjs');
-      const info = licenseManager.getLicenseInfo();
-      if (info.mode === 'trial_expired' || info.mode === 'invalid') {
-        throw new Error(
-          info.mode === 'trial_expired'
-            ? 'Your trial period has ended. Please activate a TransTrack license in Settings → License to continue creating records.'
-            : 'License is invalid. Please contact your administrator. (' + (info.verificationError || 'unknown') + ')'
-        );
-      }
       const limitType = entityName === 'Patient' ? 'patients' : 'users';
-      // Count existing rows for this org (cheap; SQLite COUNT is O(1) on
-      // an indexed column for small N).
       const tbl = entityName === 'Patient' ? 'patients' : 'users';
       const { getDatabase } = require('../../database/init.cjs');
       const current = getDatabase().prepare(`SELECT COUNT(*) AS n FROM ${tbl} WHERE org_id = ?`).get(orgId)?.n || 0;
-      const check = licenseManager.checkLimit(limitType, current);
-      if (!check.withinLimit) {
-        throw new Error(
-          `License limit reached: your tier allows up to ${check.limit} ${limitType}. ` +
-          `Upgrade your license in Settings → License or contact your account manager.`
-        );
-      }
+      featureGate.requireWithinLimit(limitType, current);
     }
 
     const id = data.id || uuidv4();
     delete data.org_id;
     const safeData = shared.filterToAllowedColumns(tableName, data);
+    // C-4: clinical range/domain validation at the persistence boundary. The
+    // renderer form is not a trust boundary — IPC, import and ingestion all
+    // arrive here.
+    assertValidEntity(entityName, safeData, 'create');
     applyEncryptionToWrite(tableName, id, safeData);
     const entityData = shared.sanitizeForSQLite({ ...safeData, id, org_id: orgId, created_by: currentUser.email });
 
@@ -209,11 +235,15 @@ function register() {
 
     if (entityName === 'AuditLog') throw new Error('Audit logs cannot be modified');
 
+    // H-6: refuse writes when trial/license is expired or invalid.
+    featureGate.requireWriteAccess();
+
     const existingEntity = shared.getEntityByIdAndOrg(tableName, id, orgId);
     if (!existingEntity) throw new Error(`${entityName} not found or access denied`);
 
     const now = new Date().toISOString();
     const safeData = shared.filterToAllowedColumns(tableName, data);
+    assertValidEntity(entityName, safeData, 'update');
     applyEncryptionToWrite(tableName, id, safeData);
     const entityData = shared.sanitizeForSQLite({ ...safeData, updated_by: currentUser.email, updated_at: now });
 
@@ -267,6 +297,9 @@ function register() {
 
     if (entityName === 'AuditLog') throw new Error('Audit logs cannot be deleted');
 
+    // H-6: refuse writes when trial/license is expired or invalid.
+    featureGate.requireWriteAccess();
+
     const entity = shared.getEntityByIdAndOrg(tableName, id, orgId);
     if (!entity) throw new Error(`${entityName} not found or access denied`);
 
@@ -283,6 +316,7 @@ function register() {
     if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
     const { currentUser } = shared.getSessionState();
     enforcePermission(currentUser, entityName, 'view');
+    enforceBulkPhiGrant(currentUser, entityName);
     const tableName = shared.entityTableMap[entityName];
     if (!tableName) throw new Error(`Unknown entity: ${entityName}`);
     const rows = shared.listEntitiesByOrg(tableName, shared.getSessionOrgId(), orderBy, limit);
@@ -304,6 +338,7 @@ function register() {
     if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
     const { currentUser } = shared.getSessionState();
     enforcePermission(currentUser, entityName, 'view');
+    enforceBulkPhiGrant(currentUser, entityName);
     const tableName = shared.entityTableMap[entityName];
     if (!tableName) throw new Error(`Unknown entity: ${entityName}`);
     const orgId = shared.getSessionOrgId();
@@ -341,6 +376,17 @@ function register() {
     }
 
     const rows = db.prepare(query).all(...values);
+    if (entityName === 'Patient') {
+      shared.logAudit(
+        'filter',
+        entityName,
+        null,
+        null,
+        `Patient filter count=${rows.length} fields=${Object.keys(filters || {}).join(',')}`,
+        currentUser.email,
+        currentUser.role
+      );
+    }
     return rows
       .map(shared.parseJsonFields)
       .map((r) => redactSecretsForRenderer(tableName, r));

@@ -6,21 +6,31 @@
  *           livingDonor:listFollowups, livingDonor:updateFollowup,
  *           livingDonor:markOverdue, livingDonor:summary,
  *           livingDonor:getStatuses, livingDonor:getMilestones
+ *
+ * Authorisation: a living donor record is a donor record that additionally
+ * carries direct identifiers (name, date of birth, contact details), so reads
+ * require DONOR_VIEW, registration requires DONOR_CREATE, and everything that
+ * changes an existing record — status transitions, evaluation steps, follow-up
+ * outcomes — requires DONOR_UPDATE. Before this, any signed-in account reached
+ * all of it.
  */
 
 'use strict';
 
 const { ipcMain } = require('electron');
 const svc = require('../../services/livingDonors.cjs');
+const { PERMISSIONS } = require('../../services/accessControl.cjs');
 const shared = require('../shared.cjs');
 
-function requireSession() {
-  if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
+/** Authorise a read of living-donor data. */
+function requireRead(activity) {
+  shared.requirePermission(PERMISSIONS.DONOR_VIEW, activity);
 }
 
-function withCtx() {
-  const { currentUser } = shared.getSessionState();
-  return { user: currentUser, orgId: shared.getSessionOrgId() };
+/** Authorise a write and return the acting user plus their organisation. */
+function requireWrite(permission, activity) {
+  const user = shared.requirePermission(permission, activity);
+  return { user, orgId: shared.getSessionOrgId() };
 }
 
 function register() {
@@ -28,8 +38,7 @@ function register() {
   ipcMain.handle('livingDonor:getMilestones', async () => svc.FOLLOWUP_MILESTONES);
 
   ipcMain.handle('livingDonor:create', async (_event, data) => {
-    requireSession();
-    const { user, orgId } = withCtx();
+    const { user, orgId } = requireWrite(PERMISSIONS.DONOR_CREATE, 'registering a living donor');
     const created = svc.createDonor({
       orgId,
       mrn: data?.mrn,
@@ -54,18 +63,17 @@ function register() {
   });
 
   ipcMain.handle('livingDonor:get', async (_event, id) => {
-    requireSession();
+    requireRead('reading a living donor record');
     return svc.getDonor(id, shared.getSessionOrgId());
   });
 
   ipcMain.handle('livingDonor:list', async (_event, filters = {}) => {
-    requireSession();
+    requireRead('listing living donors');
     return svc.listDonors({ orgId: shared.getSessionOrgId(), ...filters });
   });
 
   ipcMain.handle('livingDonor:transition', async (_event, params) => {
-    requireSession();
-    const { user, orgId } = withCtx();
+    const { user, orgId } = requireWrite(PERMISSIONS.DONOR_UPDATE, 'changing a living donor\'s status');
     const updated = svc.transitionDonor({
       id: params.id,
       orgId,
@@ -80,8 +88,7 @@ function register() {
   });
 
   ipcMain.handle('livingDonor:addEvalStep', async (_event, data) => {
-    requireSession();
-    const { user, orgId } = withCtx();
+    const { user, orgId } = requireWrite(PERMISSIONS.DONOR_UPDATE, 'adding a donor evaluation step');
     const created = svc.addEvaluationStep({
       orgId,
       livingDonorId: data?.living_donor_id,
@@ -97,8 +104,7 @@ function register() {
   });
 
   ipcMain.handle('livingDonor:updateEvalStep', async (_event, data) => {
-    requireSession();
-    const { user, orgId } = withCtx();
+    const { user, orgId } = requireWrite(PERMISSIONS.DONOR_UPDATE, 'updating a donor evaluation step');
     const updated = svc.updateEvaluationStep({
       id: data?.id, orgId,
       status: data?.status, completedDate: data?.completed_date, notes: data?.notes,
@@ -109,18 +115,17 @@ function register() {
   });
 
   ipcMain.handle('livingDonor:listEvals', async (_event, livingDonorId) => {
-    requireSession();
+    requireRead('reading donor evaluation steps');
     return svc.listEvaluations(livingDonorId, shared.getSessionOrgId());
   });
 
   ipcMain.handle('livingDonor:listFollowups', async (_event, livingDonorId) => {
-    requireSession();
+    requireRead('reading donor follow-ups');
     return svc.listFollowups(livingDonorId, shared.getSessionOrgId());
   });
 
   ipcMain.handle('livingDonor:updateFollowup', async (_event, data) => {
-    requireSession();
-    const { user, orgId } = withCtx();
+    const { user, orgId } = requireWrite(PERMISSIONS.DONOR_UPDATE, 'recording a donor follow-up outcome');
     const updated = svc.updateFollowup({
       id: data?.id, orgId,
       status: data?.status, completedDate: data?.completed_date, notes: data?.notes,
@@ -131,12 +136,13 @@ function register() {
   });
 
   ipcMain.handle('livingDonor:markOverdue', async () => {
-    requireSession();
+    // Flags follow-ups whose milestone date has passed; it writes to the record.
+    shared.requirePermission(PERMISSIONS.DONOR_UPDATE, 'flagging overdue donor follow-ups');
     return svc.markOverdueFollowups(shared.getSessionOrgId());
   });
 
   ipcMain.handle('livingDonor:summary', async (_event, donorId) => {
-    requireSession();
+    requireRead('reading a living donor summary');
     return svc.getDonorSummary(donorId, shared.getSessionOrgId());
   });
 }

@@ -58,12 +58,20 @@ describe('PG SSL configuration', () => {
     expect(poolSource).toContain('rejectUnauthorized');
   });
 
-  it('defaults ssl to disabled, require mode skips verification, verify-full enforces it', () => {
-    // Pool uses explicit checks for 'require' and 'verify-full' PGSSL modes.
+  // M-13: `require` used to mean rejectUnauthorized:false. Both TLS modes now
+  // verify the server certificate; only the explicitly-named, production-
+  // refused PGSSL_ALLOW_UNVERIFIED turns verification off.
+  it('defaults ssl to disabled and verifies the certificate in both TLS modes', () => {
+    expect(poolSource).toContain("config.PGSSL === 'disable'");
     expect(poolSource).toContain("config.PGSSL === 'require'");
-    expect(poolSource).toContain("config.PGSSL === 'verify-full'");
     expect(poolSource).toContain('rejectUnauthorized: true');
-    expect(poolSource).toContain('rejectUnauthorized: false');
+    expect(poolSource).toContain('PGSSL_CA_FILE');
+  });
+
+  it('only skips verification behind PGSSL_ALLOW_UNVERIFIED', () => {
+    expect(poolSource).toContain('PGSSL_ALLOW_UNVERIFIED');
+    const configSource = fs.readFileSync(path.resolve('src/config.js'), 'utf8');
+    expect(configSource).toContain('PGSSL_ALLOW_UNVERIFIED is not allowed in production');
   });
 });
 

@@ -12,8 +12,11 @@
 
 'use strict';
 
+const crypto = require('crypto');
 const dgram = require('dgram');
+const fs = require('fs');
 const net = require('net');
+const path = require('path');
 const tls = require('tls');
 const { v4: uuidv4 } = require('uuid');
 const { getDatabase } = require('../database/init.cjs');
@@ -105,16 +108,146 @@ function deleteDestination(id, orgId) {
   return { deleted: r.changes > 0 };
 }
 
+// ---------------- workforce identifiers ----------------
+
+/**
+ * How the acting user is identified in forwarded events.
+ *
+ * A SIEM sits outside the application's trust boundary and is usually operated
+ * by a different team, often with a longer retention window than the audit trail
+ * itself. Every forwarded row previously carried the clinician's mailbox
+ * address, which is a directly identifying workforce identifier and, in a
+ * transplant programme, is often enough on its own to say who was on shift and
+ * which service they work in. Correlation across events is what a SIEM actually
+ * needs, and a stable pseudonym provides that without exporting the identity.
+ *
+ * Set TRANSTRACK_SIEM_WORKFORCE_ID to change it:
+ *   pseudonymous (default) — a stable salted HMAC of the address
+ *   raw                    — the address itself; a deliberate opt-in for sites
+ *                            whose SIEM playbooks key on the mailbox
+ *   omit                   — no workforce identifier at all
+ *
+ * An unrecognised value falls back to pseudonymous rather than to raw, so a typo
+ * cannot start exporting addresses.
+ */
+const WORKFORCE_ID_MODES = new Set(['pseudonymous', 'raw', 'omit']);
+const WORKFORCE_ID_MODE_ENV = 'TRANSTRACK_SIEM_WORKFORCE_ID';
+const WORKFORCE_SALT_ENV = 'TRANSTRACK_SIEM_WORKFORCE_SALT';
+const WORKFORCE_SALT_FILENAME = '.transtrack-siem-pseudonym-salt';
+
+let cachedWorkforceSalt = null;
+
+function getWorkforceIdMode() {
+  const configured = String(process.env[WORKFORCE_ID_MODE_ENV] || '').trim().toLowerCase();
+  return WORKFORCE_ID_MODES.has(configured) ? configured : 'pseudonymous';
+}
+
+/**
+ * The secret that makes the pseudonym non-reversible.
+ *
+ * Without a secret, a pseudonym is just a hash of an address and anyone holding
+ * the staff directory can recover it by hashing every name. The salt is
+ * therefore persisted (so a pseudonym stays stable across restarts and remains
+ * correlatable in the SIEM) and kept 0600 in userData, sealed by OS secure
+ * storage when a keyring is present.
+ *
+ * When no userData directory exists — plain-Node tooling and CI — a
+ * process-lifetime salt is used. That loses cross-restart correlation but never
+ * discloses more than the configured mode allows, which is the property that
+ * matters here.
+ */
+function getWorkforceSalt() {
+  if (cachedWorkforceSalt) return cachedWorkforceSalt;
+
+  const configured = process.env[WORKFORCE_SALT_ENV];
+  if (configured && configured.length >= 16) {
+    cachedWorkforceSalt = Buffer.from(configured, 'utf8');
+    return cachedWorkforceSalt;
+  }
+
+  let saltPath = null;
+  try {
+    const { app } = require('electron');
+    if (app && typeof app.getPath === 'function') {
+      saltPath = path.join(app.getPath('userData'), WORKFORCE_SALT_FILENAME);
+    }
+  } catch { /* not running under Electron */ }
+
+  if (saltPath) {
+    try {
+      cachedWorkforceSalt = readOrCreateWorkforceSalt(saltPath);
+      return cachedWorkforceSalt;
+    } catch { /* fall through to the ephemeral salt */ }
+  }
+
+  cachedWorkforceSalt = crypto.randomBytes(32);
+  return cachedWorkforceSalt;
+}
+
+function readOrCreateWorkforceSalt(saltPath) {
+  const { safeStorage } = require('electron');
+  const sealed = safeStorage
+    && typeof safeStorage.isEncryptionAvailable === 'function'
+    && safeStorage.isEncryptionAvailable();
+
+  try {
+    const raw = fs.readFileSync(saltPath);
+    if (sealed) {
+      try {
+        return Buffer.from(safeStorage.decryptString(raw), 'hex');
+      } catch { /* written before a keyring existed; adopt the plaintext form */ }
+    }
+    const text = raw.toString('utf8').trim();
+    if (/^[a-f0-9]{64}$/i.test(text)) return Buffer.from(text, 'hex');
+  } catch (err) {
+    if (err.code !== 'ENOENT') throw err;
+  }
+
+  const salt = crypto.randomBytes(32);
+  const hex = salt.toString('hex');
+  const payload = sealed ? safeStorage.encryptString(hex) : Buffer.from(hex, 'utf8');
+  try {
+    const fd = fs.openSync(saltPath, 'wx', 0o600);
+    try { fs.writeSync(fd, payload, 0, payload.length, 0); } finally { fs.closeSync(fd); }
+  } catch (err) {
+    // EEXIST means another starter won the race; its salt is authoritative,
+    // because pseudonyms already forwarded were computed with it.
+    if (err.code !== 'EEXIST') throw err;
+    return readOrCreateWorkforceSalt(saltPath);
+  }
+  return salt;
+}
+
+/**
+ * The identifier that stands in for the acting user in a forwarded event.
+ * Truncated to 128 bits, which is far beyond collision range for a workforce
+ * and keeps the field readable in a SIEM console.
+ */
+function workforceIdentifier(email) {
+  if (!email) return '';
+  const mode = getWorkforceIdMode();
+  if (mode === 'omit') return '';
+  if (mode === 'raw') return String(email);
+  const digest = crypto
+    .createHmac('sha256', getWorkforceSalt())
+    .update(String(email).trim().toLowerCase())
+    .digest('hex');
+  return `wf-${digest.slice(0, 32)}`;
+}
+
 // ---------------- PHI redaction ----------------
 
 /**
- * Redact PHI from a record before forwarding. Never send patient_name.
+ * Redact PHI from a record before forwarding. Never send patient_name, and
+ * never send the raw workforce address unless the deployment opted in.
  * Details are reduced to action+entityType+entityId only.
  */
 function redactRecord(record) {
   return {
     ...record,
     patient_name: undefined,
+    user_email: undefined,
+    workforce_id: workforceIdentifier(record.user_email),
     details: record.action && record.entity_type
       ? `${record.action}:${record.entity_type}:${record.entity_id || 'n/a'}`
       : record.action || null,
@@ -132,7 +265,7 @@ function toCef(record) {
   const sev = mapSeverity(r.action);
   const ext = [
     `rt=${new Date(r.created_at).getTime()}`,
-    `suser=${escapeCef(r.user_email || '')}`,
+    `suser=${escapeCef(r.workforce_id || '')}`,
     `duser=${escapeCef(r.user_role || '')}`,
     `cs1Label=org_id`, `cs1=${escapeCef(r.org_id || '')}`,
     `cs2Label=entity_type`, `cs2=${escapeCef(r.entity_type || '')}`,
@@ -152,7 +285,12 @@ function toJson(record) {
     host: HOSTNAME,
     product: 'TransTrack',
     org_id: r.org_id,
-    user_email: r.user_email,
+    // `user_id` is the correlatable identifier in every mode; `user_email` is
+    // present only where the deployment explicitly asked for the address, so a
+    // consumer that reads it is reading something the site chose to export.
+    user_id: r.workforce_id || null,
+    user_id_mode: getWorkforceIdMode(),
+    user_email: getWorkforceIdMode() === 'raw' ? r.workforce_id : undefined,
     user_role: r.user_role,
     action: r.action,
     entity_type: r.entity_type,
@@ -170,7 +308,7 @@ function toRfc5424(record) {
   const procid = process.pid;
   const msgid = String(r.action || 'audit').slice(0, 32);
   const esc = (s) => String(s || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\]/g, '\\]');
-  const sd = `[transtrack@53914 org="${esc(r.org_id)}" user="${esc(r.user_email)}" entity="${esc(r.entity_type)}" id="${esc(r.entity_id)}"]`;
+  const sd = `[transtrack@53914 org="${esc(r.org_id)}" user="${esc(r.workforce_id)}" entity="${esc(r.entity_type)}" id="${esc(r.entity_id)}"]`;
   const msg = String(r.details || '').replace(/[\r\n]+/g, ' ');
   return `<${pri}>1 ${ts} ${HOSTNAME} ${appName} ${procid} ${msgid} ${sd} ${msg}`;
 }
@@ -325,6 +463,8 @@ module.exports = {
   forwardAuditRow,
   testDestination,
   shutdown,
+  getWorkforceIdMode,
+  workforceIdentifier,
   // exported for tests
   toCef, toJson, toRfc5424, formatRecord, mapSeverity,
 };

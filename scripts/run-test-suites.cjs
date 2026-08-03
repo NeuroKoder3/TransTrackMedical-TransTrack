@@ -39,10 +39,19 @@ const SECURITY_SUITES = [
   'cross-org-access.test.cjs',
   'sessionFailClosed.test.cjs',
   'phiJustification.test.cjs',
+  'phiListJustification.test.cjs',
   'auditChain.test.cjs',
+  'auditFailClosed.test.cjs',
   'siemRedaction.test.cjs',
   'phiLeakage.test.cjs',
+  'loggerRedaction.test.cjs',
   'restoreDatabase.test.cjs',
+  'encryptionVerification.test.cjs',
+  // H-8: these were reachable only through bespoke npm scripts and so could
+  // regress without failing the default gate. They are compliance-relevant.
+  'secretEncryption.test.cjs',
+  'oidcDesktop.test.cjs',
+  'updateAuthorization.test.cjs',
 ];
 
 /**
@@ -104,19 +113,72 @@ const FUNCTIONAL_SUITES = [
   // and that a release build refuses to produce one that is not.
   'artifactSignature.test.mjs',
   'notarize.test.cjs',
+  // C-3 / C-4: clinical correctness and the validation trust boundary.
+  'calculatorReferenceVectors.test.cjs',
+  'clinicalValidation.test.cjs',
+  // H-6 / H-7 / M-21: entitlement enforcement and publisher-key provenance.
+  'license.test.cjs',
+  // H-14 (the offline and thin-client API clients must expose one contract) is
+  // covered by tests/components/apiClientParity.test.jsx under Vitest, because
+  // the clients are ESM renderer modules. It was previously listed here as
+  // 'apiClientParity.test.cjs', a file that has never existed — which made this
+  // runner abort before executing a single suite. See RUN_BY_OTHER_RUNNERS and
+  // assertNoOrphanSuites below: a listed-but-missing suite is a hard error
+  // precisely so this cannot pass unnoticed.
+  // Previously reachable only via `npm run test:services` / `test:ipc` (H-8).
+  'services.test.cjs',
+  'ipc-integration.test.cjs',
 ];
+
+/**
+ * Performance and capacity suites. Excluded from `core` because their runtime
+ * is measured in minutes, but run as their own blocking CI job.
+ */
+const PERFORMANCE_SUITES = ['load-test.cjs'];
+
+/**
+ * Test files that are executed by another runner (Vitest, Playwright) or are
+ * shared fixtures rather than suites. Listed so the orphan check below can
+ * tell "runs elsewhere" apart from "runs nowhere".
+ */
+const RUN_BY_OTHER_RUNNERS = new Set(['setup-react.js']);
 
 const GROUPS = {
   security: SECURITY_SUITES,
   hardening: HARDENING_SUITES,
   functional: FUNCTIONAL_SUITES,
+  performance: PERFORMANCE_SUITES,
   // The default `npm test` group: everything that runs under plain Node without
   // a build step, a display, or a database server.
   core: dedupe([...SECURITY_SUITES, ...HARDENING_SUITES, ...FUNCTIONAL_SUITES]),
+  all: dedupe([...SECURITY_SUITES, ...HARDENING_SUITES, ...FUNCTIONAL_SUITES, ...PERFORMANCE_SUITES]),
 };
 
 function dedupe(list) {
   return [...new Set(list)];
+}
+
+/**
+ * Every Node suite on disk must belong to a group. Without this check a new
+ * test file can be added, pass locally, and never run in CI — which is how the
+ * suites named in finding H-8 came to sit outside the default gate.
+ */
+function assertNoOrphanSuites() {
+  const claimed = new Set(GROUPS.all);
+  const onDisk = fs
+    .readdirSync(TESTS_DIR, { withFileTypes: true })
+    .filter((e) => e.isFile())
+    .map((e) => e.name)
+    .filter((n) => /\.(test\.(cjs|mjs)|test\.js)$/.test(n) || n === 'load-test.cjs')
+    .filter((n) => !RUN_BY_OTHER_RUNNERS.has(n));
+
+  const orphans = onDisk.filter((n) => !claimed.has(n));
+  if (orphans.length > 0) {
+    fail(
+      `these suites exist in tests/ but are not listed in any group, so they ` +
+      `would never run: ${orphans.join(', ')}`
+    );
+  }
 }
 
 function fail(message) {
@@ -138,6 +200,8 @@ function main() {
     printList();
     return;
   }
+
+  assertNoOrphanSuites();
 
   const bail = args.includes('--bail');
   const groupName = args.find((a) => !a.startsWith('--')) || 'core';

@@ -1,3 +1,17 @@
+# Dependabot configuration.
+#
+# Every ecosystem previously carried `open-pull-requests-limit: 0`, which does
+# not "queue updates for later" — it disables Dependabot entirely, including
+# security updates (finding M-18). A HIPAA-aligned product cannot rely on a
+# human noticing an advisory feed.
+#
+# The limits below are set so a weekly run produces a reviewable amount of work
+# rather than a wall of PRs: patch and minor updates are grouped into one PR per
+# ecosystem, and majors are still excluded from automation because they need
+# intentional migration work. The blocking `npm audit` gate
+# (scripts/audit-with-exceptions.mjs, run on every push and PR) remains the
+# control that stops a vulnerable dependency from shipping; Dependabot is what
+# keeps the tree close enough to upstream that the fix is a small change.
 version: 2
 updates:
   - package-ecosystem: "npm"
@@ -7,18 +21,35 @@ updates:
       day: "monday"
       time: "06:00"
       timezone: "UTC"
-    # Disabled until dependency updates are requested intentionally.
-    open-pull-requests-limit: 0
+    open-pull-requests-limit: 5
     labels:
       - "dependencies"
     commit-message:
       prefix: "deps"
     versioning-strategy: increase-if-necessary
+    groups:
+      # One PR for the routine churn. CI runs the full suite on it, so a single
+      # red check identifies the group and the members can be split out.
+      desktop-minor-and-patch:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+      # Security updates are never grouped with routine churn: they must be
+      # reviewable and mergeable on their own timeline.
+      desktop-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
     ignore:
       # Never auto-bump majors — review those manually.
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
-      # Native / Electron stack — bump only with intentional rebuild + CI.
+      # Native / Electron stack — a bump here needs a rebuild against the
+      # Electron ABI and a re-run of the packaged-native verification, so it is
+      # raised deliberately rather than on a schedule.
       - dependency-name: "electron"
       - dependency-name: "electron-builder"
       - dependency-name: "better-sqlite3-multiple-ciphers"
@@ -30,13 +61,25 @@ updates:
       day: "monday"
       time: "06:00"
       timezone: "UTC"
-    open-pull-requests-limit: 0
+    open-pull-requests-limit: 5
     labels:
       - "dependencies"
       - "server"
     commit-message:
       prefix: "deps(server)"
     versioning-strategy: increase-if-necessary
+    groups:
+      server-minor-and-patch:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+      server-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
@@ -47,12 +90,16 @@ updates:
     directory: "/"
     schedule:
       interval: "monthly"
-    open-pull-requests-limit: 0
+    open-pull-requests-limit: 3
     labels:
       - "dependencies"
       - "github-actions"
     commit-message:
       prefix: "ci"
+    groups:
+      actions:
+        patterns:
+          - "*"
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]

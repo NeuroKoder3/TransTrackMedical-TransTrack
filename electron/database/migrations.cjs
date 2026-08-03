@@ -732,6 +732,24 @@ const MIGRATIONS = [
       addColumn(db, 'iota_notifications', 'template_sha256', 'TEXT');
     },
   },
+  {
+    version: 19,
+    name: 'add_audit_log_sequence',
+    description:
+      'Per-org monotonic sequence number so audit ordering does not depend on the system clock',
+    // Additive column plus an index. Older code ignores both, and the column is
+    // NULL for every pre-existing row, which the verifier treats as
+    // sequence-exempt rather than as a gap.
+    rollbackSql: 'DROP INDEX IF EXISTS idx_audit_logs_org_seq',
+    up(db) {
+      // A fresh database already has the column from schema.cjs, so addColumn
+      // reports no change; the index still has to be created in both cases.
+      addColumn(db, 'audit_logs', 'seq', 'INTEGER');
+      if (tableExists(db, 'audit_logs')) {
+        db.exec('CREATE INDEX IF NOT EXISTS idx_audit_logs_org_seq ON audit_logs(org_id, seq)');
+      }
+    },
+  },
 ];
 
 /**

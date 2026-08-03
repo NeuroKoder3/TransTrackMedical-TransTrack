@@ -37,7 +37,28 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * @param {number} [opts.gracePeriodDays]    override soft-expiry grace
  */
 function verify(wireLicense, opts = {}) {
-  const nowMs = opts.nowMs ?? Date.now();
+  // H-7: packaged builds must not verify against the development key.
+  if (!opts.publicKeyOverride && !opts.skipPublisherGate) {
+    try {
+      _publisher().assertPublisherKeyAllowed({ packaged: opts.packaged });
+    } catch (e) {
+      return {
+        ok: false,
+        code: e.code || 'DEV_PUBLISHER_KEY',
+        message: e.message,
+      };
+    }
+  }
+
+  // M-21: prefer monotonic high-water clock so rollback cannot extend expiry.
+  let nowMs = opts.nowMs;
+  if (nowMs === undefined || nowMs === null) {
+    try {
+      nowMs = require('./storage.cjs').observeMonotonicNow();
+    } catch {
+      nowMs = Date.now();
+    }
+  }
   const pubKey = opts.publicKeyOverride ?? _publisher().PUBLIC_KEY_BASE64;
   const grace = opts.gracePeriodDays ?? SOFT_EXPIRY_GRACE_DAYS;
 

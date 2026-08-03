@@ -88,26 +88,98 @@ test.describe('TransTrack E2E', () => {
   });
 
   test('Login with provisioned admin credentials', async () => {
-    await window.waitForTimeout(2000);
+    await window.waitForFunction(
+      () => !!(window.electronAPI?.auth?.login),
+      { timeout: 30000 },
+    );
 
-    // The seed code (electron/database/init.cjs) consumes
-    // TRANSTRACK_INITIAL_ADMIN_PASSWORD when present and falls back to a random
-    // setup token otherwise. beforeAll passes this exact value into the app, so
-    // the login step is deterministic rather than depending on the environment.
-    const e2ePassword = E2E_ADMIN_PASSWORD;
-
+    // First drive the real login form, because the rendered login screen is
+    // part of what this suite is for.
     const emailInput = window.locator('input[type="email"], input[name="email"], input[placeholder*="email" i]');
     const passwordInput = window.locator('input[type="password"]');
+    expect(
+      await emailInput.count(),
+      'login screen rendered no email field',
+    ).toBeGreaterThan(0);
+    await emailInput.first().fill('admin@transtrack.local');
+    await passwordInput.first().fill(E2E_ADMIN_PASSWORD);
 
-    if (await emailInput.count() > 0) {
-      await emailInput.fill('admin@transtrack.local');
-      await passwordInput.fill(e2ePassword);
+    const submitButton = window.locator('button[type="submit"], button:has-text("Login"), button:has-text("Sign In")');
+    expect(
+      await submitButton.count(),
+      'login screen rendered no submit button',
+    ).toBeGreaterThan(0);
+    await submitButton.first().click();
 
-      const submitButton = window.locator('button[type="submit"], button:has-text("Login"), button:has-text("Sign In")');
-      if (await submitButton.count() > 0) {
-        await submitButton.first().click();
-        await window.waitForTimeout(3000);
+    // Form submit already established a session. Restricted sessions reject a
+    // second auth:login (only password/MFA/logout channels are allow-listed),
+    // so clear first-run gates against the existing session instead of logging
+    // in again. Seed uses TRANSTRACK_INITIAL_ADMIN_PASSWORD from beforeAll.
+    await window.waitForFunction(
+      async () => {
+        try {
+          const me = await window.electronAPI.auth.me();
+          return !!(me && me.id);
+        } catch {
+          return false;
+        }
+      },
+      { timeout: 30000 },
+    );
+
+    const { totpCode } = require('../../electron/services/mfa.cjs');
+    const rotatedPassword = `${E2E_ADMIN_PASSWORD}_Rotated1!`;
+
+    const login = await window.evaluate(async ({ password, next }) => {
+      try {
+        let active = password;
+        const me0 = await window.electronAPI.auth.me();
+        if (!me0?.id) {
+          return { ok: false, error: 'no session after form login' };
+        }
+        if (
+          me0.must_change_password ||
+          me0.session_restrictions?.includes('password_change')
+        ) {
+          await window.electronAPI.auth.changePassword({
+            currentPassword: active,
+            newPassword: next,
+          });
+          active = next;
+        }
+        const me = await window.electronAPI.auth.me();
+        const needsMfaEnroll = !!(
+          me?.session_restrictions?.includes('mfa_enroll') ||
+          (me?.mfa_required && !me?.mfa_enrolled) ||
+          (me?.role === 'admin' && !me?.mfa_enrolled)
+        );
+        if (needsMfaEnroll) {
+          const begin = await window.electronAPI.mfa.beginEnrollment();
+          return { ok: true, needsMfaConfirm: true, secret: begin.secret };
+        }
+        return { ok: true, restrictions: me?.session_restrictions || [] };
+      } catch (e) {
+        return { ok: false, error: String(e && e.message ? e.message : e) };
       }
+    }, { password: E2E_ADMIN_PASSWORD, next: rotatedPassword });
+
+    expect(login.ok, `[app] admin login MUST succeed: ${login.error}`).toBe(true);
+
+    if (login.needsMfaConfirm) {
+      const code = totpCode(login.secret);
+      const confirm = await window.evaluate(async ({ secret, code }) => {
+        try {
+          await window.electronAPI.mfa.confirmEnrollment({ secret, code });
+          const me = await window.electronAPI.auth.me();
+          return { ok: true, restrictions: me?.session_restrictions || [] };
+        } catch (e) {
+          return { ok: false, error: String(e && e.message ? e.message : e) };
+        }
+      }, { secret: login.secret, code });
+      expect(confirm.ok, `[app] MFA enrollment MUST succeed: ${confirm.error}`).toBe(true);
+      expect(confirm.restrictions).toEqual([]);
+    } else {
+      expect(login.restrictions).toEqual([]);
     }
   });
 
@@ -128,23 +200,49 @@ test.describe('TransTrack E2E', () => {
       }
     });
 
-    if (createResult && !createResult.error) {
-      expect(createResult).toHaveProperty('id');
+    // These assertions used to sit inside `if (createResult && !createResult.error)`
+    // and `if (found)`, so a create that failed outright, or a list that never
+    // returned the record, was reported as a pass (finding M-23). The preceding
+    // test establishes an unrestricted admin session, so a failure here is a
+    // real regression in the PHI write path.
+    expect(
+      createResult?.error,
+      `Patient.create failed: ${createResult?.error}`,
+    ).toBeUndefined();
+    expect(createResult).toHaveProperty('id');
 
-      const patients = await window.evaluate(async () => {
-        try {
-          return await window.electronAPI.entities.list('Patient');
-        } catch (e) {
-          return [];
+    // Bulk reads require a list-scope PHI grant (entity id "*") — see
+    // enforceBulkPhiGrant in electron/ipc/handlers/entities.cjs. Taking it
+    // here is part of the workflow under test, not a workaround.
+    const listed = await window.evaluate(async () => {
+      try {
+        const grant = await window.electronAPI.accessControl.authorizePhiAccess({
+          permission: 'patient:view_phi',
+          entityType: 'Patient',
+          entityId: '*',
+          justification: 'E2E verification of the patient list view',
+        });
+        if (grant && grant.granted === false) {
+          return { error: `PHI list grant denied: ${grant.reason || 'unknown'}` };
         }
-      });
-
-      const found = patients.find(p => p.patient_id === 'E2E-TEST-001');
-      if (found) {
-        expect(found.first_name).toBe('E2E');
-        expect(found.last_name).toBe('TestPatient');
+        return { rows: await window.electronAPI.entities.list('Patient') };
+      } catch (e) {
+        return { error: String(e && e.message ? e.message : e) };
       }
-    }
+    });
+
+    expect(listed.error, `Patient.list failed: ${listed.error}`).toBeUndefined();
+    expect(Array.isArray(listed.rows)).toBe(true);
+
+    const found = listed.rows.find((p) => p.patient_id === 'E2E-TEST-001');
+    expect(
+      found,
+      `created patient E2E-TEST-001 is not returned by entities.list; ` +
+        `got ${listed.rows.length} row(s)`,
+    ).toBeTruthy();
+    expect(found.first_name).toBe('E2E');
+    expect(found.last_name).toBe('TestPatient');
+    expect(found.id).toBe(createResult.id);
   });
 
   test('Navigation renders without errors', async () => {
@@ -188,18 +286,27 @@ test.describe('TransTrack E2E', () => {
     expect(hasEntities).toBe(true);
   });
 
-  test('Encryption status is available', async () => {
+  test('Encryption status reports a verified SQLCipher profile', async () => {
     const status = await window.evaluate(async () => {
       try {
         return await window.electronAPI.encryption.getStatus();
-      } catch {
-        return null;
+      } catch (e) {
+        return { error: String(e && e.message ? e.message : e) };
       }
     });
 
-    if (status) {
-      expect(status).toHaveProperty('enabled');
-      expect(status).toHaveProperty('algorithm');
-    }
+    expect(status.error, `encryption.getStatus failed: ${status.error}`).toBeUndefined();
+
+    // getEncryptionStatus() derives every field from the verification that runs
+    // at open time (electron/database/init.cjs), so this asserts the running
+    // app actually proved its at-rest profile rather than merely exposing the
+    // shape of a status object.
+    expect(status.enabled).toBe(true);
+    expect(status.algorithm).toBe('AES-256-CBC');
+    expect(status.keyDerivation).toBe('PBKDF2-HMAC-SHA512');
+    expect(status.keyIterations).toBe(256000);
+    expect(status.compliant).toBe(true);
+    expect(status.verification?.verified, JSON.stringify(status.verification)).toBe(true);
+    expect(status.verification?.problems).toEqual([]);
   });
 });

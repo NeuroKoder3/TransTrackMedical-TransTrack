@@ -7,6 +7,7 @@ const { setupIPCHandlers } = require('./ipc/handlers.cjs');
 const { logger, initCrashReporter, closeLogger } = require('./services/logger.cjs');
 const securityPolicy = require('./config/securityPolicy.cjs');
 const senderValidation = require('./ipc/senderValidation.cjs');
+const shared = require('./ipc/shared.cjs');
 
 // Register the custom URL protocol used as the OIDC SSO redirect target.
 // Must run BEFORE app.whenReady() on every platform. See electron/auth/oidcDesktop.cjs.
@@ -50,10 +51,28 @@ app.disableHardwareAcceleration();
 let mainWindow = null;
 let splashWindow = null;
 
-// Production check - detect dev mode by checking if app is packaged or if ELECTRON_DEV is set
-// NODE_ENV=test is used by E2E tests to load dist/index.html without a dev server
-const isDev = process.env.NODE_ENV !== 'test' &&
-  (!app.isPackaged || process.env.NODE_ENV === 'development' || process.env.ELECTRON_DEV === '1');
+/**
+ * Whether this process runs in development mode.
+ *
+ * Dev mode loads the renderer from http://localhost:5173 and applies a CSP that
+ * permits `script-src 'unsafe-inline'` with a wide connect-src, because a Vite
+ * dev server needs both. Those are the right trade-offs on a workstation and
+ * unacceptable on an installed clinical system.
+ *
+ * A packaged build therefore ignores the escape hatch entirely: ELECTRON_DEV=1
+ * or NODE_ENV=development set in the environment of a deployed application —
+ * by a user, a login script, or anything that can set a variable in the
+ * process's environment — must not be able to downgrade its content security
+ * policy or point it at an attacker-controlled origin.
+ *
+ * NODE_ENV=test remains excluded from dev mode because the Playwright harness
+ * needs a packaged-shaped run that loads dist/index.html from disk.
+ *
+ * An unpackaged run is a development run by definition, so the environment
+ * variables no longer appear here at all: they only ever widened the condition
+ * where it was already true, and narrowed nothing.
+ */
+const isDev = process.env.NODE_ENV !== 'test' && !app.isPackaged;
 
 // Application metadata — version sourced from package.json (single source of truth)
 const { version: PKG_VERSION } = require('../package.json');
@@ -62,7 +81,7 @@ const APP_INFO = {
   version: PKG_VERSION,
   description: 'Transplant Waitlist Management System (HIPAA Security Rule aligned, 21 CFR Part 11 architected)',
   author: 'TransTrack Medical Software',
-  designAlignment: ['HIPAA Security Rule', '21 CFR Part 11', 'AATB Standards'],
+  designAlignment: ['HIPAA Security Rule', '21 CFR Part 11'],
   certificationDisclaimer: 'Design alignment statements describe product controls only and are not certifications. SOC 2, HITRUST, and 21 CFR Part 11 validation must be performed by the deploying organization with qualified auditors.'
 };
 
@@ -221,7 +240,12 @@ function createMainWindow() {
       : ["'self'"];
     if (apiOrigin && !connectSrc.includes(apiOrigin)) connectSrc.push(apiOrigin);
 
-    const scriptSrc = (isDev || process.env.NODE_ENV === 'test')
+    // The E2E harness needs 'unsafe-inline' for the instrumentation it injects,
+    // but NODE_ENV is an environment variable and a packaged build must not be
+    // talked into relaxing its script policy by one. Packaged always gets the
+    // strict directive regardless of how the process was launched.
+    const allowInlineScripts = !app.isPackaged && (isDev || process.env.NODE_ENV === 'test');
+    const scriptSrc = allowInlineScripts
       ? "script-src 'self' 'unsafe-inline'"
       : "script-src 'self'";
     const cspDirectives = [
@@ -362,7 +386,7 @@ function createMenu() {
               type: 'info',
               title: 'Compliance & Design Alignment',
               message: 'Regulatory Design Alignment',
-              detail: 'TransTrack is architected to support controls required by:\n\n• HIPAA Security Rule (45 CFR §164.308 / .310 / .312)\n• 21 CFR Part 11 - Electronic Records and Signatures\n• AATB - American Association of Tissue Banks Standards\n\nAll patient data is stored locally with AES-256 encryption. Audit trails are immutable and enforced at the database trigger level.\n\nNOTE: These are design-control statements, not certifications. SOC 2, HITRUST, 21 CFR Part 11 validation and any FDA determinations must be performed by the deploying organization with qualified auditors.'
+              detail: 'TransTrack is architected to support controls required by:\n\n• HIPAA Security Rule (45 CFR §164.308 / .310 / .312)\n• 21 CFR Part 11 - Electronic Records and Signatures\n\nAll patient data is stored locally with AES-256 encryption. Audit trails are immutable and enforced at the database trigger level.\n\nNOTE: These are design-control statements, not certifications. SOC 2, HITRUST, 21 CFR Part 11 validation and any FDA determinations must be performed by the deploying organization with qualified auditors.'
             });
           }
         },
@@ -388,6 +412,62 @@ function createMenu() {
 }
 
 // Auto-update
+
+/**
+ * Establish that an update cannot be installed without a valid code signature.
+ *
+ * electron-updater does not verify signatures because it is asked to: it does so
+ * because the packaged application carries the configuration that makes it
+ * possible. On Windows that configuration is `win.verifyUpdateCodeSignature`,
+ * which causes electron-builder to write a `publisherName` into the packaged
+ * `app-update.yml`; NsisUpdater compares the downloaded installer's Authenticode
+ * publisher against that list and refuses to run it on a mismatch. With no
+ * publisherName the check is skipped entirely and a compromised or spoofed feed
+ * can serve an arbitrary installer that the app will execute with the
+ * privileges of whoever is applying the update.
+ *
+ * macOS does not need an equivalent: Squirrel.Mac requires the update to be
+ * signed by the same team identifier as the running application, enforced by the
+ * OS. Linux AppImage/deb updates are verified by the distribution channel.
+ *
+ * So this asserts the two properties that are actually load-bearing here — the
+ * build is packaged (an unpackaged build has no signature to compare against),
+ * and on Windows the publisher name is present — and reports what it found. The
+ * caller refuses to register the download and install channels when it fails,
+ * which leaves the site on its current, working version: the safe outcome.
+ *
+ * @returns {{ ok: boolean, checks: object, problems: string[] }}
+ */
+function verifyUpdaterSignatureConfiguration() {
+  const problems = [];
+  const checks = { packaged: Boolean(app.isPackaged), platform: process.platform };
+
+  if (!checks.packaged) {
+    problems.push('build is not packaged, so there is no code signature to verify against');
+  }
+
+  if (process.platform === 'win32' && checks.packaged) {
+    try {
+      const fs = require('fs');
+      const configPath = path.join(process.resourcesPath, 'app-update.yml');
+      const config = fs.readFileSync(configPath, 'utf8');
+      // A bare line-scan rather than a YAML dependency: the only question is
+      // whether electron-builder emitted the key at all.
+      checks.publisherNameConfigured = /^\s*publisherName\s*:/m.test(config);
+      if (!checks.publisherNameConfigured) {
+        problems.push(
+          'app-update.yml has no publisherName, so NsisUpdater will not check the ' +
+          'installer signature (set win.verifyUpdateCodeSignature in the builder config)'
+        );
+      }
+    } catch (readErr) {
+      checks.publisherNameConfigured = false;
+      problems.push(`could not read app-update.yml to confirm signature verification: ${readErr.message}`);
+    }
+  }
+
+  return { ok: problems.length === 0, checks, problems };
+}
 
 function initAutoUpdater() {
   try {
@@ -422,27 +502,75 @@ function initAutoUpdater() {
       logger.error('Auto-update error', { error: err.message });
     });
 
+    const signatureConfig = verifyUpdaterSignatureConfiguration();
+
+    // Applying an update replaces the executable that holds the encryption key
+    // and serves PHI, so it is an administrator action. All three channels were
+    // registered with no session check at all, which meant a compromised
+    // renderer could trigger a download and a restart-into-installer without
+    // any account being signed in.
     ipcMain.handle('update:check', async () => {
+      shared.requireAdmin('checking for application updates');
       const result = await autoUpdater.checkForUpdates();
       return result?.updateInfo || null;
     });
 
     ipcMain.handle('update:download', async () => {
+      const currentUser = shared.requireAdmin('downloading an application update');
+      if (!signatureConfig.ok) {
+        // FAIL CLOSED: without signature verification the downloaded installer
+        // is whatever the feed served. Staying on the current version is the
+        // safe failure.
+        throw new Error(
+          `Update download refused: signature verification is not configured (${signatureConfig.problems.join('; ')})`
+        );
+      }
+      logger.info('Update download authorised', { by: currentUser.email });
       await autoUpdater.downloadUpdate();
       return { success: true };
     });
 
     ipcMain.handle('update:install', () => {
+      const currentUser = shared.requireAdmin('installing an application update');
+      if (!signatureConfig.ok) {
+        throw new Error(
+          `Update install refused: signature verification is not configured (${signatureConfig.problems.join('; ')})`
+        );
+      }
+      logger.info('Update install authorised', { by: currentUser.email });
       autoUpdater.quitAndInstall(false, true);
     });
 
-    // Check for updates 30s after launch, then every 4 hours
-    setTimeout(() => autoUpdater.checkForUpdates().catch(() => {}), 30000);
-    setInterval(() => autoUpdater.checkForUpdates().catch(() => {}), 4 * 60 * 60 * 1000);
+    if (!signatureConfig.ok) {
+      // Never install something we cannot attribute, including on quit.
+      autoUpdater.autoInstallOnAppQuit = false;
+      logger.error('Auto-update installs disabled: signature verification is not configured', {
+        checks: signatureConfig.checks,
+        problems: signatureConfig.problems,
+      });
+    }
 
-    logger.info('Auto-updater initialized');
+    // Background checks only ever surface an availability notice; downloading
+    // and installing stay behind the administrator-gated channels above.
+    const initialCheck = setTimeout(() => autoUpdater.checkForUpdates().catch(() => {}), 30000);
+    const periodicCheck = setInterval(() => autoUpdater.checkForUpdates().catch(() => {}), 4 * 60 * 60 * 1000);
+
+    logger.info('Auto-updater initialized', {
+      signatureVerification: signatureConfig.ok ? 'enforced' : 'unavailable',
+    });
+
+    // Returned so the schedule can be stopped; the app itself never needs to,
+    // but nothing that starts a timer should be impossible to stop.
+    return {
+      signatureConfig,
+      stopScheduledChecks: () => {
+        clearTimeout(initialCheck);
+        clearInterval(periodicCheck);
+      },
+    };
   } catch (err) {
     logger.warn('Auto-updater not available (expected in dev)', { error: err.message });
+    return null;
   }
 }
 
@@ -467,6 +595,21 @@ app.whenReady().then(async () => {
     isDev,
     apiUrl: process.env.TRANSTRACK_API_URL || process.env.VITE_TRANSTRACK_API_URL || '(none — local IPC)',
   });
+
+  // H-7: packaged builds must not ship with the development publisher key.
+  try {
+    const { assertPublisherKeyAllowed, IS_DEV_KEY } = require('./license/publisherPublicKey.cjs');
+    assertPublisherKeyAllowed();
+    if (IS_DEV_KEY) {
+      logger.warn('Using development license publisher key (unpackaged / non-release build)');
+    }
+  } catch (publisherErr) {
+    logger.error('Publisher key gate failed', { error: publisherErr.message, code: publisherErr.code });
+    const { dialog } = require('electron');
+    dialog.showErrorBox('TransTrack license configuration error', publisherErr.message);
+    app.quit();
+    return;
+  }
 
   // Splash has no preload bridge — skip it in E2E so Playwright always
   // attaches to the main window that exposes electronAPI.
@@ -502,6 +645,29 @@ app.whenReady().then(async () => {
       }
     } catch (integrityErr) {
       logger.warn('Integrity monitor unavailable', { error: integrityErr.message });
+    }
+
+    // Detective control: replay the audit hash chain for every organization.
+    // A break is historical by the time we see it, so blocking startup would
+    // only deny the site the tool it needs to investigate — but it is a
+    // reportable integrity incident, so it is logged at error level and
+    // surfaced by healthCheck as a degraded state rather than passing quietly.
+    try {
+      const auditChain = require('./services/auditChain.cjs');
+      const chain = auditChain.verifyAllOrganizations();
+      if (chain.ok) {
+        logger.info('Audit chain verified', {
+          organizations: chain.organizationsChecked,
+          rows: chain.rowsVerified,
+        });
+      } else {
+        logger.error('AUDIT CHAIN INTEGRITY FAILURE — the audit trail has been altered', {
+          organizations: chain.organizationsChecked,
+          broken: chain.broken,
+        });
+      }
+    } catch (chainErr) {
+      logger.error('Audit chain verification could not run', { error: chainErr.message });
     }
 
     // Treat an OS screen lock or suspend as an immediate end of session, so a
@@ -628,4 +794,4 @@ app.on('certificate-error', (event, webContents, url, error, certificate, callba
 });
 
 // Export for testing
-module.exports = { APP_INFO };
+module.exports = { APP_INFO, initAutoUpdater, verifyUpdaterSignatureConfiguration };

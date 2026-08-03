@@ -296,8 +296,16 @@ function createSchema(db) {
     )
   `);
 
-  // TODO: add oauth2 token storage columns when we implement SMART on FHIR
   // --- ehr_integrations ---
+  //
+  // Only a single long-lived credential is stored (api_key_encrypted, protected
+  // by services/secretEncryption.cjs). There are deliberately no columns for
+  // OAuth2 / SMART-on-FHIR access and refresh tokens: adding them here would put
+  // short-lived bearer tokens in the same durable, backed-up, exportable table
+  // as everything else. When SMART is implemented, its tokens belong in
+  // OS-protected storage with an explicit lifetime, and this table would hold
+  // only the non-secret client registration — which is an additive migration,
+  // not a change to this definition.
   db.exec(`
     CREATE TABLE IF NOT EXISTS ehr_integrations (
       id TEXT PRIMARY KEY,
@@ -416,6 +424,12 @@ function createSchema(db) {
       user_agent TEXT,
       prev_hash TEXT,
       record_hash TEXT,
+      -- Per-org monotonic append counter. Part of the signed canonical payload
+      -- (services/auditCanonical.cjs) so chain order does not depend on the
+      -- system clock, which a local administrator controls. Migration 19 adds
+      -- it to databases created before this column existed; rows written then
+      -- keep NULL and are treated as sequence-exempt by the verifier.
+      seq INTEGER,
       created_at TEXT DEFAULT (datetime('now')),
       FOREIGN KEY (org_id) REFERENCES organizations(id)
     )

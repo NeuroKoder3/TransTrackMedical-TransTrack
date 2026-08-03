@@ -56,11 +56,72 @@ test('CEF includes header + extension fields (after redaction)', () => {
   const out = siem.toCef(sample);
   assert.ok(out.startsWith('CEF:0|TransTrack|TransTrack|'), `CEF header missing, got: ${out.slice(0, 60)}`);
   assert.ok(out.includes('act=login'));
-  assert.ok(out.includes('suser=admin@example.com'));
+  // The workforce identifier is pseudonymised by default (finding L-10), so
+  // suser carries the stable pseudonym rather than the mailbox address.
+  assert.ok(/suser=wf-[a-f0-9]{32}\b/.test(out), `expected a pseudonymous suser, got: ${out}`);
+  assert.ok(!out.includes('admin@example.com'), 'raw workforce address must not be forwarded by default');
   assert.ok(out.includes('cs1Label=org_id'));
   assert.ok(out.includes('cs1=ORG1'));
   assert.ok(!out.includes('patient_name'), 'PHI must be redacted');
 });
+
+console.log('\n=== Workforce identifier (L-10) ===');
+
+test('the default mode is pseudonymous and stable across calls', () => {
+  delete process.env.TRANSTRACK_SIEM_WORKFORCE_ID;
+  assert.strictEqual(siem.getWorkforceIdMode(), 'pseudonymous');
+  const first = siem.workforceIdentifier('admin@example.com');
+  const second = siem.workforceIdentifier('ADMIN@Example.com ');
+  assert.match(first, /^wf-[a-f0-9]{32}$/);
+  assert.strictEqual(first, second, 'the pseudonym must be case/whitespace stable so a SIEM can correlate');
+  assert.notStrictEqual(first, siem.workforceIdentifier('other@example.com'));
+});
+
+test('an unrecognised mode falls back to pseudonymous, never to raw', () => {
+  process.env.TRANSTRACK_SIEM_WORKFORCE_ID = 'RAWW';
+  try {
+    assert.strictEqual(siem.getWorkforceIdMode(), 'pseudonymous');
+    assert.ok(!siem.toJson(sample).includes('admin@example.com'));
+  } finally {
+    delete process.env.TRANSTRACK_SIEM_WORKFORCE_ID;
+  }
+});
+
+test('every formatter withholds the address unless raw is opted into', () => {
+  for (const format of ['cef', 'json', 'rfc5424']) {
+    assert.ok(
+      !siem.formatRecord(sample, format).includes('admin@example.com'),
+      `${format} leaked the workforce address`
+    );
+  }
+});
+
+test('omit mode forwards no workforce identifier at all', () => {
+  process.env.TRANSTRACK_SIEM_WORKFORCE_ID = 'omit';
+  try {
+    const parsed = JSON.parse(siem.toJson(sample));
+    assert.strictEqual(parsed.user_id, null);
+    assert.strictEqual(parsed.user_email, undefined);
+    assert.ok(siem.toCef(sample).includes('suser= '));
+  } finally {
+    delete process.env.TRANSTRACK_SIEM_WORKFORCE_ID;
+  }
+});
+
+test('raw mode is honoured when the deployment explicitly opts in', () => {
+  process.env.TRANSTRACK_SIEM_WORKFORCE_ID = 'raw';
+  try {
+    assert.ok(siem.toCef(sample).includes('suser=admin@example.com'));
+    const parsed = JSON.parse(siem.toJson(sample));
+    assert.strictEqual(parsed.user_id, 'admin@example.com');
+    assert.strictEqual(parsed.user_email, 'admin@example.com');
+    assert.ok(siem.toRfc5424(sample).includes('user="admin@example.com"'));
+  } finally {
+    delete process.env.TRANSTRACK_SIEM_WORKFORCE_ID;
+  }
+});
+
+console.log('\n=== Formatters (continued) ===');
 
 test('CEF escapes special chars in redacted details', () => {
   const out = siem.toCef({ ...sample, details: 'a=b\\c\nlinebreak' });

@@ -11,6 +11,10 @@ module.exports = defineConfig({
   testDir: './tests/e2e',
   outputDir: './test-results/e2e-artifacts',
   timeout: 60000,
+  // A `test.only` committed by accident silently reduces this suite to one test
+  // and still exits 0 — the same shape of problem as the soft assertions in
+  // finding M-23, one level up. In CI it is a failure instead.
+  forbidOnly: !!process.env.CI,
   retries: 1,
   workers: 1,
   reporter: [

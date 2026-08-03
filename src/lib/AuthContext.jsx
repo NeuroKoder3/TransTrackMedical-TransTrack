@@ -1,5 +1,6 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import { api } from '@/api/apiClient';
+import { purgeClientPhiCaches } from '@/lib/phiCache';
 
 const AuthContext = createContext();
 
@@ -107,17 +108,25 @@ export const AuthProvider = ({ children }) => {
   const cancelMfa = () => setMfaChallenge(null);
 
   const logout = async (shouldRedirect = true) => {
+    // Purge the client-side PHI caches BEFORE anything can fail. On a shared
+    // clinical workstation the next user's session would otherwise start with
+    // the previous user's cached patient lists, laboratory results and detail
+    // records still resident in renderer memory, which defeats the automatic
+    // logoff control at HIPAA §164.312(a)(2)(iii).
+    purgeClientPhiCaches();
+
     try {
       await api.auth.logout();
-    } catch (e) {
-      // Ignore logout errors
+    } catch {
+      // The session is being abandoned regardless of whether the main process
+      // acknowledged it; the caches are already gone.
     }
-    
+
     setUser(null);
     setIsAuthenticated(false);
     setMustChangePassword(false);
     setMfaEnrollmentRequired(false);
-    
+
     if (shouldRedirect) {
       window.location.hash = '#/login';
     }

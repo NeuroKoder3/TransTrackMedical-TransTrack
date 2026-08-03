@@ -12,11 +12,26 @@ const Database = require('better-sqlite3-multiple-ciphers');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { getDatabase, getDatabasePath, backupDatabase, getDatabaseEncryptionKey } = require('../database/init.cjs');
+const {
+  getDatabase,
+  getDatabasePath,
+  backupDatabase,
+  getDatabaseEncryptionKey,
+  applyCipherPragmas,
+} = require('../database/init.cjs');
 const { createLogger } = require('./errorLogger.cjs');
+const pathConfinement = require('./pathConfinement.cjs');
 const shared = require('./shared.cjs');
 
 const log = createLogger('backup');
+
+/**
+ * File types a verified backup may be written as — see the note on
+ * BACKUP_EXTENSIONS in handlers/operations.cjs: backupDatabase() wipes the
+ * existing target, so an unconstrained destination inside the application data
+ * directory is a way to destroy key material, not just to misfile a copy.
+ */
+const BACKUP_EXTENSIONS = ['.db', '.sqlite', '.bak'];
 
 /**
  * Compute SHA-256 checksum of a file for integrity verification.
@@ -34,14 +49,11 @@ function verifyBackupIntegrity(backupPath, encryptionKey) {
   try {
     testDb = new Database(backupPath, { readonly: true, verbose: null });
 
+    // The same profile the live database is opened with, from the one
+    // definition in database/init.cjs, so a backup can never be verified under
+    // a weaker configuration than the data it came from (finding M-7).
     if (encryptionKey) {
-      testDb.pragma(`cipher = 'sqlcipher'`);
-      testDb.pragma(`legacy = 4`);
-      testDb.pragma(`key = "x'${encryptionKey}'"`);
-      testDb.pragma('cipher_page_size = 4096');
-      testDb.pragma('kdf_iter = 256000');
-      testDb.pragma('cipher_hmac_algorithm = HMAC_SHA512');
-      testDb.pragma('cipher_kdf_algorithm = PBKDF2_HMAC_SHA512');
+      applyCipherPragmas(testDb, encryptionKey);
     }
 
     // Run integrity check
@@ -98,17 +110,19 @@ function verifyBackupIntegrity(backupPath, encryptionKey) {
 
 function register() {
   ipcMain.handle('backup:create-and-verify', async (_event, options = {}) => {
-    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
-    const { currentUser } = shared.getSessionState();
-    if (!currentUser || currentUser.role !== 'admin') {
-      throw new Error('Admin access required for backup operations');
-    }
+    shared.requireAdmin('backup operations');
 
-    const { targetPath } = options;
-
-    if (!targetPath) {
+    if (!options.targetPath) {
       throw new Error('Backup target path is required');
     }
+
+    // Confined before anything touches the filesystem, so a traversal or a
+    // symlinked destination fails before the live database is checkpointed and
+    // copied (finding L-5).
+    const targetPath = pathConfinement.resolveConfinedPath(options.targetPath, {
+      purpose: 'creating a verified backup',
+      extensions: BACKUP_EXTENSIONS,
+    });
 
     const startTime = Date.now();
 

@@ -13,6 +13,9 @@
 const fs = require('fs');
 const path = require('path');
 const { app, crashReporter } = require('electron');
+// Pure string/object transforms with no Electron or filesystem dependency, so
+// requiring it here cannot fail or cycle back into this module.
+const phiRedaction = require('./phiRedaction.cjs');
 
 const MAX_LOG_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB per file
 const MAX_LOG_FILES = 5;
@@ -132,8 +135,57 @@ function _shipRemote(level, message, meta) {
   } catch { /* swallow */ }
 }
 
+/**
+ * Guards against a log line produced while a log line is being redacted.
+ *
+ * `redactValue` walks the caller's object, and walking invokes property
+ * getters — a getter that logs would re-enter write() and, with a cyclic or
+ * self-logging structure, never return. The nested call is answered with a
+ * fixed line carrying no caller data, so the outer call still completes.
+ */
+let redacting = false;
+
+/**
+ * Scrub a message and its metadata before they reach any sink.
+ *
+ * Redaction used to be opt-in per call site (`logger.redactPhi`), which meant
+ * every new call site was one omission away from persisting patient data to
+ * userData/logs/transtrack.log — a file that gets copied into support bundles
+ * and, when a remote sink is configured, partially shipped off-box. Applying it
+ * here makes the safe behaviour the default and removes the choice.
+ *
+ * FAIL-SAFE, NOT FAIL-OPEN: if redaction itself fails, the caller's content is
+ * dropped rather than written through unredacted. A missing log line is
+ * recoverable; a PHI disclosure is not.
+ */
+function redactForSinks(level, message, meta) {
+  if (redacting) {
+    return { message: '[SUPPRESSED — log emitted during redaction]', meta: undefined };
+  }
+
+  redacting = true;
+  try {
+    const text = typeof message === 'string' ? message : String(message ?? '');
+    return {
+      message: phiRedaction.redactText(text),
+      meta: meta && typeof meta === 'object' ? phiRedaction.redactValue(meta) : undefined,
+    };
+  } catch {
+    return {
+      message: `[REDACTION FAILED — ${level} message withheld]`,
+      meta: undefined,
+    };
+  } finally {
+    redacting = false;
+  }
+}
+
 function write(level, message, meta) {
-  const entry = formatEntry(level, message, meta);
+  // Every sink below consumes the redacted copies; the caller's originals are
+  // not referenced again in this function.
+  const safe = redactForSinks(level, message, meta);
+
+  const entry = formatEntry(level, safe.message, safe.meta);
   try {
     ensureStream().write(entry);
   } catch {
@@ -143,9 +195,12 @@ function write(level, message, meta) {
   // Mirror to console in dev
   if (!app.isPackaged) {
     const consoleFn = level === 'error' ? console.error : level === 'warn' ? console.warn : console.log;
-    consoleFn(`[${level.toUpperCase()}] ${message}`, meta && Object.keys(meta).length ? meta : '');
+    consoleFn(
+      `[${level.toUpperCase()}] ${safe.message}`,
+      safe.meta && Object.keys(safe.meta).length ? safe.meta : ''
+    );
   }
-  _shipRemote(level, message, meta);
+  _shipRemote(level, safe.message, safe.meta);
 }
 
 const logger = {
@@ -190,14 +245,15 @@ function closeLogger() {
 }
 
 /**
- * Redact PHI fields from an object before logging. Use this when logging
- * records that may contain patient data to ensure nothing leaks to remote
- * sinks or persisted log files.
+ * Redact PHI fields from an object.
+ *
+ * write() now redacts everything it is given, so call sites no longer have to
+ * remember this. It remains exported for code that needs a scrubbed copy for a
+ * destination other than the log — an IPC response, a report, a file — and
+ * because applying it twice is harmless.
  *
  * Delegates to services/phiRedaction.cjs, which is the single definition shared
- * with the support-bundle exporter. Unlike the original local implementation
- * this is deep: nested metadata objects are redacted too, since a PHI field one
- * level down leaked just as readily as one at the top.
+ * with the support-bundle exporter.
  */
 function redactPhi(obj) {
   if (!obj || typeof obj !== 'object') return obj;

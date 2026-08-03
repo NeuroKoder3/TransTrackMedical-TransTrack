@@ -32,9 +32,14 @@ module.exports = async function authRoutes(app, opts) {
     const body = z.object({
       email: z.string().email(),
       password: z.string().min(1),
+      // M-10: an email address is unique per organisation, not globally.
+      // Required only when the address exists in more than one tenant, in
+      // which case the login is rejected with code `organization_required`.
+      orgId: z.string().uuid().optional(),
     }).parse(req.body);
     const result = await withTransaction({}, async (client) => {
       return authService.passwordLogin(client, config, {
+        orgId: body.orgId,
         email: body.email,
         plaintext: body.password,
         ip: req.ip,
@@ -126,7 +131,12 @@ module.exports = async function authRoutes(app, opts) {
     if (!token) return null;
     const jwtMod = require('../auth/jwt');
     try {
-      const payload = jwtMod.verify(token, config.JWT_SECRET, { issuer: config.JWT_ISSUER });
+      // M-26: audience was not checked, so any token this issuer had signed
+      // reached the purpose check. Both issuer and audience are bound.
+      const payload = jwtMod.verify(token, config.JWT_SECRET, {
+        issuer: config.JWT_ISSUER,
+        audience: jwtMod.mfaEnrollAudience(config.JWT_AUDIENCE),
+      });
       if (payload.purpose !== 'mfa_enroll') return null;
       return { userId: payload.sub, orgId: payload.org };
     } catch {

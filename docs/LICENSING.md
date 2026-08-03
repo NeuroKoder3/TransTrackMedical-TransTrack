@@ -132,6 +132,20 @@ When the desktop app reports activation failed, the manager returns a
 | `EXPIRED`              | License is past `expiresAt` + grace window.                             | Renew via `license:issue`.                                    |
 | `NOT_BOUND_TO_MACHINE` | This machine's fingerprint is not in `machineBindings`.                 | Get the machine ID from Settings → License → This Machine and re-issue. |
 
+## Packaged builds and the development publisher key (H-7)
+
+The repository ships a **development** Ed25519 public key so local
+developers can issue and verify trial licenses without a hardware token.
+That key is **not** acceptable in a packaged / for-sale binary:
+
+- At runtime, `assertPublisherKeyAllowed()` refuses to start (and the
+  license manager reports `mode: invalid`) when `app.isPackaged` is true
+  and the embedded key is still the development key.
+- `npm run release:check -- --for-sale` fails unless
+  `publisherPublicKey.cjs` has been updated to the production public key
+  (or `TRANSTRACK_PUBLISHER_PUBLIC_KEY` is baked in at build time).
+- Packaged QA escape hatch only: `TRANSTRACK_ALLOW_DEV_PUBLISHER=true`.
+
 ## Key rotation
 
 Rotating the publisher key invalidates **every** in-the-wild license.

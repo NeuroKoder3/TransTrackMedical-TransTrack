@@ -1,7 +1,6 @@
 // Shared IPC state, session management, and entity helpers
 
 const { v4: uuidv4 } = require('uuid');
-const { createHash } = require('crypto');
 const { getDatabase } = require('../database/init.cjs');
 const { checkRateLimit } = require('./rateLimiter.cjs');
 
@@ -59,15 +58,34 @@ function getSessionOrgId() {
   return currentUser.org_id;
 }
 
+/**
+ * H-6: session entitlement must consult the license manager, not constants.
+ * Fail closed when the manager cannot be loaded.
+ */
 function getSessionTier() {
-  return 'enterprise';
+  try {
+    return require('../license/manager.cjs').getCurrentTier();
+  } catch {
+    return require('../license/tiers.cjs').LICENSE_TIER.EVALUATION;
+  }
 }
 
-function sessionHasFeature() {
-  return true;
+function sessionHasFeature(featureName) {
+  if (!featureName) return false;
+  try {
+    return !!require('../license/manager.cjs').checkFeature(featureName).enabled;
+  } catch {
+    return false;
+  }
 }
 
-function requireFeature() {
+function requireFeature(featureName) {
+  if (!sessionHasFeature(featureName)) {
+    const tier = getSessionTier();
+    throw new Error(
+      `Feature '${featureName}' is not available in your ${tier} tier. Please upgrade to access this feature.`
+    );
+  }
   return true;
 }
 
@@ -159,6 +177,52 @@ function clearSessionRestriction(restriction) {
     currentUser.mfa_enrolled = true;
     currentUser.mfa_required = true;
   }
+}
+
+// --- authorisation ---
+
+/**
+ * Validate the session and enforce one permission, returning the caller.
+ *
+ * A large number of handlers checked only `validateSession()`, which answers
+ * "is someone logged in" and nothing else — so a `viewer` reached lab results,
+ * organ offers, living-donor records, post-transplant follow-up and the audit
+ * trail exactly as a coordinator did. Roles were being enforced in the renderer
+ * only, and the renderer is not a trust boundary.
+ *
+ * Kept here rather than in each handler so the failure mode is uniform: the
+ * message never says whether the record exists, and the permission set is the
+ * one in services/accessControl.cjs rather than a role name compared inline.
+ *
+ * @param {string} permission  a value from accessControl.PERMISSIONS
+ * @param {string} [activity]  what the caller was attempting, for the message
+ * @returns {object} the current user
+ */
+function requirePermission(permission, activity) {
+  if (!validateSession()) throw new Error('Session expired. Please log in again.');
+
+  const { hasPermission } = require('../services/accessControl.cjs');
+  if (!hasPermission(currentUser?.role, permission)) {
+    throw new Error(
+      `Permission denied: ${activity || 'this operation'} requires the "${permission}" permission`
+    );
+  }
+  return currentUser;
+}
+
+/**
+ * Validate the session and require the administrator role.
+ *
+ * Used where the operation is not expressible as a single data permission —
+ * backup inventory, restore, updates — and where the intent is "operators only"
+ * rather than "anyone holding this capability".
+ */
+function requireAdmin(activity) {
+  if (!validateSession()) throw new Error('Session expired. Please log in again.');
+  if (currentUser?.role !== 'admin') {
+    throw new Error(`Administrator access required for ${activity || 'this operation'}`);
+  }
+  return currentUser;
 }
 
 // --- handler wrapper ---
@@ -407,13 +471,22 @@ function isValidOrderColumn(tableName, column) {
 
 // Entity helpers
 
-// FIXME: this is fragile — should validate before parsing
+/**
+ * Rehydrate the columns listed in `jsonFields` from their stored text form.
+ *
+ * Constraint: these columns are TEXT and are not guaranteed to hold JSON. Rows
+ * predate the convention, arrive from imports, or were written by an older
+ * build, so a value that does not parse is normal input rather than an error —
+ * it is returned as the original string and the caller sees the raw text. The
+ * parse is therefore attempted, not asserted; JSON.parse cannot execute its
+ * input, so a malformed value costs nothing beyond the rejected parse.
+ */
 function parseJsonFields(row) {
   if (!row) return row;
   const parsed = { ...row };
   for (const field of jsonFields) {
     if (parsed[field] && typeof parsed[field] === 'string') {
-      try { parsed[field] = JSON.parse(parsed[field]); } catch (_) { /* keep string */ }
+      try { parsed[field] = JSON.parse(parsed[field]); } catch { /* not JSON — keep the stored text */ }
     }
   }
   return parsed;
@@ -477,118 +550,52 @@ function sanitizeForSQLite(entityData) {
 
 // --- audit logging with hash chain ---
 
-const crypto = require('crypto');
-const auditCanonical = require('../services/auditCanonical.cjs');
-
-function sha256(input) {
-  return createHash('sha256').update(input).digest('hex');
-}
-
-// Whether audit_logs has the record_hmac column (migration 16). Probed once
-// per process so the common insert path never relies on a thrown exception.
-let _hmacColumnAvailable = null;
-
-function hasHmacColumn(db) {
-  if (_hmacColumnAvailable !== null) return _hmacColumnAvailable;
-  try {
-    const cols = db.prepare('PRAGMA table_info(audit_logs)').all().map((c) => c.name);
-    _hmacColumnAvailable = cols.includes('record_hmac');
-  } catch {
-    _hmacColumnAvailable = false;
-  }
-  return _hmacColumnAvailable;
-}
-
-/** Test seam: re-probe the schema after a table is recreated. */
-function _resetAuditSchemaCache() {
-  _hmacColumnAvailable = null;
-}
-
 /**
- * Compute the keyed HMAC for an audit row, or null when no key is available.
- * Never throws — a missing HMAC must not block writing the audit record.
+ * Write one audit record.
+ *
+ * FAIL-CLOSED: this throws when the record cannot be written with its full
+ * hash-chain fields, and callers must let that propagate so the operation being
+ * audited fails too. It previously degraded twice — retrying without the HMAC,
+ * then inserting a row with no hash at all, then swallowing everything — which
+ * meant a failing audit trail was indistinguishable from a working one and the
+ * PHI operation completed regardless. An operation that cannot be evidenced
+ * must not happen.
+ *
+ * The chaining, sequencing and column handling live in services/auditChain.cjs
+ * so that this writer and the direct writers in database/init.cjs and
+ * services/encryptionKeyManagement.cjs cannot drift apart.
  */
-function computeHmacSafely(signedString) {
-  try {
-    const auditHmacKey = require('../services/auditHmacKey.cjs');
-    return auditHmacKey.computeAuditHmac(signedString);
-  } catch {
-    return null;
-  }
-}
-
 function logAudit(action, entityType, entityId, patientName, details, userEmail, userRole, requestId) {
-  const db = getDatabase();
-  const id = uuidv4();
-  const orgId = currentUser?.org_id || 'SYSTEM';
-  const userId = currentUser?.id || null;
-  const now = new Date().toISOString();
+  const { appendAuditRecord } = require('../services/auditChain.cjs');
 
-  let prevHash = auditCanonical.GENESIS;
-  let recordHash = null;
-  let recordHmac = null;
+  const written = appendAuditRecord({
+    org_id: currentUser?.org_id || 'SYSTEM',
+    action,
+    entity_type: entityType || null,
+    entity_id: entityId || null,
+    patient_name: patientName || null,
+    details: details || null,
+    user_id: currentUser?.id || null,
+    user_email: userEmail || null,
+    user_role: userRole || null,
+    request_id: requestId || null,
+  }, { db: getDatabase() });
 
-  try {
-    const insertWithChain = db.transaction(() => {
-      prevHash = auditCanonical.GENESIS;
-      try {
-        const prev = db.prepare(
-          'SELECT record_hash FROM audit_logs WHERE org_id = ? AND record_hash IS NOT NULL ORDER BY created_at DESC, rowid DESC LIMIT 1'
-        ).get(orgId);
-        if (prev?.record_hash) prevHash = prev.record_hash;
-      } catch { /* hash columns may not exist yet */ }
-
-      // Canonical form is owned by services/auditCanonical.cjs so that every
-      // verifier hashes exactly the same bytes this writer does.
-      const row = {
-        org_id: orgId,
-        action,
-        entity_type: entityType || null,
-        entity_id: entityId || null,
-        patient_name: patientName || null,
-        details: details || null,
-        user_email: userEmail || null,
-        user_role: userRole || null,
-      };
-      const signedString = auditCanonical.buildSignedString(prevHash, row);
-      recordHash = sha256(signedString);
-      recordHmac = hasHmacColumn(db) ? computeHmacSafely(signedString) : null;
-
-      try {
-        if (hasHmacColumn(db)) {
-          db.prepare(
-            'INSERT INTO audit_logs (id, org_id, action, entity_type, entity_id, patient_name, details, user_id, user_email, user_role, prev_hash, record_hash, record_hmac, request_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-          ).run(id, orgId, action, entityType, entityId, patientName, details, userId, userEmail, userRole, prevHash, recordHash, recordHmac, requestId || null, now);
-        } else {
-          db.prepare(
-            'INSERT INTO audit_logs (id, org_id, action, entity_type, entity_id, patient_name, details, user_id, user_email, user_role, prev_hash, record_hash, request_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-          ).run(id, orgId, action, entityType, entityId, patientName, details, userId, userEmail, userRole, prevHash, recordHash, requestId || null, now);
-        }
-      } catch {
-        db.prepare(
-          'INSERT INTO audit_logs (id, org_id, action, entity_type, entity_id, patient_name, details, user_email, user_role, prev_hash, record_hash, request_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-        ).run(id, orgId, action, entityType, entityId, patientName, details, userEmail, userRole, prevHash, recordHash, requestId || null, now);
-      }
-    });
-    insertWithChain();
-  } catch {
-    try {
-      db.prepare(
-        'INSERT INTO audit_logs (id, org_id, action, entity_type, entity_id, patient_name, details, user_email, user_role, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-      ).run(id, orgId, action, entityType, entityId, patientName, details, userEmail, userRole, now);
-    } catch { /* ignore total failure */ }
-  }
-
-  // Best-effort forwarding to SIEM destinations
+  // Forwarding is best-effort by design: the record is already durable in the
+  // local trail, and an unreachable collector must not undo a completed
+  // clinical operation.
   try {
     const siem = require('../services/siemForwarder.cjs');
     siem.forwardAuditRow({
-      id, org_id: orgId, action, entity_type: entityType, entity_id: entityId,
+      id: written.id, org_id: written.orgId, action,
+      entity_type: entityType, entity_id: entityId,
       patient_name: patientName, details, user_email: userEmail, user_role: userRole,
-      prev_hash: prevHash, record_hash: recordHash,
-      request_id: requestId || null, created_at: now,
+      prev_hash: written.prevHash, record_hash: written.recordHash,
+      request_id: requestId || null, created_at: written.createdAt,
     });
   } catch { /* ignore */ }
+
+  return written;
 }
 
 /**
@@ -615,6 +622,8 @@ module.exports = {
   requireFeature,
   validateSession,
   touchSession,
+  requirePermission,
+  requireAdmin,
   SESSION_DURATION_MS,
   IDLE_TIMEOUT_MS,
   wrapHandler,

@@ -63,10 +63,20 @@ function register() {
     return r;
   });
 
+  // TTLI is the TransTrack internal lung triage index, not the OPTN Lung
+  // Allocation Score. The calculator:las channel is retained for existing
+  // renderer code and returns the same explicitly-labelled TTLI result.
+  ipcMain.handle('calculator:ttli', async (_event, inputs) => {
+    if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
+    const r = calc.calculateTTLI(inputs || {});
+    audit('TTLI', r);
+    return r;
+  });
+
   ipcMain.handle('calculator:las', async (_event, inputs) => {
     if (!shared.validateSession()) throw new Error('Session expired. Please log in again.');
-    const r = calc.calculateLAS(inputs || {});
-    audit('LAS', r);
+    const r = calc.calculateTTLI(inputs || {});
+    audit('TTLI', r);
     return r;
   });
 
@@ -91,10 +101,14 @@ function register() {
       'MELD-Na': calc.REQUIRED_FIELDS['MELD-Na'],
       'MELD-3.0': calc.REQUIRED_FIELDS['MELD-3.0'],
       PELD: calc.REQUIRED_FIELDS.PELD,
-      LAS: calc.REQUIRED_FIELDS.LAS,
+      TTLI: calc.REQUIRED_FIELDS.TTLI,
       KDPI: calc.REQUIRED_FIELDS.KDPI,
       EPTS: calc.REQUIRED_FIELDS.EPTS,
     },
+    // Provenance of every externally-owned constant, so the renderer can show
+    // which OPTN revision a score was computed against and whether the table
+    // is overdue for review (H-10).
+    referenceData: calc.referenceDataStatus(),
     disclaimer: calc.DISCLAIMER,
   }));
 }

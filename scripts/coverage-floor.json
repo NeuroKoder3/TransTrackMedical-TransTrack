@@ -1,0 +1,46 @@
+{
+  "_readme": [
+    "Single source of truth for the renderer coverage gate (finding H-8).",
+    "Consumed by vite.config.js (as Vitest coverage thresholds, so a local",
+    "`npx vitest run --coverage` enforces exactly what CI enforces) and by",
+    "scripts/coverage-gate.mjs (which re-checks the floors, enforces the",
+    "ratchet, and writes the CI job summary).",
+    "The floors are a ratchet: they may be raised, never lowered. See the header",
+    "of scripts/coverage-gate.mjs for the rationale behind each number and the",
+    "procedure for raising them."
+  ],
+  "global": {
+    "lines": 57,
+    "statements": 57,
+    "functions": 59,
+    "branches": 43
+  },
+  "ratchet": {
+    "warnAt": 3,
+    "failAt": 8
+  },
+  "perFile": {
+    "src/components/patients/PatientForm.jsx": { "lines": 60, "statements": 60, "branches": 60, "functions": 35 },
+    "src/components/donor/DonorForm.jsx": { "lines": 60, "statements": 60, "branches": 60, "functions": 50 },
+    "src/components/barriers/ReadinessBarrierForm.jsx": { "lines": 60, "statements": 60, "branches": 60, "functions": 60 },
+    "src/components/labs/LabForm.jsx": { "lines": 60, "statements": 60, "branches": 60, "functions": 60 },
+    "src/components/ahhq/AHHQForm.jsx": { "lines": 60, "statements": 60, "branches": 60, "functions": 60 },
+    "src/pages/AccountSecurity.jsx": { "lines": 85, "statements": 85, "branches": 75, "functions": 85 },
+    "src/pages/OrganOffers.jsx": { "lines": 85, "statements": 85, "branches": 80, "functions": 85 },
+    "src/pages/Hl7Inbox.jsx": { "lines": 85, "statements": 85, "branches": 80, "functions": 85 },
+    "src/pages/LivingDonors.jsx": { "lines": 80, "statements": 80, "branches": 80, "functions": 70 },
+    "src/pages/PostTransplant.jsx": { "lines": 75, "statements": 75, "branches": 80, "functions": 65 },
+    "src/api/localClient.js": { "lines": 90, "statements": 90, "branches": 80, "functions": 90 },
+    "src/api/remoteClient.js": { "lines": 90, "statements": 90, "branches": 80, "functions": 90 },
+    "src/components/session/IdleTimeoutManager.jsx": { "lines": 85, "statements": 85, "branches": 75, "functions": 70 },
+    "src/lib/AuthContext.jsx": { "lines": 90, "statements": 90, "branches": 85, "functions": 90 },
+    "src/utils/index.js": { "lines": 95, "statements": 95, "branches": 90, "functions": 95 },
+    "src/pages/ForceMfaEnrollment.jsx": { "lines": 90, "statements": 90, "branches": 80, "functions": 85 },
+    "src/pages/ForcePasswordChange.jsx": { "lines": 95, "statements": 95, "branches": 90, "functions": 90 },
+    "src/pages/Patients.jsx": { "lines": 70, "statements": 70, "branches": 80, "functions": 55 },
+    "src/components/labs/LabsPanel.jsx": { "lines": 78, "statements": 78, "branches": 88, "functions": 75 },
+    "src/components/labs/LabStatusBadge.jsx": { "lines": 75, "statements": 75, "branches": 70, "functions": 70 },
+    "src/components/barriers/ReadinessBarrierList.jsx": { "lines": 70, "statements": 70, "branches": 88, "functions": 65 },
+    "src/components/barriers/BarrierStatusBadge.jsx": { "lines": 95, "statements": 95, "branches": 65, "functions": 95 }
+  }
+}

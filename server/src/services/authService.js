@@ -6,9 +6,21 @@ const mfa = require('../auth/mfa');
 const jwt = require('../auth/jwt');
 const audit = require('./auditService');
 const { errors } = require('../util/errors');
+const { isSystemOrg } = require('../db/systemOrg');
 
 /**
- * Look up a user by email. Returns { user, org } or null.
+ * Look up the user to authenticate. Returns the row or null.
+ *
+ * M-10: the unscoped form used to be `... WHERE u.email = $1 LIMIT 1`. Email
+ * is unique per organisation, not globally, so when the same address existed
+ * in two tenants the credential authenticated into whichever row the planner
+ * returned first — an arbitrary tenant, and one the user may have no
+ * relationship with. An ambiguous login is now refused outright and the
+ * caller must name the organisation.
+ *
+ * M-27: the reserved system organisation owns quarantined, unattributable
+ * inbound PHI. Provisioning never places a user in it, and a session in its
+ * context is refused here so a stray row could not turn into a readable one.
  */
 async function findUser(client, { orgId, email }) {
   const sql = orgId
@@ -18,10 +30,21 @@ async function findUser(client, { orgId, email }) {
     : `SELECT u.*, o.name AS org_name FROM users u
        JOIN organizations o ON o.id = u.org_id
        WHERE u.email = $1 AND u.is_active = TRUE
-       LIMIT 1`;
+       LIMIT 2`;
   const params = orgId ? [orgId, email] : [email];
   const r = await client.query(sql, params);
-  return r.rows[0] || null;
+  if (r.rows.length > 1) {
+    throw errors.badRequest(
+      'This email address is registered in more than one organisation. ' +
+      'Retry with an explicit orgId.',
+      'organization_required'
+    );
+  }
+  const user = r.rows[0] || null;
+  if (user && isSystemOrg(user.org_id)) {
+    throw errors.forbidden('The reserved system organisation cannot be signed in to');
+  }
+  return user;
 }
 
 async function recordLoginAttempt(client, { email, orgId, ip, success, reason }) {
@@ -32,11 +55,19 @@ async function recordLoginAttempt(client, { email, orgId, ip, success, reason })
   );
 }
 
-async function isLockedOut(client, { email, threshold, windowMinutes }) {
+/**
+ * Is this specific (org, user) locked out?
+ *
+ * M-10: both halves of this used to key on email alone, so a lockout raised
+ * against one tenant's account suspended every account sharing that address
+ * in every other tenant. The identity is now the user row, and the failure
+ * window counts only attempts recorded against that user's organisation.
+ */
+async function isLockedOut(client, { userId, email, orgId, threshold, windowMinutes }) {
   // Check explicit locked_until column first
   const lockRow = await client.query(
-    `SELECT locked_until FROM users WHERE email = $1`,
-    [email]
+    `SELECT locked_until FROM users WHERE id = $1`,
+    [userId]
   );
   if (lockRow.rows[0]?.locked_until && new Date(lockRow.rows[0].locked_until) > new Date()) {
     return true;
@@ -45,18 +76,19 @@ async function isLockedOut(client, { email, threshold, windowMinutes }) {
     `SELECT COUNT(*)::int AS n
      FROM login_attempts
      WHERE email = $1
+       AND org_id = $2
        AND success = FALSE
-       AND attempted_at > now() - ($2 || ' minutes')::interval`,
-    [email, windowMinutes]
+       AND attempted_at > now() - ($3 || ' minutes')::interval`,
+    [email, orgId, windowMinutes]
   );
   return r.rows[0].n >= threshold;
 }
 
-async function clearFailedAttempts(client, email) {
+async function clearFailedAttempts(client, userId) {
   await client.query(
     `UPDATE users SET failed_login_attempts = 0, locked_until = NULL
-     WHERE email = $1`,
-    [email]
+     WHERE id = $1`,
+    [userId]
   );
 }
 
@@ -84,25 +116,36 @@ async function persistSession(client, { userId, orgId, refreshHash, ttl, ip, use
   );
 }
 
-async function setLockedUntil(client, email, durationMinutes) {
+async function setLockedUntil(client, userId, durationMinutes) {
   await client.query(
-    `UPDATE users SET locked_until = now() + ($1 || ' minutes')::interval WHERE email = $2`,
-    [durationMinutes, email]
+    `UPDATE users SET locked_until = now() + ($1 || ' minutes')::interval WHERE id = $2`,
+    [durationMinutes, userId]
   );
 }
 
-async function passwordLogin(client, config, { email, plaintext, ip, userAgent }) {
-  if (await isLockedOut(client, {
-    email, threshold: config.LOCKOUT_THRESHOLD, windowMinutes: config.LOCKOUT_WINDOW_MINUTES,
-  })) {
-    await setLockedUntil(client, email, config.LOCKOUT_DURATION_MINUTES);
-    await recordLoginAttempt(client, { email, ip, success: false, reason: 'locked_out' });
-    throw errors.tooManyRequests('Account temporarily locked');
-  }
-  const user = await findUser(client, { email });
+async function passwordLogin(client, config, { orgId, email, plaintext, ip, userAgent }) {
+  // Resolve the account first: lockout is a property of one (org, user), so
+  // there is nothing to check until we know which account is being used.
+  const user = await findUser(client, { orgId, email });
   if (!user || user.auth_provider !== 'local' || !user.password_hash) {
-    await recordLoginAttempt(client, { email, ip, success: false, reason: 'unknown_user' });
+    await recordLoginAttempt(client, {
+      email, orgId: orgId || null, ip, success: false, reason: 'unknown_user',
+    });
     throw errors.unauthorized('Invalid credentials');
+  }
+  const lockoutKey = {
+    userId: user.id,
+    email,
+    orgId: user.org_id,
+    threshold: config.LOCKOUT_THRESHOLD,
+    windowMinutes: config.LOCKOUT_WINDOW_MINUTES,
+  };
+  if (await isLockedOut(client, lockoutKey)) {
+    await setLockedUntil(client, user.id, config.LOCKOUT_DURATION_MINUTES);
+    await recordLoginAttempt(client, {
+      email, orgId: user.org_id, ip, success: false, reason: 'locked_out',
+    });
+    throw errors.tooManyRequests('Account temporarily locked');
   }
   const ok = await password.verify(user.password_hash, plaintext);
   if (!ok) {
@@ -110,18 +153,15 @@ async function passwordLogin(client, config, { email, plaintext, ip, userAgent }
       email, orgId: user.org_id, ip, success: false, reason: 'bad_password',
     });
     // Check if this failure just hit the threshold
-    const nowLocked = await isLockedOut(client, {
-      email, threshold: config.LOCKOUT_THRESHOLD, windowMinutes: config.LOCKOUT_WINDOW_MINUTES,
-    });
-    if (nowLocked) {
-      await setLockedUntil(client, email, config.LOCKOUT_DURATION_MINUTES);
+    if (await isLockedOut(client, lockoutKey)) {
+      await setLockedUntil(client, user.id, config.LOCKOUT_DURATION_MINUTES);
     }
     throw errors.unauthorized('Invalid credentials');
   }
   await recordLoginAttempt(client, {
     email, orgId: user.org_id, ip, success: true, reason: null,
   });
-  await clearFailedAttempts(client, email);
+  await clearFailedAttempts(client, user.id);
   await client.query(
     `UPDATE users SET last_login_at = now(), last_login_ip = $1 WHERE id = $2`,
     [ip || null, user.id]
@@ -154,7 +194,11 @@ async function passwordLogin(client, config, { email, plaintext, ip, userAgent }
     const enrollmentToken = jwt.sign(
       { sub: user.id, org: user.org_id, purpose: 'mfa_enroll' },
       config.JWT_SECRET,
-      { ttlSeconds: 600, issuer: config.JWT_ISSUER }
+      {
+        ttlSeconds: 600,
+        issuer: config.JWT_ISSUER,
+        audience: jwt.mfaEnrollAudience(config.JWT_AUDIENCE),
+      }
     );
     return {
       kind: 'mfa_required',
@@ -351,35 +395,39 @@ async function authenticateForSmart(smartClient, config, { orgHint, email, plain
   const { withTransaction } = require('../db/pool');
   return withTransaction({}, async (client) => {
     const orgId = orgHint || (smartClient && smartClient.org_id) || null;
-    if (await isLockedOut(client, {
-      email, threshold: config.LOCKOUT_THRESHOLD, windowMinutes: config.LOCKOUT_WINDOW_MINUTES,
-    })) {
-      await setLockedUntil(client, email, config.LOCKOUT_DURATION_MINUTES);
-      await recordLoginAttempt(client, { email, orgId, ip, success: false, reason: 'locked_out' });
-      throw errors.tooManyRequests('Account temporarily locked');
-    }
     const user = await findUser(client, { orgId, email });
     if (!user || user.auth_provider !== 'local' || !user.password_hash) {
       await recordLoginAttempt(client, { email, orgId, ip, success: false, reason: 'unknown_user' });
       throw errors.unauthorized('Invalid credentials');
+    }
+    const lockoutKey = {
+      userId: user.id,
+      email,
+      orgId: user.org_id,
+      threshold: config.LOCKOUT_THRESHOLD,
+      windowMinutes: config.LOCKOUT_WINDOW_MINUTES,
+    };
+    if (await isLockedOut(client, lockoutKey)) {
+      await setLockedUntil(client, user.id, config.LOCKOUT_DURATION_MINUTES);
+      await recordLoginAttempt(client, {
+        email, orgId: user.org_id, ip, success: false, reason: 'locked_out',
+      });
+      throw errors.tooManyRequests('Account temporarily locked');
     }
     const ok = await password.verify(user.password_hash, plaintext);
     if (!ok) {
       await recordLoginAttempt(client, {
         email, orgId: user.org_id, ip, success: false, reason: 'bad_password',
       });
-      const nowLocked = await isLockedOut(client, {
-        email, threshold: config.LOCKOUT_THRESHOLD, windowMinutes: config.LOCKOUT_WINDOW_MINUTES,
-      });
-      if (nowLocked) {
-        await setLockedUntil(client, email, config.LOCKOUT_DURATION_MINUTES);
+      if (await isLockedOut(client, lockoutKey)) {
+        await setLockedUntil(client, user.id, config.LOCKOUT_DURATION_MINUTES);
       }
       throw errors.unauthorized('Invalid credentials');
     }
     await recordLoginAttempt(client, {
       email, orgId: user.org_id, ip, success: true, reason: null,
     });
-    await clearFailedAttempts(client, email);
+    await clearFailedAttempts(client, user.id);
 
     // MFA step-up
     const mfaRequired = config.MFA_REQUIRED_FOR_ROLES_SET.has(user.role);
@@ -407,7 +455,11 @@ async function authenticateForSmart(smartClient, config, { orgHint, email, plain
       const enrollmentToken = jwt.sign(
         { sub: user.id, org: user.org_id, purpose: 'mfa_enroll' },
         config.JWT_SECRET,
-        { ttlSeconds: 600, issuer: config.JWT_ISSUER }
+        {
+          ttlSeconds: 600,
+          issuer: config.JWT_ISSUER,
+          audience: jwt.mfaEnrollAudience(config.JWT_AUDIENCE),
+        }
       );
       return {
         kind: 'must_enroll',

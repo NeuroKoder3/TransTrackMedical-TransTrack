@@ -12,6 +12,7 @@ import Login from '@/pages/Login';
 import ForcePasswordChange from '@/pages/ForcePasswordChange';
 import ForceMfaEnrollment from '@/pages/ForceMfaEnrollment';
 import IdleTimeoutManager from '@/components/session/IdleTimeoutManager';
+import BulkPhiAccessGate from '@/components/access/BulkPhiAccessGate';
 import RouteErrorBoundary from '@/components/RouteErrorBoundary';
 
 const { Pages, Layout, mainPage } = pagesConfig;
@@ -78,6 +79,9 @@ const AuthenticatedApp = () => {
   return (
     <>
       <IdleTimeoutManager />
+      {/* Services bulk PHI justification requests raised by the API client
+          when the main process refuses a bulk patient read (H-1). */}
+      <BulkPhiAccessGate />
 
       <Routes>
         <Route path="/" element={

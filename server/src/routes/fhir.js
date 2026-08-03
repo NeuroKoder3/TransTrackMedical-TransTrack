@@ -263,6 +263,9 @@ module.exports = async function fhirRoutes(app, opts) {
 
   // ----- Transaction Bundle ---------------------------------------------------
 
+  const BUNDLE_METHOD_OPS = { POST: 'c', PUT: 'u', DELETE: 'd', GET: 'r' };
+  const MAX_BUNDLE_ENTRIES = 500;
+
   app.post('/fhir', {}, async (req, reply) => {
     const body = req.body;
     if (!body || body.resourceType !== 'Bundle' || body.type !== 'transaction') {
@@ -272,17 +275,35 @@ module.exports = async function fhirRoutes(app, opts) {
     if (entries.length === 0) {
       throw errors.badRequest('Transaction bundle has no entries');
     }
+    if (entries.length > MAX_BUNDLE_ENTRIES) {
+      throw errors.badRequest(
+        `Transaction bundle exceeds the ${MAX_BUNDLE_ENTRIES}-entry limit`
+      );
+    }
+
+    // H-4: authorise every entry BEFORE executing any of them. A transaction
+    // bundle is a batch of the same operations the individual CRUD routes
+    // expose and must clear exactly the same scope checks; authorising up
+    // front also keeps the bundle all-or-nothing.
+    for (const entry of entries) {
+      const request = entry.request;
+      if (!request || !request.method || !request.url) {
+        throw errors.badRequest('Each entry must have a request with method and url');
+      }
+      const [type] = request.url.split('/').filter(Boolean);
+      if (!type || !SUPPORTED.has(type)) {
+        throw errors.badRequest(`Unsupported resourceType: ${type}`);
+      }
+      const op = BUNDLE_METHOD_OPS[request.method.toUpperCase()];
+      if (!op) throw errors.badRequest(`Unsupported method: ${request.method}`);
+      await requireSmartScope(type, op)(req);
+    }
+
     return withTransaction(req.auth, async (client) => {
       const results = [];
       for (const entry of entries) {
         const request = entry.request;
-        if (!request || !request.method || !request.url) {
-          throw errors.badRequest('Each entry must have a request with method and url');
-        }
         const [type, id] = request.url.split('/').filter(Boolean);
-        if (!type || !SUPPORTED.has(type)) {
-          throw errors.badRequest(`Unsupported resourceType: ${type}`);
-        }
         const handler = resources[type];
         let result;
         switch (request.method.toUpperCase()) {

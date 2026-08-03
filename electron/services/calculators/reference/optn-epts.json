@@ -1,0 +1,24 @@
+{
+  "tableId": "optn-epts",
+  "sourceId": "SRC-OPTN-P8B",
+  "sourceTitle": "OPTN Policy 8.5.B — Estimated Post-Transplant Survival (EPTS); raw-EPTS-to-percentile mapping table",
+  "sourceUrl": "https://optn.transplant.hrsa.gov/data/allocation-calculators/epts-calculator/",
+  "sourceRevision": "2022 reference cohort",
+  "effectiveDate": "2023-03-01",
+  "reviewBy": "2026-12-31",
+  "status": "ACTIVE",
+  "transcribedBy": "TransTrack engineering, transcribed 2026-08-02",
+  "approximation": true,
+  "approximationNote": "Six-anchor piecewise-linear approximation of the OPTN raw-EPTS percentile table, not the full published table. Labelled as an approximation on every result. Decision-grade EPTS must be taken from the OPTN calculator. Replace `data.mapping` with the full published table to remove the approximation flag.",
+  "data": {
+    "mappingKind": "piecewise-linear-anchors",
+    "mapping": [
+      [-0.50, 0],
+      [0.30, 20],
+      [0.95, 50],
+      [1.55, 80],
+      [2.10, 95],
+      [3.00, 100]
+    ]
+  }
+}

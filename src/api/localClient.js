@@ -4,6 +4,8 @@
  * Provides the API interface using Electron IPC for local database operations.
  */
 
+import { withBulkPhiGrant } from '../lib/phiAccessBroker.js';
+
 // mock client for browser dev — keeps hot-reload working without electron
 const mockClient = {
   auth: {
@@ -605,14 +607,20 @@ const createElectronClient = () => {
           return api.entities[entityName];
         }
         
-        // Default entity operations
+        // Default entity operations. Bulk reads route through the PHI access
+        // broker: the main process refuses a bulk patient read without a
+        // list-scope justification grant (H-1), and the broker collects one and
+        // retries. Single-record reads keep their own per-record grant, which is
+        // requested by the detail screen.
         return {
           create: async (data) => await api.entities.create(entityName, data),
           get: async (id) => await api.entities.get(entityName, id),
           update: async (id, data) => await api.entities.update(entityName, id, data),
           delete: async (id) => await api.entities.delete(entityName, id),
-          list: async (orderBy, limit) => await api.entities.list(entityName, orderBy, limit),
-          filter: async (filters, orderBy, limit) => await api.entities.filter(entityName, filters, orderBy, limit),
+          list: async (orderBy, limit) => withBulkPhiGrant(entityName, () =>
+            api.entities.list(entityName, orderBy, limit)),
+          filter: async (filters, orderBy, limit) => withBulkPhiGrant(entityName, () =>
+            api.entities.filter(entityName, filters, orderBy, limit)),
         };
       }
     }),

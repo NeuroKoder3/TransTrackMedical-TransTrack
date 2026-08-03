@@ -12,6 +12,8 @@
  *   offline_access online_access
  */
 
+const compartment = require('../fhir/compartment');
+
 const ACCESS_LEVELS = ['patient', 'user', 'system'];
 const V1_OPS = new Set(['read', 'write', '*']);
 const V2_OPS = new Set(['c', 'r', 'u', 'd', 's']);
@@ -45,33 +47,60 @@ function parseScopes(scopeString) {
 }
 
 /**
- * Decide whether a request is allowed under the granted scopes.
+ * Resolve a request against the granted scopes.
  *
  *   resource: FHIR resource type ("Patient", "Observation", ...)
  *   op:       'r' read, 's' search, 'c' create, 'u' update, 'd' delete
  *   subject:  optional FHIR reference of the subject the operation targets;
  *             matched against patient/<id> launch context if 'patient/' scope.
+ *
+ * Returns { allowed, level } where `level` is the access level that granted
+ * the request ('patient' | 'user' | 'system'). A 'patient' level obliges the
+ * caller to apply the patient-compartment restriction in
+ * server/src/fhir/compartment.js — the scope check alone is NOT sufficient to
+ * isolate one patient's data from another's.
+ *
+ * `user` and `system` scopes outrank `patient` scopes and are resolved first,
+ * so a token holding both is not needlessly narrowed to one compartment.
+ */
+function resolveAccess(grantedScopes, resource, op, opts = {}) {
+  const granted = Array.isArray(grantedScopes) ? grantedScopes : parseScopes(grantedScopes);
+  const candidates = granted.filter(
+    (s) =>
+      s.kind === 'fhir' &&
+      (s.resource === '*' || s.resource === resource) &&
+      s.ops.has(op)
+  );
+
+  for (const s of candidates) {
+    if (s.level === 'user' || s.level === 'system') {
+      return { allowed: true, level: s.level };
+    }
+  }
+
+  for (const s of candidates) {
+    if (s.level !== 'patient') continue;
+    // A patient/ scope is meaningless without a launch-context patient.
+    if (!opts.launchPatient) continue;
+    // The resource type must actually be part of the FHIR patient compartment;
+    // otherwise there is no way to scope it to one patient and we deny.
+    if (!compartment.isPatientCompartmentType(resource)) continue;
+    // When the request names a subject explicitly, it must be the launch patient.
+    if (opts.subject && !compartment.referenceForms(opts.launchPatient).includes(opts.subject)) {
+      continue;
+    }
+    return { allowed: true, level: 'patient' };
+  }
+
+  return { allowed: false, level: null };
+}
+
+/**
+ * Boolean form of resolveAccess, retained for call sites that only need a
+ * yes/no answer. Prefer resolveAccess where compartment enforcement matters.
  */
 function isAllowed(grantedScopes, resource, op, opts = {}) {
-  const granted = Array.isArray(grantedScopes) ? grantedScopes : parseScopes(grantedScopes);
-  for (const s of granted) {
-    if (s.kind !== 'fhir') continue;
-    if (s.resource !== '*' && s.resource !== resource) continue;
-    if (!s.ops.has(op)) continue;
-    if (s.level === 'patient') {
-      // Must be operating within launch-context patient
-      if (!opts.launchPatient) continue;
-      if (opts.subject && opts.subject !== `Patient/${opts.launchPatient}` &&
-          !opts.subject.endsWith(`/${opts.launchPatient}`)) {
-        // For non-Patient resources this is fine — search filters apply server-side.
-        if (resource !== 'Patient' && op === 's') return true;
-        continue;
-      }
-      return true;
-    }
-    if (s.level === 'user' || s.level === 'system') return true;
-  }
-  return false;
+  return resolveAccess(grantedScopes, resource, op, opts).allowed;
 }
 
 function summary(grantedScopes) {
@@ -193,6 +222,6 @@ function requirePkceForPublic(smartClient, codeChallenge, method) {
 void ACCESS_LEVELS;
 
 module.exports = {
-  parseScope, parseScopes, isAllowed, summary,
+  parseScope, parseScopes, isAllowed, resolveAccess, summary,
   normalizeScopeString, assertRegisteredRedirect, constrainScopes, requirePkceForPublic,
 };

@@ -7,6 +7,171 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added — an executed validation package, and honest documentation to go with it
+
+Before this release the compliance directory looked like a validation package
+and was not one. The Validation Plan carried the status "Template — to be
+ratified". The IQ, OQ and PQ protocols were blanks with `_____` in the
+execution fields. The Validation Summary Report was a template. The only fully
+worked example was explicitly labelled fictional. In parallel,
+`docs/VALIDATION_ARTIFACTS.md` described a second, older v1.0.0 package with
+empty results tables and "[To be completed after validation execution]". No
+FMEA existed. A reader who saw a `compliance/` directory with an IQ, an OQ and
+a PQ in it would reasonably conclude the system had been qualified. It had not.
+
+The remediation was not to execute a qualification that cannot be executed by a
+vendor. It was to say precisely what is and is not qualified, and to make that
+distinction impossible to miss:
+
+- **`docs/compliance/VALIDATION_PLAN.md` ratified** to version 2.0, Approved
+  and in force, with an effective date, approver role titles and scope bound to
+  release 1.3.0. It now separates vendor release verification from site
+  validation, and designates the server tier as early access inside the
+  compliance package rather than only in the README.
+- **`docs/compliance/executed/IQ_TT-IQ-001.md`** — an executed Installation
+  Qualification for what could genuinely be evidenced in a Linux/Node 22
+  environment: dependency install, native module build, lockfile integrity,
+  schema and migration creation, file layout, SBOM tooling. Every
+  host-specific step is marked NOT EXECUTED, with the reason and the party who
+  must execute it.
+- **`docs/compliance/executed/OQ_TT-OQ-001.md`** — an executed Operational
+  Qualification for the automated portion, recording 106 test files and 1507
+  assertions passing. Every OQ case cites a test file that exists. The
+  interactive portion is marked NOT EXECUTED.
+- **`docs/compliance/executed/PQ_TT-PQ-001.md`** — the Performance
+  Qualification protocol, marked NOT EXECUTED BY THE VENDOR, with an explicit
+  statement of why a vendor cannot execute it (no clinical users, no site data,
+  no site environment) and the protocol the deploying organization runs.
+- **`docs/compliance/VALIDATION_SUMMARY_REPORT.md`** — the cover document,
+  stating plainly which stages are complete and which are not.
+- **`docs/compliance/FMEA.md`** — 30 failure modes drawn from this system's
+  actual behaviour (audit chain break, encryption verification bypass,
+  compartment bypass, stale reference data, HL7 dead-letter mis-attribution,
+  migration failure, key loss, and the rest), with severity, occurrence,
+  detection, RPN and required action, cross-referenced to the risk register.
+- **`docs/compliance/RESIDUAL_RISK.md`** — sixteen formal residual-risk
+  statements, each with the affected finding, why it is accepted, the
+  compensating controls, the accepting role and the criteria to close it.
+- **`docs/VALIDATION_ARTIFACTS.md` withdrawn**, replaced by a superseding
+  notice. Two packages of different vintage is worse than one honest package.
+
+### Fixed — documentation that contradicted the implementation
+
+A validation review found twelve places where marketing, compliance and
+technical documents described a different system from the one that ships. Each
+is now corrected against the source:
+
+- `docs/DUE_DILIGENCE.md` claimed a "HIPAA-compliant desktop application" while
+  the README correctly said the opposite. HIPAA compliance is a determination an
+  organization makes about itself; it cannot be a product attribute. The
+  due-diligence document now matches the README's posture.
+- The same document claimed the system "operates entirely on-premises with no
+  external network dependencies", which the server tier, the optional remote
+  log sink, the SIEM forwarder and GitHub Releases auto-update all contradict.
+  Every egress path is now enumerated with its default state and what crosses
+  the boundary, in `docs/DUE_DILIGENCE.md`, `README.md`, `SECURITY.md` and
+  `docs/COMPLIANCE.md`.
+- The claim of validation against **AATB standards** has been withdrawn from
+  `docs/DUE_DILIGENCE.md`, `docs/COMPLIANCE.md`, `docs/compliance/README.md`,
+  `docs/HIPAA_COMPLIANCE_MATRIX.md`, `docs/GITHUB_SETUP.md` and `SECURITY.md`.
+  No AATB control mapping ever existed behind it. Removing an unsupported claim
+  is preferable to retrospectively constructing a mapping to justify it.
+- `docs/compliance/PART_11_CONTROL_MAPPING.md` stated that TransTrack "does not
+  implement electronic signatures" while `electron/services/electronicSignature.cjs`
+  had been implementing `signRecord()` for some time. §11.50, §11.70, §11.100
+  and §11.200 now describe what exists — an application-level signature record
+  binding signer identity, declared meaning, a payload hash and a timestamp,
+  immutable at the trigger level and tamper-evident by recomputation — and say
+  equally plainly what it is not: not a PKI digital signature, no
+  non-repudiation against the system operator, and no re-authentication at the
+  point of signing, so §11.200(a)(1)(i) is not literally met.
+- `SECURITY.md` listed 1.0.x as the only supported version while the product
+  shipped 1.2.1. The support matrix now covers 1.3.x, 1.2.x, and the end-of-life
+  lines.
+- `README.md` listed installer filenames at version 1.0.0 and did not reflect
+  that the enterprise configuration produces `TransTrack-Enterprise-${version}`.
+  The table now gives both build configurations as patterns, and notes that
+  signing credentials are not yet procured.
+- `docs/DISASTER_RECOVERY.md` stated RPO = 1 hour while
+  `docs/compliance/policies/BUSINESS_CONTINUITY_AND_DR.md` stated 24 hours. Two
+  authoritative objectives for one system is itself a defect. Reconciled to
+  **≤ 24 hours**, which is what the product's 24-hour backup scheduler actually
+  delivers; the BCDR policy is now normative and the DR document procedural.
+- `docs/compliance/TRACEABILITY_MATRIX.md` marked TT-R010 (single sign-on) as
+  "Not implemented" while OIDC desktop SSO shipped in `electron/auth/oidcDesktop.cjs`.
+  The row now states what is implemented (OIDC, with PKCE S256) and what is not
+  (SAML on the desktop; SAML exists only in the server tier).
+- `README.md` claimed no PHI leaves the local system unless exported. Qualified
+  as a default rather than a structural guarantee, with the egress table above.
+- `README.md` presented multi-pass secure delete as a guarantee while
+  `electron/services/secureDelete.cjs` honestly documents that it is ineffective
+  on SSD, copy-on-write and snapshotted volumes. The README now says the same.
+- The calculator list advertised "LAS". That module is the TransTrack Lung
+  Triage Index, an internal expert-set instrument that is not the OPTN LAS and
+  not the Composite Allocation Score. The README, `docs/COMPLIANCE.md` and
+  `SECURITY.md` now say so, and record that PELD is unavailable pending a
+  verifiable OPTN Table 9-1 source.
+- The server tier's early-access status appeared in the README but not in the
+  compliance documentation. It now appears in `docs/compliance/README.md`,
+  `docs/compliance/VALIDATION_PLAN.md`, `SECURITY.md` and `RUNBOOK.md`.
+
+### Changed — `RUNBOOK.md` is now an operational runbook
+
+It was a Docker Compose smoke-test procedure for the server tier. The desktop
+procedures a regulated deployment actually depends on — backup, restore, key
+rotation, breach notification, DR drills — lived elsewhere and were not
+reachable from it. The runbook now indexes every operational procedure with its
+controlling document, states the operating cadence and the evidence each
+control requires, documents the startup health checks and their stop
+conditions, and carries a disaster recovery drill procedure and log template.
+The original smoke test is retained as §7, marked as an evaluation rather than
+a production procedure.
+
+The drill log is empty, and says why: no restore drill has been executed
+against this release by the vendor or by any site, so the recovery time
+objective is a design target rather than a demonstrated capability. That is
+recorded as residual risk RR-11 rather than left as an absence.
+
+### Added — supporting documentation
+
+- **`docs/TEST_DATA_PROVENANCE.md`** records that no tracked file contains real
+  PHI, and where each fixture came from: the FHIR bundle in `sample-data/` was
+  authored for this project, and the transcript in `demo-evidence/` was captured
+  against Epic's public sandbox using its published test patient. The fact was
+  already true; it is now evidenced.
+- **`.github/CODEOWNERS`** assigns mandatory reviewers to the security-critical
+  and clinically-critical paths — the IPC boundary, schema and migrations,
+  authentication, the audit chain, encryption and secure delete, the logger and
+  SIEM forwarder, the clinical calculators and their reference data, the
+  server-tier FHIR/SMART authorization layer, the controlled documents, the
+  release scripts, and the tests that verify all of them.
+- **`CONTRIBUTING.md`** documents the required branch-protection configuration
+  and the required status checks, so the rule is visible to a validation
+  reviewer rather than existing only as a repository setting.
+
+### Changed — security disclosure channel
+
+The sole disclosure and support contact was a consumer webmail address.
+`SECURITY.md` now defines a role-based channel (`security@transtrack.example`)
+with a response SLA per severity, a four-step escalation path, and coordinated
+disclosure terms. The addresses are placeholders on the reserved `.example`
+domain and are not yet provisioned; provisioning a monitored role address with
+an on-call rotation behind it is a prerequisite for commercial release, tracked
+as residual risk RR-15.
+
+### Removed — commercial material
+
+`docs/STRATEGIC_FIT.md` (an acquirer and partner positioning brief) and
+`docs/legal/COMMERCIALIZATION_CHECKLIST.md` (indicative pricing, named vendor
+shortlists, sales outreach templates) have been deleted. A regulated product
+repository is a controlled-document set, and commercial planning material
+changes on a sales cadence rather than a release cadence, is owned outside
+engineering, and is governed by no change-control procedure. `docs/legal/README.md`
+records the removal and the rule for future additions. Nothing product-relevant
+was lost: the items that mattered — code-signing credentials not procured, no
+third-party penetration test — are now formal residual risks with owners and
+closure criteria.
+
 ### Fixed — SSL.com eSigner signing (`ssl_esigner` mode)
 
 The eSigner path had never been exercised against a real certificate. Audited

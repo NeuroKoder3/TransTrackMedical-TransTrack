@@ -221,10 +221,12 @@ async function handleCheckoutCompleted(app, config, session) {
   const privateKeyPem = fs.readFileSync(privateKeyPath, 'utf8');
   const wire = signLicense(payload, privateKeyPem);
 
-  // Persist to issued_licenses table for audit / renewal.
+  // Persist to issued_licenses table for audit / renewal. issued_licenses is
+  // row-level-security protected (migration 010) and this path has no tenant
+  // context, so it runs under the billing back-office marker.
   try {
     const pool = require('../db/pool');
-    await pool.query(
+    await pool.withBillingContext(async (client) => client.query(
       `INSERT INTO issued_licenses
          (license_id, org_id, customer_name, customer_email, tier,
           issued_at, expires_at, stripe_session_id, stripe_customer_id,
@@ -236,7 +238,7 @@ async function handleCheckoutCompleted(app, config, session) {
         issuedAt, expiresAt, session.id, session.customer,
         session.subscription, wire, machineIds.length,
       ],
-    );
+    ));
   } catch (err) {
     app.log.error({ err: err.message }, 'failed to persist issued license — license still emailed');
   }
@@ -257,12 +259,12 @@ async function handleInvoicePaid(app, config, invoice) {
   app.log.info({ subscription: subscriptionId }, 'invoice.paid — renewal re-issue');
 
   const pool = require('../db/pool');
-  const existing = await pool.query(
+  const existing = await pool.withBillingContext(async (client) => client.query(
     `SELECT * FROM issued_licenses
      WHERE stripe_subscription_id = $1 AND canceled_at IS NULL
      ORDER BY issued_at DESC LIMIT 1`,
     [subscriptionId],
-  );
+  ));
   if (!existing.rows[0]) {
     app.log.warn({ subscription: subscriptionId }, 'no existing license for subscription — cannot renew');
     return;
@@ -305,7 +307,7 @@ async function handleInvoicePaid(app, config, invoice) {
   const wire = signLicense(payload, privateKeyPem);
 
   try {
-    await pool.query(
+    await pool.withBillingContext(async (client) => client.query(
       `INSERT INTO issued_licenses
          (license_id, org_id, customer_name, customer_email, tier,
           issued_at, expires_at, stripe_session_id, stripe_customer_id,
@@ -317,7 +319,7 @@ async function handleInvoicePaid(app, config, invoice) {
         issuedAt, expiresAt, null, invoice.customer,
         subscriptionId, wire, 0,
       ],
-    );
+    ));
   } catch (err) {
     app.log.error({ err: err.message }, 'failed to persist renewed license');
   }
@@ -340,10 +342,10 @@ async function handleSubscriptionCanceled(app, config, subscription) {
   app.log.info({ subscription: subscription.id }, 'customer.subscription.deleted');
   try {
     const pool = require('../db/pool');
-    await pool.query(
+    await pool.withBillingContext(async (client) => client.query(
       'UPDATE issued_licenses SET canceled_at = NOW() WHERE stripe_subscription_id = $1',
       [subscription.id],
-    );
+    ));
   } catch (err) {
     app.log.error({ err: err.message }, 'failed to mark license canceled');
   }

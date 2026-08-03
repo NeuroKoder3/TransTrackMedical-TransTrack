@@ -31,7 +31,14 @@ Official channels are limited to:
 
 - Repository: https://github.com/NeuroKoder3/TransTrackMedical-TransTrack
 - Releases: https://github.com/NeuroKoder3/TransTrackMedical-TransTrack/releases
-- Contact: Trans_Track@outlook.com
+- Security and abuse reports: `security@transtrack.example`
+- General enquiries: `support@transtrack.example`
+
+Both addresses are role-based placeholders on the reserved `.example` domain
+and are not yet provisioned. Until they are, use the repository's private
+vulnerability reporting facility on GitHub for security matters. See
+[`SECURITY.md`](SECURITY.md#reporting-a-security-issue) and residual risk RR-15
+in [`docs/compliance/RESIDUAL_RISK.md`](docs/compliance/RESIDUAL_RISK.md).
 
 Any other page claiming to be official should be treated as untrusted.
 
@@ -48,7 +55,8 @@ If you encounter a suspicious page or file using TransTrack branding:
 1. Do not execute downloaded files.
 2. Collect URL, timestamp, and screenshots.
 3. Preserve file hashes if files were downloaded.
-4. Report details to Trans_Track@outlook.com.
+4. Report details to `security@transtrack.example`, following the procedure in
+   [`SECURITY.md`](SECURITY.md#trusted-distribution-and-impersonation-alerts).
 
 ## Enforcement
 
